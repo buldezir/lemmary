@@ -68,12 +68,8 @@ const guides: Array<[string, Label]> = [
   ['paperless_ngx', { en: 'Paperless-ngx API', de: 'Paperless-ngx-API', ru: 'API Paperless-ngx' }],
   ['mcp', { en: 'MCP for agents', de: 'MCP für Agenten', ru: 'MCP для агентов' }],
   ['scanning', { en: 'Scanning', de: 'Scannen', ru: 'Сканирование' }],
-  ['local_ocr', { en: 'Local OCR', de: 'Lokales OCR', ru: 'Локальное OCR' }],
-  [
-    'local_embeddings',
-    { en: 'Local embeddings', de: 'Lokale Embeddings', ru: 'Локальные эмбеддинги' },
-  ],
   ['local_ai_macos', { en: 'Local AI on a Mac', de: 'Lokale KI auf dem Mac', ru: 'Локальный ИИ на Mac' }],
+  ['local_ai_linux', { en: 'Local AI on Linux', de: 'Lokale KI unter Linux', ru: 'Локальный ИИ на Linux' }],
   ['google_vision', { en: 'Google Vision', de: 'Google Vision', ru: 'Google Vision' }],
   ['chatgpt_login', { en: 'ChatGPT sign-in', de: 'ChatGPT-Anmeldung', ru: 'Вход через ChatGPT' }],
   ['oauth', { en: 'OAuth2', de: 'OAuth2', ru: 'OAuth2' }],

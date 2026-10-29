@@ -48,5 +48,5 @@ calling the embedding provider again. The ordinary full-text index beside it,
 at `pb_data/bleve/documents`, is derived and rebuildable too.
 
 Embedding storage grows with the number of passages and vector dimensions. See
-[what embeddings cost](/ai_providers#what-embeddings-cost) and
-[Local embeddings](/local_embeddings) for sizing and provider options.
+[what embeddings cost](/ai_providers#what-embeddings-cost) for sizing and
+provider options.

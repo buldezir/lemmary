@@ -23,7 +23,7 @@ to use.
 | **Local OCR** — `docling` | ❌ | ✅ **on your own host** | ❌ | ❌ |
 | **Local Embeddings** — `local` | ❌ | ❌ | ✅ **on your own hardware** | ❌ |
 | **Tavily** — `tavily` | ❌ | ❌ | ❌ | ✅ **the only SDK that does** |
-| **Lemmary Local AI** — `lemmary_local_ai` | ✅ **on a Mac on your network** | ✅ Apple Vision | ✅ `BAAI/bge-m3` | ❌ |
+| **Lemmary Local AI** — `lemmary_local_ai` | ✅ **on a Mac or an NVIDIA GPU on your network** | ✅ Apple Vision or LightOnOCR-2 | ✅ `BAAI/bge-m3` | ❌ |
 
 The names in bold are what Admin shows. The shorter code values remain the
 values used by `OCR_SDK`, `AI_EMBEDDING_SDK` and `WEB_SEARCH_SDK`.
@@ -95,33 +95,28 @@ The alternatives are worth naming:
   account you sign in with is the one carrying the risk. Its SDK value is
   `chatgpt`, though it is not an `AI_SDK` or `OCR_SDK` value: a sign-in cannot be written into
   `.env`. See [ChatGPT sign-in](/chatgpt_login).
-- **Local OCR** — OCR only, and the only provider that reads a
-  document without sending it anywhere: a sidecar container beside the app,
-  with no port published and **no API key at all** — the base URL is the whole
-  configuration. Reach for it when the archive is confidential enough that a
-  hosted OCR API is not an option, or when the host has no outbound internet;
-  pair it with a local OpenAI-compatible endpoint under `AI_BASE_URL` and
-  nothing leaves the machine. Its default recognizer is PaddleOCR's PP-OCR
-  models, so there is no separate PaddleOCR provider to choose. The price is
-  real: a multi-gigabyte image, and seconds rather than milliseconds a page.
-  Its SDK value is `docling`. See [Local OCR](/local_ocr).
-- **Local Embeddings** — embeddings
-  only, using a model you run yourself. Like Local OCR it takes no API key: the
-  base URL is the whole configuration. It is the mirror image of
-  `google_vision` — a single job, done off the network. Its SDK value is
-  `local`. See [Local Embeddings](/local_embeddings).
+- **Local OCR** — OCR only, from a
+  [docling-serve](https://github.com/docling-project/docling-serve) you run
+  yourself, with **no API key**: the base URL is the whole configuration. Its
+  default recognizer is PaddleOCR's PP-OCR models, so there is no separate
+  PaddleOCR provider to choose. It takes seconds rather than milliseconds a
+  page. Its SDK value is `docling`.
+- **Local Embeddings** — embeddings only, from a
+  [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference)
+  server you run yourself. Like Local OCR it takes no API key: the base URL is
+  the whole configuration. Its SDK value is `local`.
 - **Lemmary Local AI** — embeddings, OCR and an optional small text model from
-  [one menu bar app](https://github.com/buldezir/lemmary-local-ai) on an Apple
-  Silicon Mac on your network, with no API key: the base URL is the whole
-  configuration. Its `/v1/models` names each model's job, so every picker lists
-  only the models for it. Its text model is meant for extraction, but General
-  AI is one binding: chosen there, it answers Ask AI and AI assisted search too.
-  Its SDK value is `lemmary_local_ai`. See
-  [Lemmary Local AI](/local_ai_macos).
+  [one app](https://github.com/buldezir/lemmary-local-ai) on a Mac or a Linux
+  machine with an NVIDIA GPU on your network, with no API key: the base URL is
+  the whole configuration. Its `/v1/models` names each model's job, so every
+  picker lists only the models for it. Its text model is meant for extraction,
+  but General AI is one binding: chosen there, it answers Ask AI and AI assisted
+  search too. Its SDK value is `lemmary_local_ai`. See Lemmary Local AI
+  [on a Mac](/local_ai_macos) and [on Linux](/local_ai_linux).
 
-Together, Local OCR and Local Embeddings are the two halves of an install where
-nothing leaves the host: point `AI_BASE_URL` at Ollama or vLLM, set
-`OCR_SDK=docling`, and set `AI_EMBEDDING_SDK=local`.
+For an install where nothing leaves your network, one Lemmary Local AI provider
+covers every job: set `AI_SDK=lemmary_local_ai`, its address in `AI_BASE_URL`,
+its text model in `AI_MODEL` and `AI_EMBEDDING_MODEL=BAAI/bge-m3`.
 
 Without a language-model provider, AI extraction, document chat and Deep Research
 return a configuration error.
@@ -142,8 +137,8 @@ asks for it.
 | `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. Leave it unset for `opencode`, whose own endpoint is `https://opencode.ai/zen/go/v1`. Required for `lemmary_local_ai`, which has no default address. |
 | `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision`, `docling` (Local OCR) or `lemmary_local_ai`. `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Admin rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except Local OCR (`docling`), which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
-| `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. Required for `lemmary_local_ai` unless `AI_SDK` is the same SDK. |
-| `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). For `lemmary_local_ai` it defaults to `apple-vision-ocr`, even when OCR rides the `AI_SDK` provider: the app runs Apple Vision for that id only. |
+| `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is `http://docling:5001`. Required for `lemmary_local_ai` unless `AI_SDK` is the same SDK. |
+| `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead: `rapidocr`, `easyocr`, `tesserocr` or `tesseract`. For `lemmary_local_ai` it defaults to `apple-vision-ocr`, even when OCR rides the `AI_SDK` provider: the app reads documents only for an OCR id, and its Mac and Linux versions both answer to this one. |
 | `AI_EMBEDDING_MODEL` | unset (Deep Research and the search box match keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Research and the Documents search box can also find documents by meaning. Under `AI_SDK=opencode` or `AI_SDK=anthropic` it requires `AI_EMBEDDING_SDK`: neither serves `/embeddings`, so there is no provider to fall back to, and naming a model without one is refused at boot. See [what embeddings cost](#what-embeddings-cost). |
 | `AI_RESEARCH_MODEL` | unset (Deep Research runs on `AI_MODEL`) | The **Advanced model**, on the `AI_SDK` provider: drives the Deep Research reasoning loop, a few expensive calls per question where everything else is many cheap ones. Bulk document reads stay on `AI_MODEL`. See [How Research covers a topic](/deep_research#how-research-covers-a-topic). |
 
@@ -164,7 +159,7 @@ which has always been how a second provider for one job is described.
 | --- | --- | --- |
 | `AI_EMBEDDING_SDK` | unset (embeddings run on the `AI_SDK` provider) | A separate provider for embeddings: `openai`, `openrouter`, `mistral`, `local` (Local Embeddings) or `lemmary_local_ai`. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. `google_vision`, `docling` (Local OCR), `anthropic`, `opencode` and `chatgpt` are refused — none of them has an `/embeddings` endpoint. Required rather than optional when `AI_SDK` is one of the last three and `AI_EMBEDDING_MODEL` is set. |
 | `AI_EMBEDDING_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an SDK that differs from `AI_SDK`, **except Local Embeddings (`local`)**, which takes none. |
-| `AI_EMBEDDING_BASE_URL` | the SDK's own endpoint, or `AI_BASE_URL` when the SDKs match | Where that provider lives. For Local Embeddings (`local`) this defaults to `http://embeddings:80/v1`, the compose overlay's service. Required for `lemmary_local_ai` unless `AI_SDK` is the same SDK. |
+| `AI_EMBEDDING_BASE_URL` | the SDK's own endpoint, or `AI_BASE_URL` when the SDKs match | Where that provider lives. For Local Embeddings (`local`) this defaults to `http://embeddings:80/v1`. Required for `lemmary_local_ai` unless `AI_SDK` is the same SDK. |
 
 Unset, all three change nothing: embeddings ride on the `AI_SDK` provider,
 exactly as they did before the block existed. Setting `AI_EMBEDDING_SDK` without
@@ -223,7 +218,7 @@ afterwards.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OCR_TIMEOUT_SEC` | `90` | OCR request timeout. Too low for [Local OCR](/local_ocr), which needs seconds to tens of seconds a page |
+| `OCR_TIMEOUT_SEC` | `90` | OCR request timeout. Too low for a long document on a local OCR engine, which needs seconds a page; see [Lemmary Local AI on Linux](/local_ai_linux#requirements) |
 | `AI_TIMEOUT_SEC` | `90` | Language-model request timeout: extraction, Ask AI, search, research and split detection |
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
@@ -387,10 +382,9 @@ make it.
 
 Running the model yourself moves the first two costs rather than removing them:
 there is no token bill and no per-document price at all, but the same work
-happens on your CPU, and the first backfill of a large archive is the one time
-that is slow enough to notice. The third cost — space, and under a vault RAM —
-is unchanged, and depends only on the dimension count you pick. See [Local
-Embeddings](/local_embeddings).
+happens on your own hardware, and the first backfill of a large archive is the
+one time that is slow enough to notice. The third cost — space, and under a
+vault RAM — is unchanged, and depends only on the dimension count you pick.
 
 The backfill drains at `EMBEDDING_BACKFILL_BATCH` documents a tick and logs what
 it embedded, what failed, and how many are left; **Admin → AI → Models** shows the
@@ -399,9 +393,8 @@ backlog on demand rather than waiting a tick a minute. A provider failure is
 soft: the document keeps its text, its metadata and its place in keyword search,
 and is retried later with a backoff.
 
-Running the model on your own hardware has a page of its own: see [Local
-Embeddings](/local_embeddings) for the compose overlays, choosing a model, and
-what it costs in host memory.
+To run the model on your own hardware, see Lemmary Local AI [on a
+Mac](/local_ai_macos) or [on Linux](/local_ai_linux).
 
 ## OCR, per provider
 
@@ -451,19 +444,16 @@ See [Google Vision API key](/google_vision) for obtaining a key.
 
 ### Local OCR
 
-A container beside the app rather than an API. It speaks docling-serve's
+A docling-serve you run yourself rather than an API. It speaks
 `POST /v1/convert/file` and gets markdown back, reading PDFs, images and office
-documents. It is keyless — the address is the whole configuration — and
-publishes no port, so only the app can reach it.
+documents. It is keyless — the address is the whole configuration.
 
 Its default recognizer is RapidOCR, which is PaddleOCR's PP-OCR models as ONNX,
 and the OCR model binding switches that to EasyOCR or Tesseract. That is why
 there is no second local SDK: the PaddleOCR recognition is already here.
 
-Bring it up with the `docker-compose.local-ocr.yml` overlay and raise
-`OCR_TIMEOUT_SEC`, which is the setting people miss. Everything else — the image
-size, memory, GPU variants and the per-page cost — is in
-[Local OCR](/local_ocr).
+Raise `OCR_TIMEOUT_SEC`, which is the setting people miss: it reads seconds
+rather than milliseconds a page.
 
 ## Troubleshooting
 
@@ -475,8 +465,7 @@ size, memory, GPU variants and the per-page cost — is in
   is enabled for the project.
 - **Local OCR times out** — raise `OCR_TIMEOUT_SEC`. On an instance that has
   already booted it must be raised in **Admin**, not `.env`: it is a seeded
-  setting, so the environment applies only on the first boot. See
-  [Local OCR](/local_ocr#what-it-costs).
+  setting, so the environment applies only on the first boot.
 - **AI extraction fails** — check that an extraction model is bound and that it
   is a chat model, not an embedding or OCR model.
 - **An `opencode` model answers every request with a 500 or a 404** — check that
@@ -511,12 +500,10 @@ size, memory, GPU variants and the per-page cost — is in
   function tools; retrying on the Responses API`. What is learned is remembered
   per provider, so the same model name behind two providers is discovered
   separately.
-- **Local Embeddings embeds nothing** — `docker compose logs embeddings`. On a
-  first boot it is downloading weights and the container is unhealthy until that
-  finishes, which is why the app waits on its healthcheck; embed steps fail soft
-  meanwhile and are retried, so no document is lost. A `413` in the app's log
-  means the endpoint's batch limits are below what Lemmary sends — see the flags
-  above.
+- **Local Embeddings embeds nothing** — check the server's own log. On a first
+  start it is downloading weights; embed steps fail soft meanwhile and are
+  retried, so no document is lost. A `413` in the app's log means the server's
+  batch limits are below what Lemmary sends.
 - **The embedding model picker is empty for Local Embeddings** — the catalogue
   comes from the sidecar's `/info`, which also reports what kind of model it is.
   A reranker or a classifier is deliberately not offered: bound as an embedding

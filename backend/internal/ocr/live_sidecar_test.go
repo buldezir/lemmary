@@ -20,8 +20,7 @@ import (
 // from is the one the container actually speaks, and this is where that is
 // checked, by hand, against a container:
 //
-//	docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml \
-//	  --profile docling up -d
+//	docker run -d -p 5001:5001 ghcr.io/docling-project/docling-serve-cpu:v1.32.0
 //	LEMMARY_DOCLING_URL=http://127.0.0.1:5001 \
 //	  go test -tags vectors ./internal/ocr/ -run Live -v
 const (
@@ -32,8 +31,8 @@ const (
 
 // liveTimeout is generous on purpose. A local engine reads a page in seconds to
 // tens of seconds, and the first request after a container start also loads the
-// models -- the same reason docs/local_ocr.md tells operators to raise
-// OCR_TIMEOUT_SEC well past its 90 second default.
+// models -- the same reason operators have to raise OCR_TIMEOUT_SEC well past
+// its 90 second default.
 const liveTimeout = 5 * time.Minute
 
 func liveURL(t *testing.T, key string) string {
@@ -126,8 +125,8 @@ func TestLiveDoclingRejectsWhatItCannotRead(t *testing.T) {
 
 // The engine binding is an optional free-text field, not an enum, and docling
 // answers 200 for a name it does not recognise, falling back to its default. So
-// this can only assert that binding one is harmless; docs/local_ocr.md lists the
-// accepted values because a typo there is invisible by design.
+// this can only assert that binding one is harmless; docs/ai_providers.md lists
+// the accepted values because a typo there is invisible by design.
 func TestLiveDoclingAcceptsABoundEngine(t *testing.T) {
 	url := liveURL(t, envDoclingURL)
 	for _, engine := range []string{"", "rapidocr"} {

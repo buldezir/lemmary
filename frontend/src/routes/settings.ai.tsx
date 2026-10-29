@@ -170,7 +170,7 @@ export function SettingsAIPage() {
                     </DocsLink>
                   ),
                   localLink: (
-                    <DocsLink href={docsUrl('local_embeddings.html')}>
+                    <DocsLink href={docsUrl('local_ai_macos.html')}>
                       {t('settingsAi.embeddingsLocalLink')}
                     </DocsLink>
                   ),

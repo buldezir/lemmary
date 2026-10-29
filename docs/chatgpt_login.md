@@ -27,7 +27,7 @@ ChatGPT seat is a complete install, with no API key anywhere.
 Embeddings are the exception, and not a matter of degree: the endpoint has no
 `/embeddings` at all, so Admin refuses that binding. Deep Research still works
 without them — it falls back to keyword matching — but its dense half needs a
-keyed provider or the [local embeddings sidecar](/local_embeddings).
+keyed provider or [Lemmary Local AI](/local_ai_macos).
 
 Two things worth knowing before you put OCR here. A subscription's quota is a
 window rather than a meter, and OCR is the heaviest thing Lemmary does per

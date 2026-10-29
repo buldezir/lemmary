@@ -48,7 +48,7 @@ es führt für jede Anfrage bis zu zwei Suchen aus.
   zur eingebetteten Frage durchsucht wird. Diese Hälfte gibt es nur, wenn
   `AI_EMBEDDING_MODEL` gesetzt ist und Dokumente tatsächlich eingebettet wurden.
   Das Modell kann ein gehostetes sein oder [eines, das Sie selbst
-  betreiben](/de/local_embeddings).
+  betreiben](/de/local_ai_linux).
 
 Die beiden Listen werden per Reciprocal Rank Fusion zusammengeführt: Ein Dokument
 erhält als Punktzahl die Summe von `1/(60 + rank)` über die Listen, in denen es

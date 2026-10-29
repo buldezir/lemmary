@@ -4,7 +4,8 @@
 Menüleisten-App für macOS, die Embeddings, OCR und optional ein Textmodell für
 Lemmary auf einem Mac mit Apple Silicon betreibt, sodass Dokumente Ihr Netzwerk
 nie verlassen. Lemmary selbst läuft anderswo (auf einer VM, einem Linux-Server,
-irgendetwas mit Docker) und erreicht den Mac über das LAN.
+irgendetwas mit Docker) und erreicht den Mac über das LAN. Für einen Rechner mit
+NVIDIA-GPU siehe [Lemmary Local AI unter Linux](/de/local_ai_linux).
 
 **[Neueste Version herunterladen](https://github.com/buldezir/lemmary-local-ai/releases/latest)**
 

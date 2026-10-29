@@ -192,11 +192,9 @@ export const de: Catalog = {
   'providers.localOcrModelHint':
     'Optional. Benennt die OCR-Engine von Docling – rapidocr (Standard, die PP-OCR-Modelle von PaddleOCR), easyocr, tesserocr oder tesseract. Ein unbekannter Name wird stillschweigend ignoriert, prüfen Sie also die Schreibweise.',
   'providers.keylessHint':
-    'Läuft auf Ihrem eigenen Host, daher ist kein API-Schlüssel nötig – die Adresse ist die ganze Konfiguration. Standard ist der Dienstname aus {overlay}.',
+    'Läuft auf Ihrem eigenen Host, daher ist kein API-Schlüssel nötig – die Adresse ist die ganze Konfiguration.',
   'providers.lemmaryLocalAiHint':
-    'Läuft auf einem Mac in Ihrem Netzwerk, daher ist kein API-Schlüssel nötig. Tragen Sie die URL ein, die das Menüleisten-Fenster anzeigt, etwa http://<mac>:5001/v1.',
-  'providers.docsLocalEmbeddings': 'Lokale Embeddings',
-  'providers.docsLocalOcr': 'Lokale OCR',
+    'Läuft auf einem Mac oder einem Linux-Rechner mit NVIDIA-GPU in Ihrem Netzwerk, daher ist kein API-Schlüssel nötig. Tragen Sie seine Adresse ein, etwa http://<host>:5001/v1.',
   'providers.docsGoogleVision': 'Google-Vision-API-Schlüssel',
   'providers.docsChatgpt': 'ChatGPT-Anmeldung',
   'providers.docsGuidedSetup': 'geführte Einrichtung von KI-Anbietern',
@@ -725,15 +723,15 @@ export const de: Catalog = {
   'setupWizard.cloud': 'Cloud',
   'setupWizard.cloudHint': 'Gehostete APIs, ein oder zwei Schlüssel',
   'setupWizard.local': 'Vollständig lokal',
-  'setupWizard.localHint': 'Lemmary Local AI auf Ihrem Mac',
+  'setupWizard.localHint': 'Lemmary Local AI auf Ihrem Mac oder GPU-Server',
   'setupWizard.localIntro':
-    'Lemmary Local AI liest, indiziert und extrahiert auf einem Mac in Ihrem Netzwerk, sodass Ihre Dokumente es nie verlassen. Installieren Sie die App dort und tragen Sie dann die Adresse ein, die sie anzeigt.',
+    'Lemmary Local AI liest, indiziert und extrahiert auf einem Mac oder einem Linux-Rechner mit NVIDIA-GPU in Ihrem Netzwerk, sodass Ihre Dokumente es nie verlassen. Installieren Sie es dort und tragen Sie dann seine Adresse ein.',
   'setupWizard.localDownload': 'Neueste Version herunterladen',
   'setupWizard.localGuide': 'Anleitung zu Lemmary Local AI lesen',
   'setupWizard.localTextModel':
     'Extraktion, Chat und Suche laufen über das Textmodell der App, schalten Sie es dort also ein. Es ist klein: Für einen stärkeren Chat fügen Sie im nächsten Schritt oder später in den Einstellungen einen gehosteten Anbieter für die Allgemeine KI hinzu.',
   'setupWizard.manualIntro':
-    'Fügen Sie einen Anbieter hinzu. OpenAI, OpenRouter oder Mistral können Extraktion und Chat übernehmen; Google Vision oder Mistral OCR übernehmen OCR, und ein einzelner Mistral-Anbieter deckt beides ab. Local OCR führt Docling auf Ihrem eigenen Host aus, und Local Embeddings liefert die dichte Hälfte von Deep Search — keiner von beiden braucht einen API-Schlüssel, aber für jeden muss zuerst sein Compose-Overlay laufen. Ein ChatGPT-Abo deckt Extraktion, Chat und OCR über den Platz ab, den Sie bereits bezahlen, ganz ohne API-Schlüssel — Sie melden sich stattdessen mit einem Code an.',
+    'Fügen Sie einen Anbieter hinzu. OpenAI, OpenRouter oder Mistral können Extraktion und Chat übernehmen; Google Vision oder Mistral OCR übernehmen OCR, und ein einzelner Mistral-Anbieter deckt beides ab. Lemmary Local AI übernimmt OCR, Embeddings und Extraktion auf Ihrem eigenen Mac oder Linux-Rechner mit GPU, ohne API-Schlüssel. Ein ChatGPT-Abo deckt Extraktion, Chat und OCR über den Platz ab, den Sie bereits bezahlen, ganz ohne API-Schlüssel — Sie melden sich stattdessen mit einem Code an.',
   'setupWizard.manualNoAccount':
     'Noch kein Anbieterkonto? {link} — ein kostenloser Mistral-Schlüssel für OCR, Opencode Go für das Sprachmodell.',
   'setupWizard.backToGuided': 'Zurück zur geführten Einrichtung',

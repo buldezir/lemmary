@@ -28,8 +28,8 @@ damit eine vollständige Installation, ganz ohne API-Schlüssel.
 Embeddings sind die Ausnahme, und zwar grundsätzlich: Der Endpunkt hat überhaupt kein
 `/embeddings`, daher lehnt die Admin-Seite diese Zuweisung ab. Deep Research
 funktioniert auch ohne sie – es weicht auf Stichwortsuche aus –, aber seine dichte Hälfte
-braucht einen Anbieter mit Schlüssel oder den
-[Sidecar für lokale Embeddings](/de/local_embeddings).
+braucht einen Anbieter mit Schlüssel oder
+[Lemmary Local AI](/de/local_ai_macos).
 
 Zwei Dinge sollten Sie wissen, bevor Sie OCR hierüber laufen lassen. Das Kontingent eines
 Abonnements ist ein Zeitfenster und kein Zähler, und OCR ist das Aufwendigste, was Lemmary

@@ -60,7 +60,7 @@ func TestSDKCapabilities(t *testing.T) {
 		{SDKGoogleVision, true, false, false, false, "", "Google Cloud Vision"},
 		{SDKDocling, false, true, false, true, "http://docling:5001", "Docling"},
 		{SDKTavily, true, false, true, false, "https://api.tavily.com", "Tavily"},
-		// No default address: it runs on a Mac on the LAN, not on the compose network.
+		// No default address: it runs on another machine on the LAN, not on the compose network.
 		{SDKLemmaryLocalAI, false, true, true, false, "", "Lemmary Local AI"},
 		// An unrecognised or empty SDK must fall on the side that still demands
 		// a key, because every call site reads RequiresAPIKey rather than the key.
@@ -287,8 +287,7 @@ func TestRequiresAPIKey(t *testing.T) {
 
 func TestDefaultBaseURLLocalPointsAtTheSidecar(t *testing.T) {
 	t.Parallel()
-	// The service name in docker-compose.embeddings.yml. If one of these moves
-	// the other has to move with it, or the overlay comes up unconfigured.
+	// Kept in step with SDK_DEFAULT_BASE.local in the frontend.
 	if got := DefaultBaseURL(SDKLocalEmbeddings); got != "http://embeddings:80/v1" {
 		t.Fatalf("DefaultBaseURL(local) = %q", got)
 	}

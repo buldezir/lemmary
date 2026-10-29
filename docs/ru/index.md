@@ -18,9 +18,8 @@ description: "Руководства по установке, настройке
 - [ИИ-провайдеры и модели](/ru/ai_providers) — выбор провайдера, начальные ключи, привязка моделей
 - [Совместимость с API Paperless-ngx](/ru/paperless_ngx) — подключение сторонних клиентов, перенос существующей библиотеки
 - [Сканирование с сетевого сканера](/ru/scanning) — сканирование по eSCL/AirScan и как поиск в локальной сети находит устройство
-- [Локальное OCR](/ru/local_ocr) — запуск OCR-движка у себя, чтобы сканы никогда не покидали хост
-- [Локальные эмбеддинги](/ru/local_embeddings) — запуск модели эмбеддингов у себя, чтобы Deep Research не расходовал токены
 - [Lemmary Local AI на Mac](/ru/local_ai_macos) — эмбеддинги, OCR и текстовая модель на Mac с Apple Silicon, нативно, а не в Docker
+- [Lemmary Local AI на Linux](/ru/local_ai_linux) — то же на машине с GPU NVIDIA, как программа или образ Docker
 - [Ключ Google Vision API](/ru/google_vision) — получение ключа Cloud Vision API для OCR
 - [Вход через ChatGPT](/ru/chatgpt_login) — чат, извлечение данных и Deep Research по подписке ChatGPT вместо ключа с оплатой за использование
 - [Вход через OAuth2 / SSO](/ru/oauth) — включение входа через провайдера на экране входа в приложение

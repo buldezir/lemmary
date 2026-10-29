@@ -137,10 +137,10 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           provider && provider.id === id ? model : ''
         const ocr = byId(settings.ocr_provider_id) ?? named('ocr') ?? nextProviders[0]
         setOcrProviderId(ocr?.id ?? '')
-        setOcrModel(
+        const ocrChoice =
           saved(settings.ocr_provider_id, settings.ocr_model, ocr) ||
-            recommendedModel(ocr?.sdk, 'ocr'),
-        )
+          recommendedModel(ocr?.sdk, 'ocr')
+        setOcrModel(ocrChoice)
         const llmProviders = nextProviders.filter((item) => isLLMProvider(item.sdk))
         const llm =
           byId(settings.extract_provider_id) ??
@@ -162,12 +162,22 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           saved(settings.embedding_provider_id, settings.embedding_model, embed) ||
             recommendedModel(embed?.sdk, 'embedding'),
         )
-        // A catalogue of one is no choice, which is how Lemmary Local AI's
-        // text model, whose name depends on the Mac, arrives bound.
-        if (!extract && llm) {
-          const { models } = await listProviderModels(llm.id, 'llm')
-          if (active && models.length === 1) setExtractModel((current) => current || models[0].id)
+        // A catalogue of one is no choice, which is how Lemmary Local AI's OCR
+        // and text models, whose names depend on the machine, arrive bound.
+        const fillSole = async (
+          model: string,
+          provider: AIProvider | undefined,
+          purpose: ModelPurpose,
+          set: (update: (current: string) => string) => void,
+        ) => {
+          if (model || !provider) return
+          const { models } = await listProviderModels(provider.id, purpose)
+          if (active && models.length === 1) set((current) => current || models[0].id)
         }
+        await Promise.all([
+          fillSole(ocrChoice, ocr, 'ocr', setOcrModel),
+          fillSole(extract, llm, 'llm', setExtractModel),
+        ])
       } catch {
         // Prefill is best-effort.
       }
@@ -673,7 +683,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 <input
                   type="url"
                   required
-                  placeholder="http://<mac>:5001/v1"
+                  placeholder="http://<host>:5001/v1"
                   value={localURL}
                   onChange={(e) => setLocalURL(e.target.value)}
                   className={inputClassName}

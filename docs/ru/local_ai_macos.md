@@ -4,7 +4,8 @@
 строки меню macOS, которое запускает эмбеддинги, OCR и, по желанию, текстовую
 модель для Lemmary на Mac с Apple Silicon, поэтому документы не покидают вашу
 сеть. Сам Lemmary работает в другом месте (на виртуальной машине, Linux-сервере,
-чём угодно с Docker) и обращается к Mac по локальной сети.
+чём угодно с Docker) и обращается к Mac по локальной сети. Для машины с GPU
+NVIDIA см. [Lemmary Local AI на Linux](/ru/local_ai_linux).
 
 **[Скачать последнюю версию](https://github.com/buldezir/lemmary-local-ai/releases/latest)**
 

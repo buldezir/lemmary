@@ -67,7 +67,7 @@ describe('providerServesPurpose', () => {
     expect(providerServesPurpose('lemmary_local_ai', 'websearch')).toBe(false)
     expect(requiresAPIKey('lemmary_local_ai')).toBe(false)
     expect(keylessProviderHint('lemmary_local_ai')).toContain(':5001/v1')
-    expect(recommendedModel('lemmary_local_ai', 'ocr')).toBe('apple-vision-ocr')
+    expect(recommendedModel('lemmary_local_ai', 'ocr')).toBe('')
     expect(recommendedModel('lemmary_local_ai', 'embedding')).toBe('BAAI/bge-m3')
     expect(recommendedModel('lemmary_local_ai', 'llm')).toBe('')
   })
@@ -97,8 +97,7 @@ describe('the local SDK is offered and addressed', () => {
   })
 
   it('defaults to the compose service name', () => {
-    // Keep in step with aiprovider.DefaultBaseURL and the service name in
-    // docker-compose.embeddings.yml, or the overlay comes up unconfigured.
+    // Keep in step with aiprovider.DefaultBaseURL.
     expect(SDK_DEFAULT_BASE.local).toBe('http://embeddings:80/v1')
     // Must stay identical to aiprovider.DefaultBaseURL; internal/messages
     // strips the /v1 back off, because the SDK appends v1/messages itself.
@@ -121,8 +120,7 @@ describe('providerDocs', () => {
   })
 
   it('points each SDK with its own guide there', () => {
-    expect(providerDocs('local').href).toBe('/docs/local_embeddings.html')
-    expect(providerDocs('docling').href).toBe('/docs/local_ocr.html')
+    expect(providerDocs('lemmary_local_ai').href).toBe('/docs/local_ai_macos.html')
     expect(providerDocs('google_vision').href).toBe('/docs/google_vision.html')
     expect(providerDocs('mistral').href).toBe('/docs/guided_ai_setup.html')
   })

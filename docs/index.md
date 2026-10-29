@@ -18,9 +18,8 @@ Setup and operation guides for Lemmary.
 - [AI providers and models](/ai_providers) — pick a provider, seed the keys, bind the models
 - [Paperless-ngx API compatibility](/paperless_ngx) — connect third-party clients, migrate an existing library
 - [Scanning from a network scanner](/scanning) — scan over eSCL/AirScan, and how the LAN search finds the device
-- [Local OCR](/local_ocr) — run the OCR engine yourself, so scans never leave the host
-- [Local embeddings](/local_embeddings) — run the embedding model yourself, so Deep Research costs no tokens
 - [Lemmary Local AI on a Mac](/local_ai_macos) — embeddings, OCR and a text model on an Apple Silicon Mac, natively rather than in Docker
+- [Lemmary Local AI on Linux](/local_ai_linux) — the same on a machine with an NVIDIA GPU, as a program or a Docker image
 - [Google Vision API key](/google_vision) — obtain a Cloud Vision API key for OCR
 - [ChatGPT sign-in](/chatgpt_login) — run chat, extraction and Deep Research on a ChatGPT subscription instead of a metered key
 - [OAuth2 / SSO sign-in](/oauth) — enable provider sign-in on the app login screen

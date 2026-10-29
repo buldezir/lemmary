@@ -53,5 +53,5 @@ ebenfalls abgeleitet und neu aufbaubar.
 
 Der Embedding-Speicher wächst mit der Anzahl der Passagen und den
 Vektordimensionen. Siehe
-[was Embeddings kosten](/de/ai_providers#what-embeddings-cost) und
-[Lokale Embeddings](/de/local_embeddings) zu Dimensionierung und Anbieteroptionen.
+[was Embeddings kosten](/de/ai_providers#what-embeddings-cost) zu
+Dimensionierung und Anbieteroptionen.

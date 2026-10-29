@@ -45,7 +45,7 @@ type DoclingProvider struct {
 // the choice to the server's own default.
 //
 // apiKey is likewise optional: docling-serve enforces a key only when it was
-// started with DOCLING_SERVE_API_KEY, which the shipped overlay does not do.
+// started with DOCLING_SERVE_API_KEY, which is off by default.
 func NewDoclingProvider(baseURL, engine, apiKey string, timeout time.Duration, logger *slog.Logger) *DoclingProvider {
 	if timeout <= 0 {
 		timeout = 40 * time.Second

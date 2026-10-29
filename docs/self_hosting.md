@@ -200,22 +200,14 @@ OpenMP each start a thread per core by default, inside a process that is already
 serving requests concurrently, and one thread apiece keeps a vector search from
 stalling the rest of the server on a small machine.
 
-## Local OCR
+## Local AI
 
-By default OCR is a hosted API, which means every scan is uploaded to somebody
-else. A second overlay puts the OCR engine on this host instead — a sidecar
-container with no port published and no API key:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml \
-  --profile docling up -d
-```
-
-Then `OCR_SDK=docling` in `.env` on a fresh volume, or a Docling provider under
-**Admin → AI → Providers** on an instance that has already booted. It is not free:
-a multi-gigabyte image, several gigabytes of RAM, and seconds a page instead of
-milliseconds. Read [Local OCR](/local_ocr) first, in particular the timeout,
-which has to go up.
+By default OCR, embeddings and extraction are hosted APIs, which means every
+scan is uploaded to somebody else. [Lemmary Local AI](https://github.com/buldezir/lemmary-local-ai)
+serves all three from your own hardware instead, as one provider with no API
+key: on [an Apple Silicon Mac](/local_ai_macos) or on [a Linux machine with an
+NVIDIA GPU](/local_ai_linux), where it is a Docker image too. Add it under
+**Admin → AI → Providers**, or choose **Fully local** in the setup wizard.
 
 ## Encryption at rest
 
@@ -231,32 +223,3 @@ The overlay also sizes the tmpfs, disables container swap, and republishes the
 port on loopback only. Read [Encryption at rest](/encryption) before enabling
 it: losing every account password *and* the recovery code loses the archive, and
 there is no operator override.
-
-## Local embeddings
-
-Deep Research can find documents by meaning rather than only by keyword, which
-needs an embedding model. Two more overlays run one on this host instead of
-sending every passage of every document to a hosted provider:
-
-```bash
-# CPU, runs anywhere
-docker compose -f docker-compose.yml -f docker-compose.embeddings.yml up -d
-
-# NVIDIA GPU -- instead of the CPU file, not alongside it
-docker compose -f docker-compose.yml -f docker-compose.embeddings-gpu.yml up -d
-```
-
-They add a sidecar with no published port and bind it, changing nothing else:
-OCR, extraction and chat stay wherever they were. Overlays stack, so encryption
-and local embeddings compose:
-
-```bash
-docker compose -f docker-compose.yml \
-               -f docker-compose.encrypted.yml \
-               -f docker-compose.embeddings.yml up -d
-```
-
-Budget for the model on top of the vectors — ~2.2 GB of weights for the default
-`BAAI/bge-m3` — and note that under a vault the vectors themselves live in the
-tmpfs. See [Embeddings on your own
-hardware](/local_embeddings).

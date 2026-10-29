@@ -47,7 +47,7 @@ On a fresh install the SPA hard-gates until setup is complete:
 
 1. **Create admin** — email + password. Creates a PocketBase `_superusers` account **and** a matching `users` account (same credentials) so the admin can own documents. Replaces PocketBase’s browser installer UI.
 2. **Passkey** *(optional)* — offer to add a [passkey](/passkeys) for the account just created. Skipping it changes nothing and the offer does not come back; a passkey can be added later from **More → Account**. The step is hidden on an address where a passkey cannot be created (an IP address, or plain HTTP outside `localhost`).
-3. **Providers** — a choice of **Cloud** or **Fully local**. **Cloud** is the guided form of [Guided AI provider setup](/guided_ai_setup): a Mistral key (OCR and embeddings) and one other language-model provider, both created in a single submit. Either half may be left blank; **Add a provider manually instead** falls back to the one-at-a-time form, which is the way to a ChatGPT sign-in, a `google_vision` key, or `docling`/`local`, the keyless sidecars. **Fully local** asks only for the address of a Mac running [Lemmary Local AI](/local_ai_macos), and step 4 then arrives with all three jobs bound to it.
+3. **Providers** — a choice of **Cloud** or **Fully local**. **Cloud** is the guided form of [Guided AI provider setup](/guided_ai_setup): a Mistral key (OCR and embeddings) and one other language-model provider, both created in a single submit. Either half may be left blank; **Add a provider manually instead** falls back to the one-at-a-time form, which is the way to a ChatGPT sign-in, a `google_vision` key, or `docling`/`local`, the keyless sidecars. **Fully local** asks only for the address of a Mac or a Linux machine running [Lemmary Local AI](/local_ai_macos), and step 4 then arrives with all three jobs bound to it.
 4. **Models** — pick provider → model for OCR and General AI (everything a language model does), and optionally for embeddings. All three arrive prefilled when the providers came from the guided form; embeddings can be set to **None**, and setup is complete without them.
 
 Steps 3 and 4 are skipped when `.env` already carries the keys — see
@@ -355,7 +355,7 @@ Marking a possible duplicate reviewed says it is not one, and keeps both as docu
 
 Text extraction:
 
-- **PDF and images** — configured OCR provider (Google Vision, Mistral Document OCR, an OpenAI/OpenRouter model that accepts files/images, or the [local Docling sidecar](/local_ocr))
+- **PDF and images** — configured OCR provider (Google Vision, Mistral Document OCR, an OpenAI/OpenRouter model that accepts files/images, or [Lemmary Local AI](/local_ai_macos))
 - **TXT, CSV, DOCX, XLSX** — native parsers (no OCR API call); preview is skipped for these formats. A DOCX or XLSX whose text runs past what `ocr_text` can hold fails the document rather than being stored short; see [the page ceiling](#the-page-ceiling)
 
 Cron jobs are visible and manually triggerable in PocketBase Admin → Settings → Crons.

@@ -59,9 +59,9 @@ const (
 	// row bound to OCR would only fail on the first uploaded document.
 	SDKTavily = "tavily"
 
-	// SDKLemmaryLocalAI is the Lemmary Local AI menu bar app
-	// (github.com/buldezir/lemmary-local-ai): embeddings, OCR and an optional
-	// text model behind one OpenAI-compatible /v1 on a Mac on the LAN. Its own
+	// SDKLemmaryLocalAI is Lemmary Local AI (github.com/buldezir/lemmary-local-ai),
+	// a Mac app or a Linux server for an NVIDIA GPU: embeddings, OCR and an
+	// optional text model behind one OpenAI-compatible /v1 on the LAN. Its own
 	// SDK rather than an `openai` row because it needs no key, has no default
 	// address, and its /v1/models names each model's job in `purposes`.
 	SDKLemmaryLocalAI = "lemmary_local_ai"
@@ -229,8 +229,9 @@ func ModellessOCRSDKs() []string {
 }
 
 // DefaultOCRModel is the model an SDK reads documents with when none is named.
-// Empty means the language model reads them. Lemmary Local AI runs Apple Vision
-// only for this id and hands any other to its text model.
+// Empty means the language model reads them. Lemmary Local AI runs its OCR
+// engine only for an OCR id and hands any other to its text model; the Mac's id
+// is the one both its Mac and Linux versions answer to.
 func DefaultOCRModel(sdk string) string {
 	if strings.TrimSpace(sdk) == SDKLemmaryLocalAI {
 		return "apple-vision-ocr"
@@ -255,11 +256,11 @@ func DefaultBaseURL(sdk string) string {
 	case SDKChatGPT:
 		return "https://chatgpt.com/backend-api/codex"
 	case SDKLocalEmbeddings:
-		// The service name in docker-compose.embeddings.yml, so the default is
-		// right for the overlay and inert for anyone not running it.
+		// A sidecar named `embeddings` on the compose network; inert for anyone
+		// not running one.
 		return "http://embeddings:80/v1"
-	// The sidecar service name and port from docker-compose.local-ocr.yml, so
-	// OCR_SDK=docling alone is a complete configuration for that overlay.
+	// A docling-serve sidecar named `docling` on the compose network, on its
+	// own port.
 	case SDKDocling:
 		return "http://docling:5001"
 	case SDKTavily:

@@ -547,8 +547,8 @@ func TestResearchModelRidesOnTheLLMProvider(t *testing.T) {
 	}
 }
 
-// Lemmary Local AI runs Apple Vision only for apple-vision-ocr, so OCR riding
-// the language model's row must not inherit AI_MODEL.
+// Lemmary Local AI runs its OCR engine only for an OCR id, so OCR riding the
+// language model's row must not inherit AI_MODEL.
 func TestLemmaryLocalAISeedsWithoutAKeyAndReadsWithVision(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAISDK, aiprovider.SDKLemmaryLocalAI)
@@ -573,6 +573,15 @@ func TestLemmaryLocalAISeedsWithoutAKeyAndReadsWithVision(t *testing.T) {
 	}
 	if got := env.Providers.OCRModel(); got != "apple-vision-ocr" {
 		t.Fatalf("ocr model with OCR_SDK = %q, want apple-vision-ocr", got)
+	}
+
+	t.Setenv(EnvOCRModel, "lightonocr-2")
+	env, err = AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv with OCR_MODEL: %v", err)
+	}
+	if got := env.Providers.OCRModel(); got != "lightonocr-2" {
+		t.Fatalf("ocr model with OCR_MODEL = %q, want lightonocr-2", got)
 	}
 }
 

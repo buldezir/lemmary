@@ -214,24 +214,16 @@ OpenMP starten standardmäßig jeweils einen Thread pro Kern, und das in einem
 Prozess, der bereits gleichzeitig Anfragen bedient; je ein Thread verhindert, dass
 eine Vektorsuche auf einer kleinen Maschine den Rest des Servers ausbremst.
 
-## Lokale OCR {#local-ocr}
+## Lokale KI {#local-ai}
 
-Standardmäßig ist OCR eine gehostete API, was bedeutet, dass jeder Scan zu
-jemand anderem hochgeladen wird. Ein zweites Overlay verlegt die OCR-Engine
-stattdessen auf diesen Host – ein Sidecar-Container ohne veröffentlichten Port und
-ohne API-Schlüssel:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml \
-  --profile docling up -d
-```
-
-Danach `OCR_SDK=docling` in `.env` auf einem frischen Volume oder ein
-Docling-Anbieter unter **Admin → KI → Anbieter** auf einer Instanz, die bereits
-gestartet wurde. Umsonst ist das nicht: ein Image von mehreren Gigabyte, mehrere
-Gigabyte RAM und Sekunden pro Seite statt Millisekunden. Lesen Sie zuerst
-[Lokale OCR](/de/local_ocr), insbesondere den Abschnitt zum Timeout, der erhöht
-werden muss.
+Standardmäßig sind OCR, Embeddings und Extraktion gehostete APIs, was bedeutet,
+dass jeder Scan zu jemand anderem hochgeladen wird.
+[Lemmary Local AI](https://github.com/buldezir/lemmary-local-ai) stellt stattdessen
+alle drei von Ihrer eigenen Hardware bereit, als ein Anbieter ohne
+API-Schlüssel: auf [einem Mac mit Apple Silicon](/de/local_ai_macos) oder auf
+[einem Linux-Rechner mit NVIDIA-GPU](/de/local_ai_linux), wo es auch ein
+Docker-Image gibt. Fügen Sie ihn unter **Admin → KI → Anbieter** hinzu, oder
+wählen Sie im Einrichtungsassistenten **Vollständig lokal**.
 
 ## Verschlüsselung im Ruhezustand {#encryption-at-rest}
 
@@ -249,34 +241,3 @@ Container und veröffentlicht den Port nur noch auf Loopback. Lesen Sie
 [Verschlüsselung im Ruhezustand](/de/encryption), bevor Sie sie aktivieren: Wer
 jedes Kontopasswort *und* den Wiederherstellungscode verliert, verliert das
 Archiv, und es gibt keine Möglichkeit für den Betreiber, das zu umgehen.
-
-## Lokale Embeddings {#local-embeddings}
-
-Deep Research kann Dokumente nach Bedeutung finden statt nur nach
-Schlüsselwörtern, wofür ein Embedding-Modell nötig ist. Zwei weitere Overlays
-betreiben eines auf diesem Host, statt jeden Abschnitt jedes Dokuments an einen
-gehosteten Anbieter zu senden:
-
-```bash
-# CPU, runs anywhere
-docker compose -f docker-compose.yml -f docker-compose.embeddings.yml up -d
-
-# NVIDIA GPU -- instead of the CPU file, not alongside it
-docker compose -f docker-compose.yml -f docker-compose.embeddings-gpu.yml up -d
-```
-
-Sie fügen einen Sidecar ohne veröffentlichten Port hinzu und binden ihn an, ohne
-sonst etwas zu ändern: OCR, Extraktion und Chat bleiben, wo sie waren. Overlays
-lassen sich stapeln, daher lassen sich Verschlüsselung und lokale Embeddings
-kombinieren:
-
-```bash
-docker compose -f docker-compose.yml \
-               -f docker-compose.encrypted.yml \
-               -f docker-compose.embeddings.yml up -d
-```
-
-Planen Sie zusätzlich zu den Vektoren das Modell ein – ~2,2 GB Gewichte für das
-standardmäßige `BAAI/bge-m3` – und beachten Sie, dass die Vektoren selbst unter
-einem Tresor im tmpfs liegen. Siehe [Embeddings auf eigener
-Hardware](/de/local_embeddings).

@@ -298,24 +298,19 @@ export function keylessProviderHint(sdk?: string) {
   // stands where this hint would.
   if (requiresAPIKey(sdk) || requiresSignIn(sdk)) return ''
   if (sdk === 'lemmary_local_ai') return t('providers.lemmaryLocalAiHint')
-  const overlay = sdk === 'local' ? 'docker-compose.embeddings.yml' : 'docker-compose.local-ocr.yml'
-  return t('providers.keylessHint', { overlay })
+  return t('providers.keylessHint')
 }
 
 /**
  * The guide for setting up an SDK: its own page where one exists, else the
- * provider overview. Neither sidecar answers until its compose overlay is up.
+ * provider overview.
  *
  * The `.html` is load-bearing: VitePress has no cleanUrls and the static
  * handler in appwire/wire.go never tries an .html suffix, so a bare
- * /docs/local_ocr falls through to the SPA.
+ * /docs/google_vision falls through to the SPA.
  */
 export function providerDocs(sdk?: string) {
   switch (sdk) {
-    case 'local':
-      return { href: docsUrl('local_embeddings.html'), label: t('providers.docsLocalEmbeddings') }
-    case 'docling':
-      return { href: docsUrl('local_ocr.html'), label: t('providers.docsLocalOcr') }
     case 'lemmary_local_ai':
       return { href: docsUrl('local_ai_macos.html'), label: 'Lemmary Local AI' }
     case 'google_vision':
@@ -353,10 +348,7 @@ export function recommendedModel(sdk: string | undefined, purpose: ModelPurpose)
   if (sdk === 'opencode' && purpose === 'llm') return 'gpt-6-luna'
   if (sdk === 'anthropic' && purpose !== 'embedding') return 'claude-opus-5'
   if (sdk === 'local' && purpose === 'embedding') return 'BAAI/bge-m3'
-  if (sdk === 'lemmary_local_ai') {
-    if (purpose === 'ocr') return 'apple-vision-ocr'
-    if (purpose === 'embedding') return 'BAAI/bge-m3'
-  }
+  if (sdk === 'lemmary_local_ai' && purpose === 'embedding') return 'BAAI/bge-m3'
   return ''
 }
 

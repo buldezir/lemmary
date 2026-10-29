@@ -284,15 +284,12 @@ ist.
   tmpfs in `docker-compose.encrypted.yml` entsprechend, bevor Sie
   `AI_EMBEDDING_MODEL` einschalten, und siehe
   [KI-Anbieter](/de/ai_providers#what-embeddings-cost).
-- Ein [Embedding-Modell, das Sie selbst betreiben](/de/local_embeddings), kostet
-  RAM an einer *zweiten*, separaten Stelle: im eigenen Container des Sidecars,
-  ~2,2 GB Gewichte für das standardmäßige `BAAI/bge-m3`. Dieser Speicher liegt
-  außerhalb des `mem_limit` des `app`-Containers und außerhalb des tmpfs, belastet
-  also das Budget des Hosts, statt mit dem des Tresors zu konkurrieren – aber es
-  ist derselbe RAM, und ein Host, der exakt für eine verschlüsselte Instanz
-  bemessen ist, hat dafür nichts übrig. Die Modellwahl entscheidet außerdem über
-  die oben genannte Anzahl der Dimensionen, und genau dort zahlt sich ein lokales
-  Modell mit 1024 oder 384 Dimensionen doppelt aus.
+- Ein [Embedding-Modell, das Sie selbst betreiben](/de/local_ai_linux), hält
+  seine Gewichte im Arbeitsspeicher der Maschine, auf der es läuft, außerhalb des
+  `mem_limit` des `app`-Containers und außerhalb des tmpfs. Die Modellwahl
+  entscheidet weiterhin über die oben genannte Anzahl der Dimensionen: Die 1024
+  von `BAAI/bge-m3` kosten weniger vom Tresor als die 1536 eines gehosteten
+  Modells.
 - Nichts am Vektorindex kostet einen API-Aufruf. Wie der Textindex ist er
   abgeleitete Daten, die innerhalb des Tresors aus den Vektoren in `data.db` neu
   aufgebaut werden – ein Entsperren, eine Wiederherstellung oder ein geleertes

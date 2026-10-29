@@ -49,7 +49,7 @@ abgeschlossen ist:
 
 1. **Admin anlegen** – E-Mail + Passwort. Legt ein PocketBase-Konto `_superusers` **und** ein passendes `users`-Konto (mit denselben Zugangsdaten) an, damit der Admin Dokumente besitzen kann. Ersetzt die Browser-Installer-Oberfläche von PocketBase.
 2. **Passkey** *(optional)* – bietet an, einen [Passkey](/de/passkeys) für das soeben angelegte Konto hinzuzufügen. Das Überspringen ändert nichts, und das Angebot kommt nicht wieder; ein Passkey lässt sich später unter **Mehr → Konto** hinzufügen. Der Schritt wird auf einer Adresse ausgeblendet, unter der kein Passkey erstellt werden kann (eine IP-Adresse oder reines HTTP außerhalb von `localhost`).
-3. **Anbieter** – die Wahl zwischen **Cloud** und **Vollständig lokal**. **Cloud** ist das geführte Formular aus der [geführten Einrichtung der KI-Anbieter](/de/guided_ai_setup): ein Mistral-Schlüssel (OCR und Embeddings) und ein weiterer Anbieter für Sprachmodelle, beide mit einem einzigen Absenden angelegt. Jede Hälfte darf leer bleiben; **Stattdessen einen Anbieter manuell hinzufügen** wechselt zum Formular für jeweils einen Anbieter, dem Weg zu einer ChatGPT-Anmeldung, einem `google_vision`-Schlüssel oder `docling`/`local`, den schlüssellosen Sidecars. **Vollständig lokal** fragt nur nach der Adresse eines Macs mit [Lemmary Local AI](/de/local_ai_macos), und Schritt 4 kommt dann mit allen drei Aufgaben daran gebunden.
+3. **Anbieter** – die Wahl zwischen **Cloud** und **Vollständig lokal**. **Cloud** ist das geführte Formular aus der [geführten Einrichtung der KI-Anbieter](/de/guided_ai_setup): ein Mistral-Schlüssel (OCR und Embeddings) und ein weiterer Anbieter für Sprachmodelle, beide mit einem einzigen Absenden angelegt. Jede Hälfte darf leer bleiben; **Stattdessen einen Anbieter manuell hinzufügen** wechselt zum Formular für jeweils einen Anbieter, dem Weg zu einer ChatGPT-Anmeldung, einem `google_vision`-Schlüssel oder `docling`/`local`, den schlüssellosen Sidecars. **Vollständig lokal** fragt nur nach der Adresse eines Macs oder Linux-Rechners mit [Lemmary Local AI](/de/local_ai_macos), und Schritt 4 kommt dann mit allen drei Aufgaben daran gebunden.
 4. **Modelle** – wählen Sie Anbieter → Modell für OCR und Allgemeine KI (alles, was ein Sprachmodell tut) und optional für Embeddings. Alle drei sind vorausgefüllt, wenn die Anbieter aus dem geführten Formular stammen; Embeddings lassen sich auf **Keiner** setzen, und die Einrichtung ist auch ohne sie abgeschlossen.
 
 Die Schritte 3 und 4 werden übersprungen, wenn `.env` die Schlüssel bereits
@@ -362,7 +362,7 @@ Ein mögliches Duplikat als geprüft zu markieren besagt, dass es keines ist, un
 
 Textextraktion:
 
-- **PDF und Bilder** – konfigurierter OCR-Anbieter (Google Vision, Mistral Document OCR, ein OpenAI-/OpenRouter-Modell, das Dateien/Bilder akzeptiert, oder der [lokale Docling-Sidecar](/de/local_ocr))
+- **PDF und Bilder** – konfigurierter OCR-Anbieter (Google Vision, Mistral Document OCR, ein OpenAI-/OpenRouter-Modell, das Dateien/Bilder akzeptiert, oder [Lemmary Local AI](/de/local_ai_macos))
 - **TXT, CSV, DOCX, XLSX** – native Parser (kein Aufruf einer OCR-API); die Vorschau entfällt bei diesen Formaten. Ein DOCX oder XLSX, dessen Text über das hinausgeht, was `ocr_text` fassen kann, lässt das Dokument fehlschlagen, statt gekürzt gespeichert zu werden; siehe [die Seitenobergrenze](#the-page-ceiling)
 
 Cron-Jobs sind in PocketBase Admin → Settings → Crons sichtbar und lassen sich dort manuell auslösen.

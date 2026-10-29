@@ -4,7 +4,8 @@
 bar app that runs Lemmary's embeddings, OCR and an optional text model on an
 Apple Silicon Mac, so documents never leave your network. Lemmary itself runs
 elsewhere (a VM, a Linux server, anything with Docker) and reaches the Mac over
-the LAN.
+the LAN. For a machine with an NVIDIA GPU, see [Lemmary Local AI on
+Linux](/local_ai_linux).
 
 **[Download the latest release](https://github.com/buldezir/lemmary-local-ai/releases/latest)**
 
