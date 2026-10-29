@@ -68,7 +68,7 @@ export const de: Catalog = {
   'processing.failed': 'Verarbeitung fehlgeschlagen',
   'processing.notStarted': 'Noch nicht gestartet',
   'processing.notStartedHint':
-    'Prüfen Sie, ob die OCR- und KI-Anbieter in den Einstellungen konfiguriert sind.',
+    'Prüfen Sie, ob die OCR- und KI-Anbieter in den Einstellungen konfiguriert sind, und auf der Seite Aktivität, ob die Verarbeitung pausiert.',
   'processing.running': 'Verarbeitung läuft',
   'processing.runningFor': 'Verarbeitung läuft — {duration}',
 
@@ -257,6 +257,7 @@ export const de: Catalog = {
   'maintenanceApi.backfillLoadFailed': 'Status der Embedding-Nachberechnung konnte nicht geladen werden',
   'maintenanceApi.pruneFailed': 'Bereinigung veralteter Daten fehlgeschlagen',
   'maintenanceApi.stopQueueFailed': 'Die Warteschlange konnte nicht angehalten werden',
+  'maintenanceApi.queueHoldFailed': 'Der Status der Warteschlange konnte nicht geladen werden',
   'maintenanceApi.discardFailed': 'Die unverarbeiteten Dokumente konnten nicht gelöscht werden',
 
   'ai.responseFailed': 'KI-Antwort konnte nicht abgerufen werden',
@@ -755,6 +756,9 @@ export const de: Catalog = {
   'activity.title': 'Aktivität',
   'activity.intro':
     'Was die Pipeline mit Ihren Dokumenten macht und was angehalten wurde oder fehlgeschlagen ist. Kürzlich abgebrochene und fehlgeschlagene Aufträge bleiben aufgelistet, damit abgeschlossene Arbeit hier auffindbar bleibt.',
+  'activity.heldSchedule': 'Die Verarbeitung pausiert außerhalb der festgelegten Zeiten. Sie wird um {time} ({zone}) fortgesetzt.',
+  'activity.heldOffline':
+    'Die Verarbeitung pausiert: Der KI-Server antwortet nicht. Sie wird von selbst fortgesetzt, sobald er wieder erreichbar ist.',
   'activity.stopping': 'Wird angehalten...',
   'activity.stopAll': 'Alle anhalten',
   'activity.deleting': 'Wird gelöscht...',
@@ -1428,6 +1432,18 @@ export const de: Catalog = {
     'z. B. Behandle „Invoice“ als Dokumenttyp Rechnung.\nVersieh jedes Versicherungsdokument mit der Policennummer als Tag.',
   'settingsProcessing.extractionRulesHint':
     'Ihre eigenen Anweisungen, ergänzt im Prompt, der die Metadaten aus einem Dokument liest – hauseigene Konventionen für Titel, Typen, Korrespondenten oder Tags. Sie ändern nicht, welche Felder gespeichert werden. Gilt für Dokumente, die ab jetzt verarbeitet oder erneut verarbeitet werden; leer lassen für den eingebauten Prompt allein.',
+  'settingsProcessing.scheduleTitle': 'Verarbeitungszeiten',
+  'settingsProcessing.scheduleHint':
+    'Für einen KI-Server, der nicht rund um die Uhr läuft. Sind beide Optionen aktiv, wird nur verarbeitet, wenn beide es zulassen, und Uploads warten bis dahin in der Warteschlange. Ein Dokument, das gerade verarbeitet wird, läuft zu Ende; eines, das abbricht, weil der Server wegfällt, kommt zurück in die Warteschlange.',
+  'settingsProcessing.windowEnabled': 'Nur zu festgelegten Zeiten verarbeiten',
+  'settingsProcessing.windowHint':
+    'Täglich zwischen Start- und Endzeit. Liegt der Start nach dem Ende, reicht das Fenster über Mitternacht, etwa 22:00 bis 07:00.',
+  'settingsProcessing.windowStart': 'Von',
+  'settingsProcessing.windowEnd': 'Bis',
+  'settingsProcessing.timezone': 'Zeitzone',
+  'settingsProcessing.pingEnabled': 'Nur verarbeiten, solange der KI-Server antwortet',
+  'settingsProcessing.pingHint':
+    'Solange Dokumente warten, werden die Adressen der Anbieter für OCR, Allgemeine KI und Embeddings einmal pro Minute geprüft. Jede Antwort zählt, außer 502, 503 oder 504 von einem Proxy vor einem ausgeschalteten Server.',
 
   'settingsIngest.everyDay': 'täglich',
   'settingsIngest.everyHour': 'stündlich',

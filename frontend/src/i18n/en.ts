@@ -66,7 +66,8 @@ export const en = {
   'processing.stepFailed': '{step} failed',
   'processing.failed': 'Processing failed',
   'processing.notStarted': 'Not started yet',
-  'processing.notStartedHint': 'Check that the OCR and AI providers are configured in Settings.',
+  'processing.notStartedHint':
+    'Check that the OCR and AI providers are configured in Settings, and on the Activity page whether processing is paused.',
   'processing.running': 'Processing',
   'processing.runningFor': 'Processing — {duration}',
 
@@ -243,6 +244,7 @@ export const en = {
   'maintenanceApi.backfillLoadFailed': 'Failed to load the embedding backfill state',
   'maintenanceApi.pruneFailed': 'Stale data cleanup failed',
   'maintenanceApi.stopQueueFailed': 'Could not stop the queue',
+  'maintenanceApi.queueHoldFailed': 'Could not load the queue status',
   'maintenanceApi.discardFailed': 'Could not delete the unprocessed documents',
 
   'ai.responseFailed': 'Failed to get AI response',
@@ -723,6 +725,9 @@ export const en = {
   'activity.title': 'Activity',
   'activity.intro':
     'What the pipeline is doing to your documents, and what stopped or went wrong. Recent cancellations and failures stay listed so terminal work is still here to be found.',
+  'activity.heldSchedule': 'Processing is paused outside its set hours. It resumes at {time} ({zone}).',
+  'activity.heldOffline':
+    'Processing is paused: the AI server is not answering. It resumes on its own once the server is back.',
   'activity.stopping': 'Stopping...',
   'activity.stopAll': 'Stop all',
   'activity.deleting': 'Deleting...',
@@ -1358,6 +1363,18 @@ export const en = {
     'e.g. Treat "Rechnung" as the document type Invoice.\nTag every insurance document with the policy number.',
   'settingsProcessing.extractionRulesHint':
     'Your own instructions, added to the prompt that reads metadata out of a document — house conventions for titles, types, correspondents or tags. They cannot change which fields are stored. Applies to documents processed or reprocessed from now on; leave empty for the built-in prompt alone.',
+  'settingsProcessing.scheduleTitle': 'Processing hours',
+  'settingsProcessing.scheduleHint':
+    'For an AI server that is not up around the clock. With both on, documents are processed only when both allow it, and uploads wait in the queue until then. A document already being processed finishes; one cut off by the server going away goes back to the queue.',
+  'settingsProcessing.windowEnabled': 'Only process during set hours',
+  'settingsProcessing.windowHint':
+    'Every day between the start and end time. A start after the end runs past midnight, such as 22:00 to 07:00.',
+  'settingsProcessing.windowStart': 'From',
+  'settingsProcessing.windowEnd': 'Until',
+  'settingsProcessing.timezone': 'Timezone',
+  'settingsProcessing.pingEnabled': 'Only process while the AI server answers',
+  'settingsProcessing.pingHint':
+    "While documents wait, the OCR, General AI and embedding providers' addresses are checked once a minute. Any answer counts except a 502, 503 or 504 from a proxy in front of a server that is off.",
 
   'settingsIngest.everyDay': 'day',
   'settingsIngest.everyHour': 'hour',

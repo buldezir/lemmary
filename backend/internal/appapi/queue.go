@@ -10,7 +10,9 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 
+	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/worker"
 )
 
 // stopReason lands in the job's error field, so a stopped job says why it is in
@@ -34,6 +36,28 @@ type discardResult struct {
 	// Remaining is what a delete error left behind, so the page can say the
 	// sweep was partial.
 	Remaining int `json:"remaining"`
+}
+
+type queueHold struct {
+	// worker.HoldSchedule, worker.HoldOffline, or empty while jobs may run.
+	Hold string `json:"hold"`
+	// For a schedule hold: the window's "15:04" start in its IANA zone, empty
+	// being UTC.
+	ResumesAt string `json:"resumes_at,omitempty"`
+	Timezone  string `json:"timezone,omitempty"`
+}
+
+// handleGetQueueHold tells the Activity page why pending jobs are not moving.
+// Status never pings, so polling this cannot reach the AI server.
+func handleGetQueueHold(rt *config.Runtime, gate *worker.Gate) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		res := queueHold{Hold: gate.Status()}
+		if res.Hold == worker.HoldSchedule {
+			window := rt.Snapshot().Cfg.ProcessingWindow
+			res.ResumesAt, res.Timezone = window.Start, window.Timezone
+		}
+		return writeJSON(e, http.StatusOK, res)
+	}
 }
 
 // handlePostStopQueue stops the queue, not the pipeline: runner.Run has no

@@ -48,6 +48,12 @@ type settingsResponse struct {
 	NearDuplicateDetectionEnabled bool    `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        float64 `json:"near_duplicate_threshold"`
 	AlwaysRequireReview           bool    `json:"always_require_review"`
+	// The processing schedule: "15:04" times in an IANA zone, empty being UTC.
+	ProcessingWindowEnabled bool   `json:"processing_window_enabled"`
+	ProcessingWindowStart   string `json:"processing_window_start"`
+	ProcessingWindowEnd     string `json:"processing_window_end"`
+	ProcessingTimezone      string `json:"processing_timezone"`
+	ProcessingPingEnabled   bool   `json:"processing_ping_enabled"`
 	// The consume folder. Owner empty means the first admin's paired account.
 	IngestDirOwner          string `json:"ingest_dir_owner"`
 	IngestDirIntervalMin    int    `json:"ingest_dir_interval_min"`
@@ -92,6 +98,11 @@ type settingsPatchRequest struct {
 	NearDuplicateDetectionEnabled *bool     `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        *float64  `json:"near_duplicate_threshold"`
 	AlwaysRequireReview           *bool     `json:"always_require_review"`
+	ProcessingWindowEnabled       *bool     `json:"processing_window_enabled"`
+	ProcessingWindowStart         *string   `json:"processing_window_start"`
+	ProcessingWindowEnd           *string   `json:"processing_window_end"`
+	ProcessingTimezone            *string   `json:"processing_timezone"`
+	ProcessingPingEnabled         *bool     `json:"processing_ping_enabled"`
 	IngestDirOwner                *string   `json:"ingest_dir_owner"`
 	IngestDirIntervalMin          *int      `json:"ingest_dir_interval_min"`
 	IngestDirDeleteOriginal       *bool     `json:"ingest_dir_delete_original"`
@@ -108,7 +119,8 @@ type settingsPatchRequest struct {
 	Accent                        *string   `json:"accent"`
 }
 
-// touchesManaged is true for the same fields ApplyManaged rewrites. Languages,
+// touchesManaged is true for the same fields ApplyManaged rewrites, and for the
+// processing schedule, which is about an AI server the host runs. Languages,
 // the prompt version and always_require_review are tenant-owned; see AIEnv.
 func (r settingsPatchRequest) touchesManaged() bool {
 	return r.OCRProviderID != nil ||
@@ -125,7 +137,12 @@ func (r settingsPatchRequest) touchesManaged() bool {
 		r.OCRTimeoutSec != nil ||
 		r.OpenAITimeoutSec != nil ||
 		r.WorkerTimeoutSec != nil ||
-		r.WorkerMaxRetries != nil
+		r.WorkerMaxRetries != nil ||
+		r.ProcessingWindowEnabled != nil ||
+		r.ProcessingWindowStart != nil ||
+		r.ProcessingWindowEnd != nil ||
+		r.ProcessingTimezone != nil ||
+		r.ProcessingPingEnabled != nil
 }
 
 func handleGetSettings(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
@@ -285,6 +302,11 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		NearDuplicateDetectionEnabled: cfg.NearDuplicateDetectionEnabled,
 		NearDuplicateThreshold:        threshold,
 		AlwaysRequireReview:           cfg.AlwaysRequireReview,
+		ProcessingWindowEnabled:       cfg.ProcessingWindow.Enabled,
+		ProcessingWindowStart:         cfg.ProcessingWindow.Start,
+		ProcessingWindowEnd:           cfg.ProcessingWindow.End,
+		ProcessingTimezone:            cfg.ProcessingWindow.Timezone,
+		ProcessingPingEnabled:         cfg.ProcessingPing,
 		IngestDirOwner:                cfg.IngestDirOwner,
 		IngestDirIntervalMin:          cfg.IngestDirIntervalMin,
 		IngestDirDeleteOriginal:       cfg.IngestDirDeleteOriginal,
@@ -309,6 +331,9 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 		return err
 	}
 	if err := applyProcessingPatch(record, req); err != nil {
+		return err
+	}
+	if err := applyProcessingSchedulePatch(record, req); err != nil {
 		return err
 	}
 	if err := applyIngestDirPatch(app, record, req); err != nil {
@@ -410,6 +435,52 @@ func applyProcessingPatch(record *core.Record, req settingsPatchRequest) error {
 	}
 	if req.AlwaysRequireReview != nil {
 		record.Set("always_require_review", *req.AlwaysRequireReview)
+	}
+	return nil
+}
+
+func applyProcessingSchedulePatch(record *core.Record, req settingsPatchRequest) error {
+	for _, clock := range []struct {
+		field string
+		value *string
+	}{
+		{"processing_window_start", req.ProcessingWindowStart},
+		{"processing_window_end", req.ProcessingWindowEnd},
+	} {
+		if clock.value == nil {
+			continue
+		}
+		value := strings.TrimSpace(*clock.value)
+		if _, err := config.ParseClock(value); value != "" && err != nil {
+			return errInvalid("%s must be a time such as 22:00", clock.field)
+		}
+		record.Set(clock.field, value)
+	}
+	if req.ProcessingTimezone != nil {
+		zone := strings.TrimSpace(*req.ProcessingTimezone)
+		// "Local" is whatever the container was started with, which is not a
+		// zone anyone meant to pick.
+		if _, err := time.LoadLocation(zone); err != nil || zone == "Local" {
+			return errInvalid("Unknown timezone %q.", zone)
+		}
+		record.Set("processing_timezone", zone)
+	}
+	if req.ProcessingWindowEnabled != nil {
+		record.Set("processing_window_enabled", *req.ProcessingWindowEnabled)
+	}
+	if req.ProcessingPingEnabled != nil {
+		record.Set("processing_ping_enabled", *req.ProcessingPingEnabled)
+	}
+	if !record.GetBool("processing_window_enabled") {
+		return nil
+	}
+	start, errStart := config.ParseClock(record.GetString("processing_window_start"))
+	end, errEnd := config.ParseClock(record.GetString("processing_window_end"))
+	if errStart != nil || errEnd != nil {
+		return errInvalid("Processing hours need a start and an end time.")
+	}
+	if start == end {
+		return errInvalid("Processing hours must start and end at different times.")
 	}
 	return nil
 }
