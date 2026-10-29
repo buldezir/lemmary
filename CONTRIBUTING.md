@@ -65,7 +65,7 @@ without being reprocessed. A PDF that fails to parse shows no count instead of
 
 ### Bug reports
 
-Include:
+The **Bug report** issue template asks for:
 
 - the version you run (shown in the page footer)
 - how you run it: Docker or from source, and which AI and OCR providers

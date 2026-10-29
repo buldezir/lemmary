@@ -1,0 +1,24 @@
+name: Bug report
+description: Something in Lemmary doesn't work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: setup
+    attributes:
+      label: Version and setup
+      description: Version from the page footer; Docker or from source; which AI and OCR providers.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: From a fresh page load. Then what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Anything relevant, with API keys, tokens and personal data removed.
+      render: shell
