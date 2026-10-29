@@ -17,10 +17,9 @@ The expensive part is knowing that the diff is right:
 - making sure existing installs upgrade cleanly: migrations, settings, stored data
 - testing the change by hand in the running app, beyond what the suites cover
 
-A pull request skips none of that. Verifying someone else's diff, 
-written without the context of where the project is
-going, costs more than generating the same change from a clear spec and
-verifying that. So the code in a PR isn't what's valuable. The understanding
+A pull request skips none of that. Verifying someone else's diff, written
+without the context of where the project is going, costs more than generating
+the same change from a clear spec and verifying that. So the code in a PR isn't what's valuable. The understanding
 behind it is, and that fits better in an issue.
 
 ## How to contribute
@@ -33,44 +32,35 @@ questions, it's a great issue.
 ### Feature requests and changes
 
 Write it as a prompt for an agent. The **Feature or change** issue template
-asks for these parts:
+asks for three parts:
 
 - **Goal.** What you're trying to do, and why. One or two sentences.
-- **Current behaviour.** What happens today, with screens, settings or API
-  calls named exactly.
-- **Wanted behaviour.** What should happen instead. Be concrete: labels,
-  defaults, what an admin sees and what a regular user sees.
-- **Where.** Screens, endpoints, settings or files involved, if you know them.
-  Optional.
-- **Acceptance.** How to check it's done: steps a person could follow and what
-  they'd see at the end.
-- **Edge cases.** Empty states, large inputs, other languages, file types,
-  providers, existing documents created before the change.
-- **Out of scope.** What this should *not* change.
+- **Behaviour.** What happens today and what should happen instead. Name
+  screens, settings or API calls exactly; be concrete about labels, defaults,
+  what an admin sees and what a regular user sees. Mention the files or
+  endpoints involved if you know them.
+- **Acceptance.** Steps a person could follow to check it's done and what
+  they'd see at the end. Include edge cases (empty states, large inputs, other
+  languages, file types, providers, documents created before the change) and
+  what this should *not* change.
 
 A short example:
 
 ```markdown
 **Goal:** See how long a document is without opening it.
 
-**Current behaviour:** Document cards in the list show the title, date, tags
-and either the summary or a preview of the first page. The page count is only
-visible inside the PDF viewer.
-
-**Wanted behaviour:** PDF cards show "12 pages" next to the date. Single-page
-PDFs show "1 page". Images and other files show nothing.
-
-**Where:** The document list and its cards (`frontend/src/components/DocumentCard.tsx`).
-The PDF split tool already counts pages, so there may be something to reuse.
+**Behaviour:** Document cards in the list show the title, date, tags and either
+the summary or a preview of the first page; the page count is only visible
+inside the PDF viewer. PDF cards should show "12 pages" next to the date, and
+"1 page" for single-page PDFs. Images and other files show nothing. The cards
+live in `frontend/src/components/DocumentCard.tsx`, and the PDF split tool
+already counts pages, so there may be something to reuse.
 
 **Acceptance:** Upload a 3-page PDF and a JPEG. The PDF's card shows "3 pages";
 the JPEG's card shows no count. Switching the UI to German or Russian
-translates the label.
-
-**Edge cases:** Documents uploaded before this change get a count without being
-reprocessed. A PDF that fails to parse shows no count instead of "0 pages".
-
-**Out of scope:** Sorting or filtering by page count.
+translates the label. Documents uploaded before this change get a count
+without being reprocessed. A PDF that fails to parse shows no count instead of
+"0 pages". Sorting or filtering by page count is out of scope.
 ```
 
 ### Bug reports
