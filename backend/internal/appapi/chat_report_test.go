@@ -2,6 +2,7 @@ package appapi
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,5 +75,38 @@ func TestChatReportIsLaidOutFromTheStoredConversation(t *testing.T) {
 	}
 	if rec := getChatReport(t, app, other, session.Id, doc.ID()); rec.Code != http.StatusNotFound {
 		t.Errorf("another account's report = %d, want 404", rec.Code)
+	}
+}
+
+// The longest report create_pdf accepts, in markup that escapes worst, is
+// still stored whole and still found.
+func TestTheLongestReportIsStoredAndFound(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "owner@example.com")
+	session, err := chat.CreateSession(app, chat.NewSession{UserID: owner, Kind: chat.KindSearch, Mode: chat.ModeResearch, FirstMessage: "A long report"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := "| \"Acme\" | 1 200 € | <b> |\n"
+	doc := report.Document{Title: "Long", Content: strings.Repeat(line, report.MaxContentBytes/len(line))}
+	if err := doc.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	arguments, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []chat.ThreadEntry{
+		{Role: chat.RoleUser, Content: "A long report"},
+		{Role: chat.RoleAssistant, Calls: []ai.ToolCall{{ID: "1", Name: "create_pdf", Arguments: string(arguments)}}},
+		{Role: chat.RoleTool, CallID: "1", Content: "{}"},
+	} {
+		if _, err := chat.AppendThreadMessage(app, owner, session.Id, entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if rec := getChatReport(t, app, owner, session.Id, doc.ID()); rec.Code != http.StatusOK {
+		t.Fatalf("a report at the length limit = %d, want 200", rec.Code)
 	}
 }

@@ -11,14 +11,15 @@ import (
 func TestChartNormalizeRefusesWhatCannotBeDrawn(t *testing.T) {
 	t.Parallel()
 	cases := map[string]Chart{
-		"type must be":          {Type: "radar", Title: "t", Labels: []string{"a"}, Series: []Series{{Values: []float64{1}}}},
-		"title is required":     {Type: "bar", Labels: []string{"a"}, Series: []Series{{Values: []float64{1}}}},
-		"1 values for 2":        {Type: "bar", Title: "t", Labels: []string{"a", "b"}, Series: []Series{{Values: []float64{1}}}},
-		"needs a name":          {Type: "line", Title: "t", Labels: []string{"a"}, Series: []Series{{Values: []float64{1}}, {Name: "b", Values: []float64{2}}}},
-		"exactly one series":    {Type: "pie", Title: "t", Labels: []string{"a"}, Series: []Series{{Name: "a", Values: []float64{1}}, {Name: "b", Values: []float64{2}}}},
-		"negative":              {Type: "pie", Title: "t", Labels: []string{"a", "b"}, Series: []Series{{Values: []float64{3, -1}}}},
-		"total above zero":      {Type: "pie", Title: "t", Labels: []string{"a"}, Series: []Series{{Values: []float64{0}}}},
-		"series must have 1 to": {Type: "bar", Title: "t", Labels: []string{"a"}},
+		"type must be":           {Type: "radar", Title: "t", Labels: []string{"a"}, Series: []Series{{Values: []float64{1}}}},
+		"title is required":      {Type: "bar", Labels: []string{"a"}, Series: []Series{{Values: []float64{1}}}},
+		"1 values for 2":         {Type: "bar", Title: "t", Labels: []string{"a", "b"}, Series: []Series{{Values: []float64{1}}}},
+		"needs a name":           {Type: "line", Title: "t", Labels: []string{"a"}, Series: []Series{{Values: []float64{1}}, {Name: "b", Values: []float64{2}}}},
+		"exactly one series":     {Type: "pie", Title: "t", Labels: []string{"a"}, Series: []Series{{Name: "a", Values: []float64{1}}, {Name: "b", Values: []float64{2}}}},
+		"negative":               {Type: "pie", Title: "t", Labels: []string{"a", "b"}, Series: []Series{{Values: []float64{3, -1}}}},
+		"total above zero":       {Type: "pie", Title: "t", Labels: []string{"a"}, Series: []Series{{Values: []float64{0}}}},
+		"series must have 1 to":  {Type: "bar", Title: "t", Labels: []string{"a"}},
+		"between -1e15 and 1e15": {Type: "line", Title: "t", Labels: []string{"a"}, Series: []Series{{Values: []float64{1e16}}}},
 	}
 	for want, chart := range cases {
 		err := chart.Normalize()
@@ -61,10 +62,38 @@ func TestNiceTicksAndNumbers(t *testing.T) {
 	if !slices.Equal(ticks, []float64{0, 20, 40, 60, 80, 100}) {
 		t.Fatalf("ticks = %v", ticks)
 	}
-	for v, want := range map[float64]string{0: "0", 0.6000000000000001: "0.6", 950: "950", 1234: "1.23K", 12900: "12.9K", -3400000: "-3.4M"} {
+	for v, want := range map[float64]string{0: "0", 0.6000000000000001: "0.6", 950: "950", 1234: "1.23K", 12900: "12.9K", -3400000: "-3.4M", 1e-99: "0"} {
 		if got := formatNumber(v); got != want {
 			t.Errorf("formatNumber(%v) = %q, want %q", v, got, want)
 		}
+	}
+}
+
+// Ranges a float step cannot walk -- a flat series far from zero, a sliver of
+// a range at 1e15 -- must still end, with at least two distinct ticks.
+func TestNiceTicksEndOnRangesFloatsCannotStep(t *testing.T) {
+	t.Parallel()
+	for _, r := range [][2]float64{{1e16, 1e16}, {MaxValue, MaxValue}, {-MaxValue, MaxValue}, {1e15, 1e15 + 0.125}, {0, 5e-324}, {7, 7}} {
+		ticks := niceTicks(r[0], r[1])
+		if len(ticks) < 2 || len(ticks) > 21 || ticks[len(ticks)-1] <= ticks[0] {
+			t.Errorf("niceTicks(%v, %v) = %v", r[0], r[1], ticks)
+		}
+	}
+}
+
+func TestBarsKeepAWidthAtTheLimits(t *testing.T) {
+	t.Parallel()
+	w, gap := barWidth(160.0/MaxPoints, MaxSeries)
+	if w <= 0 || w-gap <= 0 {
+		t.Fatalf("bar width %v with gap %v at %d labels and %d series", w, gap, MaxPoints, MaxSeries)
+	}
+}
+
+func TestChartsAreDrawnWhereverALinePlacesThem(t *testing.T) {
+	t.Parallel()
+	got := chartsOnOwnLines("Spend fell ![Spend](chart:c0123456789) last year.")
+	if !slices.Contains(strings.Split(got, "\n"), "![Spend](chart:c0123456789)") {
+		t.Fatalf("embed not on a line of its own: %q", got)
 	}
 }
 

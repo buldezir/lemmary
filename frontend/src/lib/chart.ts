@@ -22,6 +22,9 @@ export const CHART_COLORS = [
   '#e34948',
 ]
 
+/** The largest value a chart takes, as report.MaxValue on the server. */
+const MAX_VALUE = 1e15
+
 /** The chart in a ```chart block, or null when it is not one this page can draw. */
 export function parseChart(source: string): ChartSpec | null {
   let spec: ChartSpec
@@ -40,9 +43,23 @@ export function parseChart(source: string): ChartSpec | null {
       (s) =>
         Array.isArray(s.values) &&
         s.values.length === spec.labels.length &&
-        s.values.every((v) => typeof v === 'number' && Number.isFinite(v)),
+        s.values.every((v) => typeof v === 'number' && Math.abs(v) <= MAX_VALUE),
     )
-  return drawable ? spec : null
+  return drawable && (spec.type !== 'pie' || drawablePie(spec.series)) ? spec : null
+}
+
+function drawablePie(series: ChartSpec['series']) {
+  return series.length === 1 && series[0].values.every((v) => v >= 0) && series[0].values.some((v) => v > 0)
+}
+
+/**
+ * One bar's slot in a band shared by n series, and the gap that separates it
+ * from its neighbour. The gap shrinks with the bar, so a crowded chart still
+ * has a bar to draw.
+ */
+export function barWidth(band: number, n: number): [number, number] {
+  const w = Math.min((band * 0.72) / n, 24)
+  return [w, Math.min(2, w / 3)]
 }
 
 /** The value range the axis shows; bars grow from zero, so it always includes zero for them. */
@@ -53,23 +70,27 @@ export function extent(spec: ChartSpec): [number, number] {
   return spec.type === 'bar' ? [Math.min(lo, 0), Math.max(hi, 0)] : [lo, hi]
 }
 
-/** About five round steps spanning lo..hi. */
+/**
+ * About five round steps spanning lo..hi. A range float steps cannot divide --
+ * too wide, too narrow, or too far from zero for its width -- gets its two ends
+ * instead.
+ */
 export function niceTicks(lo: number, hi: number): number[] {
-  if (hi <= lo) hi = lo + 1
+  if (hi <= lo) hi = lo + Math.max(1, Math.abs(lo))
   const raw = (hi - lo) / 5
   const unit = 10 ** Math.floor(Math.log10(raw))
   const step = ([1, 2, 5].find((f) => raw <= f * unit) ?? 10) * unit
-  const ticks: number[] = []
-  for (let i = Math.floor(lo / step); i <= Math.ceil(hi / step); i++) {
-    ticks.push(i * step)
-  }
-  return ticks
+  const first = Math.floor(lo / step)
+  const n = Math.ceil(hi / step) - first
+  if (!(n >= 1 && n <= 20)) return [lo, hi]
+  const ticks = Array.from({ length: n + 1 }, (_, k) => (first + k) * step)
+  return ticks[n] > ticks[0] ? ticks : [lo, hi]
 }
 
 /** Three significant digits, trailing zeros dropped. */
 export function compact(v: number): string {
   if (v === 0) return '0'
-  const digits = Math.max(0, 2 - Math.floor(Math.log10(Math.abs(v))))
+  const digits = Math.min(12, Math.max(0, 2 - Math.floor(Math.log10(Math.abs(v)))))
   const s = v.toFixed(digits)
   return s.includes('.') ? s.replace(/\.?0+$/, '') : s
 }

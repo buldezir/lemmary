@@ -21,8 +21,13 @@ const (
 	// MaxSeries is the categorical palette's length: a ninth series would
 	// need a colour that is not in it.
 	MaxSeries = 8
-	// MaxContentBytes bounds one report's markdown.
-	MaxContentBytes = 200_000
+	// MaxValue bounds a charted value: past it, float axis steps stop being
+	// exact, and no figure in a personal archive is that large.
+	MaxValue = 1e15
+	// MaxContentBytes bounds one report's markdown. The report is stored as
+	// the arguments of the call that wrote it, escaped twice over, and has to
+	// fit chat.MaxToolCallsJSONBytes with room for the turn's other calls.
+	MaxContentBytes = 150_000
 )
 
 var ChartTypes = []string{"bar", "line", "pie"}
@@ -69,8 +74,8 @@ func (c *Chart) Normalize() error {
 			return fmt.Errorf("series %d has %d values for %d labels", i+1, len(s.Values), len(c.Labels))
 		}
 		for _, v := range s.Values {
-			if math.IsNaN(v) || math.IsInf(v, 0) {
-				return fmt.Errorf("series %d has a value that is not a number", i+1)
+			if math.IsNaN(v) || math.Abs(v) > MaxValue {
+				return fmt.Errorf("series %d has a value that is not a number between -1e15 and 1e15", i+1)
 			}
 		}
 	}

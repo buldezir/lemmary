@@ -1,5 +1,5 @@
 import { t } from '../i18n'
-import { CHART_COLORS, compact, extent, formatNumber, niceTicks, type ChartSpec } from '../lib/chart'
+import { barWidth, CHART_COLORS, compact, extent, formatNumber, niceTicks, type ChartSpec } from '../lib/chart'
 
 const W = 640
 const H = 240
@@ -123,7 +123,7 @@ function Axes({ spec }: { spec: ChartSpec }) {
 
 function Bars({ spec, band, y }: { spec: ChartSpec; band: number; y: (v: number) => number }) {
   const n = spec.series.length
-  const w = Math.min((band * 0.72) / n, 24)
+  const [w, gap] = barWidth(band, n)
   const start = (band - w * n) / 2
   const labelled = n === 1 && spec.labels.length <= VALUE_LABEL_LIMIT
   return spec.series.flatMap((series, s) =>
@@ -131,7 +131,7 @@ function Bars({ spec, band, y }: { spec: ChartSpec; band: number; y: (v: number)
       const bx = PAD.left + i * band + start + s * w
       return (
         <g key={`${s}-${i}`}>
-          {v !== 0 && <path d={barPath(bx + 1, w - 2, y(0), y(v))} fill={CHART_COLORS[s]} />}
+          {v !== 0 && <path d={barPath(bx + gap / 2, w - gap, y(0), y(v))} fill={CHART_COLORS[s]} />}
           {labelled && (
             <text
               x={bx + w / 2}

@@ -97,8 +97,10 @@ const (
 	// several documents dwarfs any answer, and a truncated tool result is a
 	// corrupted one: the model would read half a JSON object as fact.
 	MaxThreadContentRunes = 400000
-	// MaxToolCallsJSONBytes bounds the calls one assistant turn may make.
-	MaxToolCallsJSONBytes = 64000
+	// MaxToolCallsJSONBytes bounds the calls one assistant turn may make. A
+	// research report is one of them (see report.MaxContentBytes); a call list
+	// over this is not stored at all.
+	MaxToolCallsJSONBytes = 1_000_000
 	MaxToolCallIDRunes    = 200
 	// MaxFiltersJSONBytes bounds the document filters a session remembers.
 	MaxFiltersJSONBytes = 16000

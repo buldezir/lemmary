@@ -110,7 +110,7 @@ func (r *renderer) xLabels(labels []string, x, y, band float64) {
 
 func (r *renderer) bars(c Chart, x, band float64, scale func(float64) float64) {
 	n := float64(len(c.Series))
-	w := min(band*0.72/n, 8)
+	w, gap := barWidth(band, len(c.Series))
 	start := (band - w*n) / 2
 	base := scale(0)
 	labelled := len(c.Series) == 1 && len(c.Labels) <= valueLabelLimit
@@ -124,7 +124,7 @@ func (r *renderer) bars(c Chart, x, band float64, scale func(float64) float64) {
 				corners = "34"
 			}
 			if h > 0 {
-				r.pdf.RoundedRect(bx+0.3, top, w-0.6, h, min(0.8, (w-0.6)/2, h), corners, "F")
+				r.pdf.RoundedRect(bx+gap/2, top, w-gap, h, min(0.8, (w-gap)/2, h), corners, "F")
 			}
 			if labelled {
 				r.pdf.SetFont(sans, "", 6.5)
@@ -232,10 +232,20 @@ func (r *renderer) fit(text string, w float64) string {
 	return string(runes) + "…"
 }
 
-// niceTicks spans lo..hi with about five round steps.
+// barWidth is one bar's slot in a band shared by n series, and the gap that
+// separates it from its neighbour. The gap shrinks with the bar, so a crowded
+// chart still has a bar to draw.
+func barWidth(band float64, n int) (w, gap float64) {
+	w = min(band*0.72/float64(n), 8)
+	return w, min(0.6, w/3)
+}
+
+// niceTicks spans lo..hi with about five round steps. A range float steps
+// cannot divide -- too wide, too narrow, or too far from zero for its width --
+// gets its two ends instead.
 func niceTicks(lo, hi float64) []float64 {
 	if hi <= lo {
-		hi = lo + 1
+		hi = lo + max(1, math.Abs(lo))
 	}
 	raw := (hi - lo) / 5
 	unit := math.Pow(10, math.Floor(math.Log10(raw)))
@@ -246,9 +256,17 @@ func niceTicks(lo, hi float64) []float64 {
 			break
 		}
 	}
-	var ticks []float64
-	for i := math.Floor(lo / step); i <= math.Ceil(hi/step); i++ {
-		ticks = append(ticks, i*step)
+	first := math.Floor(lo / step)
+	n := math.Ceil(hi/step) - first
+	if !(n >= 1 && n <= 20) {
+		return []float64{lo, hi}
+	}
+	ticks := make([]float64, 0, int(n)+1)
+	for k := range int(n) + 1 {
+		ticks = append(ticks, (first+float64(k))*step)
+	}
+	if ticks[len(ticks)-1] <= ticks[0] {
+		return []float64{lo, hi}
 	}
 	return ticks
 }
@@ -271,7 +289,7 @@ func compact(v float64) string {
 	if v == 0 {
 		return "0"
 	}
-	digits := max(0, 2-int(math.Floor(math.Log10(math.Abs(v)))))
+	digits := min(12, max(0, 2-int(math.Floor(math.Log10(math.Abs(v))))))
 	s := strconv.FormatFloat(v, 'f', digits, 64)
 	if strings.Contains(s, ".") {
 		s = strings.TrimRight(strings.TrimRight(s, "0"), ".")

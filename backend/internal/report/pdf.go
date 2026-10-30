@@ -80,7 +80,7 @@ func Render(doc Document, charts map[string]Chart) ([]byte, error) {
 	r.color(inkColor)
 	pdf.MultiCell(0, 8, doc.Title, "", "L", false)
 	pdf.Ln(4)
-	r.markdown(doc.Content)
+	r.markdown(chartsOnOwnLines(doc.Content))
 
 	var out bytes.Buffer
 	if err := pdf.Output(&out); err != nil {
@@ -132,6 +132,12 @@ func (r *renderer) markdown(src string) {
 		}
 	}
 	flush()
+}
+
+// chartsOnOwnLines moves every chart embed onto a line of its own, which is
+// where the layout draws one, wherever in a line the report put it.
+func chartsOnOwnLines(src string) string {
+	return ChartEmbed.ReplaceAllString(src, "\n\n$0\n\n")
 }
 
 // blockEnd is the index of the first line from start on that in does not
