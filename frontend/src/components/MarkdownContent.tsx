@@ -1,8 +1,43 @@
-import type { Components } from 'react-markdown'
-import ReactMarkdown from 'react-markdown'
+import { createContext, useContext, useState, type ComponentProps, type ReactNode } from 'react'
+import type { Components, ExtraProps } from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Link } from '@tanstack/react-router'
+import { t } from '../i18n'
+import { downloadChatReport } from '../lib/api/chats'
+import { parseChart } from '../lib/chart'
 import { documentLinkTarget } from '../lib/documentLink'
+import { saveBlob } from '../lib/download'
+import { Chart } from './Chart'
+
+/** The conversation the content belongs to: where the reports it links to are fetched from. */
+const ChatContext = createContext<string | undefined>(undefined)
+
+function MarkdownLink({ href, children }: ComponentProps<'a'>) {
+  const chatId = useContext(ChatContext)
+  const documentId = documentLinkTarget(href)
+  if (documentId) {
+    return (
+      <Link to="/document/$documentId" params={{ documentId }} className="underline hover:text-oxblood">
+        {children}
+      </Link>
+    )
+  }
+  if (href?.startsWith('pdf:')) {
+    return chatId ? (
+      <ReportLink chatId={chatId} reportId={href.slice(4)}>
+        {children}
+      </ReportLink>
+    ) : (
+      <>{children}</>
+    )
+  }
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="underline hover:text-oxblood">
+      {children}
+    </a>
+  )
+}
 
 const components: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
@@ -14,25 +49,7 @@ const components: Components = {
       {children}
     </blockquote>
   ),
-  a: ({ href, children }) => {
-    const documentId = documentLinkTarget(href)
-    if (documentId) {
-      return (
-        <Link
-          to="/document/$documentId"
-          params={{ documentId }}
-          className="underline hover:text-oxblood"
-        >
-          {children}
-        </Link>
-      )
-    }
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="underline hover:text-oxblood">
-        {children}
-      </a>
-    )
-  },
+  a: MarkdownLink,
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   h1: ({ children }) => <h1 className="mb-2 text-base font-semibold last:mb-0">{children}</h1>,
   h2: ({ children }) => <h2 className="mb-2 text-base font-semibold last:mb-0">{children}</h2>,
@@ -46,9 +63,19 @@ const components: Components = {
   thead: ({ children }) => <thead className="border-b border-line-strong">{children}</thead>,
   th: ({ children }) => <th className="px-2 py-1 font-semibold">{children}</th>,
   td: ({ children }) => <td className="border-t border-line px-2 py-1">{children}</td>,
-  pre: ({ children }) => (
-    <pre className="mb-2 overflow-x-auto rounded-xs bg-wash p-3 text-xs last:mb-0">{children}</pre>
-  ),
+  pre: ({ node, children }) => {
+    const chart = parseChart(chartSource(node) ?? '')
+    if (chart) return <Chart spec={chart} />
+    return <pre className="mb-2 overflow-x-auto rounded-xs bg-wash p-3 text-xs last:mb-0">{children}</pre>
+  },
+  // A chart the answer places is only a reference until the server swaps the
+  // chart in, which happens once the answer is complete.
+  img: ({ src, alt }) =>
+    typeof src === 'string' && src.startsWith('chart:') ? (
+      <span className="block text-xs text-ink-faint">{t('chart.drawing', { title: alt ?? '' })}</span>
+    ) : (
+      <img src={src} alt={alt} />
+    ),
   code: ({ className, children, ...props }) => {
     const isBlock = Boolean(className)
     if (isBlock) {
@@ -66,10 +93,60 @@ const components: Components = {
   },
 }
 
-export function MarkdownContent({ content }: { content: string }) {
+/** The text of a ```chart block, which react-markdown hands over as a code element in a pre. */
+function chartSource(node: ExtraProps['node']): string | null {
+  const code = node?.children[0]
+  if (code?.type !== 'element' || code.tagName !== 'code') return null
+  const classes = code.properties.className
+  if (!Array.isArray(classes) || !classes.includes('language-chart')) return null
+  const text = code.children[0]
+  return text?.type === 'text' ? text.value : null
+}
+
+const artifactRef = /^(chart|pdf):[a-z0-9]+$/
+
+function urlTransform(url: string) {
+  return artifactRef.test(url) ? url : defaultUrlTransform(url)
+}
+
+/**
+ * A report the answer links to. Fetched rather than linked because the route
+ * needs the session token, which a plain link cannot carry.
+ */
+function ReportLink({ chatId, reportId, children }: { chatId: string; reportId: string; children: ReactNode }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle')
+  const name = typeof children === 'string' ? children : 'report.pdf'
+  const download = async () => {
+    setState('busy')
+    try {
+      saveBlob(await downloadChatReport(chatId, reportId), name.endsWith('.pdf') ? name : `${name}.pdf`)
+      setState('idle')
+    } catch {
+      setState('failed')
+    }
+  }
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-      {content}
-    </ReactMarkdown>
+    <>
+      <button
+        type="button"
+        className="underline hover:text-oxblood disabled:opacity-60"
+        disabled={state === 'busy'}
+        onClick={() => void download()}
+      >
+        {children}
+      </button>
+      {state === 'failed' && <span className="ml-1 text-madder">{t('chats.reportFailed')}</span>}
+    </>
+  )
+}
+
+/** Without chatId a report link is plain text. */
+export function MarkdownContent({ content, chatId }: { content: string; chatId?: string }) {
+  return (
+    <ChatContext value={chatId}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={urlTransform}>
+        {content}
+      </ReactMarkdown>
+    </ChatContext>
   )
 }

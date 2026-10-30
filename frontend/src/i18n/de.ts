@@ -122,6 +122,8 @@ export const de: Catalog = {
   },
   'researchSteps.readWebPages': 'Webseiten gelesen',
   'researchSteps.answerWritten': 'Antwort geschrieben',
+  'researchSteps.charted': 'Diagramm „{title}“ erstellt',
+  'researchSteps.wroteReport': 'Bericht „{title}“ geschrieben',
 
   'contextUsage.tokens': '{used} Tokens',
   'contextUsage.tokensOfWindow': '{used} / {window} Tokens ({percent} %)',
@@ -288,6 +290,7 @@ export const de: Catalog = {
   'chats.renameFailed': 'Der Chat konnte nicht umbenannt werden',
   'chats.forkFailed': 'Der Chat konnte nicht abgezweigt werden',
   'chats.deleteFailed': 'Der Chat konnte nicht gelöscht werden',
+  'chats.reportFailed': 'Der Bericht konnte nicht heruntergeladen werden',
   'chats.newChat': 'Neuer Chat',
 
   'passkeys.loadFailed': 'Passkeys konnten nicht geladen werden',
@@ -420,6 +423,9 @@ export const de: Catalog = {
 
   'chatTranscript.label': 'Chatverlauf',
   'chatTranscript.loading': 'Chat wird geladen...',
+  'chart.showData': 'Daten anzeigen',
+  'chart.value': 'Wert',
+  'chart.drawing': 'Diagramm: {title}',
 
   'documentBulkBar.hintReprocess':
     'Wählen Sie fehlgeschlagene oder abgebrochene Dokumente zum erneuten Verarbeiten aus.',

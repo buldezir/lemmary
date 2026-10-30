@@ -1,5 +1,7 @@
 import { t } from '../../i18n'
 import { apiFetch, ConnectionLostError, HttpError, sleep } from '../apiClient'
+import { ensureAuth } from '../auth'
+import { pb, pbUrl } from '../pb'
 import type { ContextUsage } from '../contextUsage'
 import type { DocumentQueryInput } from '../documentQuery'
 import { foldSteps, type ResearchStep, type StoredResearchStep } from '../researchSteps'
@@ -282,6 +284,17 @@ export async function forkChatSession(id: string, upto?: string): Promise<ChatSe
     },
   )
   return data.session
+}
+
+/** A PDF report a research answer links to. */
+export async function downloadChatReport(sessionId: string, reportId: string): Promise<Blob> {
+  await ensureAuth()
+  const path = `/api/app/chats/${encodeURIComponent(sessionId)}/reports/${encodeURIComponent(reportId)}`
+  const response = await fetch(`${pbUrl}${path}`, { headers: { Authorization: pb.authStore.token } })
+  if (!response.ok) {
+    throw new Error(t('chats.reportFailed'))
+  }
+  return response.blob()
 }
 
 export function deleteChatSession(id: string) {

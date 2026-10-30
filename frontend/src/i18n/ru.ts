@@ -158,6 +158,8 @@ export const ru: Catalog = {
   },
   'researchSteps.readWebPages': 'Веб-страницы прочитаны',
   'researchSteps.answerWritten': 'Ответ написан',
+  'researchSteps.charted': 'Построен график «{title}»',
+  'researchSteps.wroteReport': 'Написан отчёт «{title}»',
 
   'contextUsage.tokens': 'токенов: {used}',
   'contextUsage.tokensOfWindow': 'токенов: {used} / {window} ({percent}%)',
@@ -326,6 +328,7 @@ export const ru: Catalog = {
   'chats.renameFailed': 'Не удалось переименовать чат',
   'chats.forkFailed': 'Не удалось создать ответвление чата',
   'chats.deleteFailed': 'Не удалось удалить чат',
+  'chats.reportFailed': 'Не удалось скачать отчёт',
   'chats.newChat': 'Новый чат',
 
   'passkeys.loadFailed': 'Не удалось загрузить ключи доступа',
@@ -462,6 +465,9 @@ export const ru: Catalog = {
 
   'chatTranscript.label': 'История чата',
   'chatTranscript.loading': 'Загрузка чата...',
+  'chart.showData': 'Показать данные',
+  'chart.value': 'Значение',
+  'chart.drawing': 'График: {title}',
 
   'documentBulkBar.hintReprocess':
     'Выберите документы с ошибкой или отменённые, чтобы обработать их заново.',

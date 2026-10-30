@@ -273,7 +273,7 @@ export function ResearchPage() {
               {draft && (
                 <div className="flex justify-start">
                   <div className="max-w-[85%] rounded-none border border-line bg-paper px-4 py-2.5 text-sm leading-relaxed text-ink">
-                    <MarkdownContent content={draft} />
+                    <MarkdownContent content={draft} chatId={ws.sessionId} />
                   </div>
                 </div>
               )}

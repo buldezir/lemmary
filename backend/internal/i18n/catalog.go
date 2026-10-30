@@ -593,6 +593,10 @@ var catalog = map[string]map[string]string{
 		"de": "Neuindizierung fehlgeschlagen.",
 		"ru": "Не удалось переиндексировать.",
 	},
+	"Report not found.": {
+		"de": "Bericht nicht gefunden.",
+		"ru": "Отчёт не найден.",
+	},
 	"Reprocess failed.": {
 		"de": "Neuverarbeitung fehlgeschlagen.",
 		"ru": "Не удалось выполнить повторную обработку.",
@@ -712,6 +716,10 @@ var catalog = map[string]map[string]string{
 	"The passkey response could not be read.": {
 		"de": "Die Passkey-Antwort konnte nicht gelesen werden.",
 		"ru": "Не удалось прочитать ответ ключа доступа.",
+	},
+	"The report could not be created.": {
+		"de": "Der Bericht konnte nicht erstellt werden.",
+		"ru": "Не удалось создать отчёт.",
 	},
 	"The research filters match more than %d documents. Narrow them.": {
 		"de": "Die Recherchefilter treffen auf mehr als %d Dokumente zu. Schränken Sie sie ein.",

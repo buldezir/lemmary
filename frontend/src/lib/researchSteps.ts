@@ -154,6 +154,10 @@ function doneLabel(event: StoredResearchStep, fallback?: string) {
         ? t('researchSteps.readTitles', { titles: shortList(hosts) })
         : (fallback ?? t('researchSteps.readWebPages'))
     }
+    case 'chart':
+      return t('researchSteps.charted', { title: query ?? '' })
+    case 'pdf':
+      return t('researchSteps.wroteReport', { title: query ?? '' })
     default:
       return t('researchSteps.answerWritten')
   }

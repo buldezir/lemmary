@@ -115,6 +115,8 @@ export const en = {
   },
   'researchSteps.readWebPages': 'Read web pages',
   'researchSteps.answerWritten': 'Answer written',
+  'researchSteps.charted': 'Charted “{title}”',
+  'researchSteps.wroteReport': 'Wrote the report “{title}”',
 
   'contextUsage.tokens': '{used} tokens',
   'contextUsage.tokensOfWindow': '{used} / {window} tokens ({percent}%)',
@@ -275,6 +277,7 @@ export const en = {
   'chats.renameFailed': 'Failed to rename the chat',
   'chats.forkFailed': 'Failed to fork the chat',
   'chats.deleteFailed': 'Failed to delete the chat',
+  'chats.reportFailed': 'Failed to download the report',
   'chats.newChat': 'New chat',
 
   'passkeys.loadFailed': 'Failed to load passkeys',
@@ -402,6 +405,9 @@ export const en = {
 
   'chatTranscript.label': 'Chat transcript',
   'chatTranscript.loading': 'Loading chat...',
+  'chart.showData': 'Show the data',
+  'chart.value': 'Value',
+  'chart.drawing': 'Chart: {title}',
 
   'documentBulkBar.hintReprocess': 'Select failed or cancelled documents to reprocess.',
   'documentBulkBar.hintReview': 'Select documents to mark reviewed.',

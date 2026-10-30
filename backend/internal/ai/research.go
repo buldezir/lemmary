@@ -136,7 +136,7 @@ type ResearchResult struct {
 // "delta", "documents", "message", "usage", "error", "done".
 type ResearchEvent struct {
 	Type   string   `json:"type"`
-	Kind   string   `json:"kind,omitempty"`   // search | read | survey | count | answer
+	Kind   string   `json:"kind,omitempty"`   // search | read | survey | count | chart | pdf | answer
 	Status string   `json:"status,omitempty"` // start | progress | done
 	Query  string   `json:"query,omitempty"`
 	Titles []string `json:"titles,omitempty"`
@@ -185,6 +185,9 @@ type researchState struct {
 	question string
 	// web is this run's remaining web-call allowance; see maxWebCalls.
 	web webBudget
+	// artifacts are the charts and reports of the whole conversation, earlier
+	// turns' included, so this answer can embed one an earlier turn made.
+	artifacts *Artifacts
 }
 
 func newResearchState(prior []DocumentHit) *researchState {
@@ -196,6 +199,7 @@ func newResearchState(prior []DocumentHit) *researchState {
 		readParts: map[string]struct{}{},
 		ran:       map[string]struct{}{},
 		prior:     map[string]DocumentHit{},
+		artifacts: newArtifacts(),
 	}
 	state.seedPrior(prior)
 	return state
@@ -252,6 +256,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	if state.question == "" {
 		return ResearchResult{}, fmt.Errorf("at least one user message is required")
 	}
+	state.artifacts = ThreadArtifacts(thread)
 
 	meter := newContextMeter(req.ContextWindow)
 	run := &researchRun{
@@ -268,7 +273,8 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "start"})
-	reply, incomplete, answerUsage, err := a.answerResearch(ctx, run.messages, run.tools, req.Web != nil, meter, emit)
+	instruction := researchAnswerInstruction(req.Web != nil, !state.artifacts.empty())
+	reply, incomplete, answerUsage, err := a.answerResearch(ctx, run.messages, run.tools, instruction, meter, emit)
 	if err != nil {
 		return ResearchResult{}, err
 	}
@@ -282,7 +288,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		"completion_tokens", run.usage.Completion,
 	)
 
-	reply = validateCitations(reply, state.seenIDs)
+	reply = state.artifacts.Embed(validateCitations(reply, state.seenIDs))
 	state.adoptCitedPrior(reply)
 	if strings.TrimSpace(reply) == "" {
 		reply = synthesizeSearchReply(state.hits)
@@ -321,6 +327,8 @@ func researchRunTools() []openai.ChatCompletionToolUnionParam {
 		countDocumentsTool(),
 		webSearchTool(),
 		webFetchTool(),
+		createChartTool(),
+		createPDFTool(),
 	)
 }
 
@@ -448,11 +456,10 @@ func (a *openAISearchAgent) answerResearch(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
 	tools []openai.ChatCompletionToolUnionParam,
-	web bool,
+	instruction string,
 	meter *contextMeter,
 	emit func(ResearchEvent),
 ) (reply string, incomplete bool, usage Usage, err error) {
-	instruction := researchAnswerInstruction(web)
 	meter.grew(len(instruction))
 	// Deferred so every exit reports, the partial answer and the blocking
 	// fallback included: the prompt was sent whatever became of the reply.
@@ -540,6 +547,10 @@ func (a *openAISearchAgent) runResearchTool(
 		return a.runCountTool(ctx, req, state, callID, name, argumentsJSON, emit)
 	case "web_search", "web_fetch":
 		return runWebTool(ctx, req.Web, &state.web, callID, name, argumentsJSON, emit)
+	case "create_chart":
+		return runChartTool(state, callID, name, argumentsJSON, emit)
+	case "create_pdf":
+		return runPDFTool(state, callID, name, argumentsJSON, emit)
 	default:
 		return toolExecResult{
 			ID:      callID,
@@ -938,7 +949,7 @@ func ScopeNote(scope int) string {
 		"Earlier answers may cite documents outside it, which can no longer be read. Say so when it matters to the answer.]", scope)
 }
 
-func researchAnswerInstruction(web bool) string {
+func researchAnswerInstruction(web, artifacts bool) string {
 	instruction := `Stop searching and reading. Do not call any tools and do not output tool markup.
 Write the final answer for the user now, in markdown, using only what the tool results above actually contain.
 Cite each claim with a markdown link to the document it came from: [Document title](/document/<id>), using ids from the tool results.
@@ -948,6 +959,10 @@ Answer in the same language as the user's latest message.`
 	if web {
 		instruction += `
 Cite a claim taken from the web as [Page title](https://...), with the URL the tool returned. Say which claims came from the web rather than from the archive.`
+	}
+	if artifacts {
+		instruction += `
+Put each chart you made for this answer on a line of its own, with the embed create_chart returned: ![title](chart:<id>). Link each PDF report you made with the link create_pdf returned: [title.pdf](pdf:<id>). Never invent a chart or report id.`
 	}
 	return instruction
 }
@@ -975,6 +990,9 @@ You can also reach the public web with web_search and web_fetch, for what the ar
 The archive is still the primary source. Search it first, and use the web to check or complete what you found there rather than instead of looking.
 A search result's snippet is a reason to fetch the page, not the whole of what it says: web_fetch before claiming what a page contains, exactly as you would read a document.
 Web calls are limited and billed; make them count.
+
+When figures are easier to see than to read -- counts by group, totals by month or year, the shares of a total -- make a chart of them with create_chart and embed it in the answer. Chart only figures the tool results gave you.
+When the user asks for a report, a document or a PDF, gather the evidence first, then write the report with create_pdf, embedding any charts, and link it in the answer.
 `)
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))

@@ -88,6 +88,8 @@ export type ResearchStepKind =
   | 'count'
   | 'web_search'
   | 'web_fetch'
+  | 'chart'
+  | 'pdf'
   | 'answer'
 
 export type ResearchEvent =

@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	cloud.google.com/go/vision/v2 v2.15.0
+	codeberg.org/go-pdf/fpdf v0.12.0
 	github.com/anthropics/anthropic-sdk-go v1.73.0
 	github.com/blevesearch/bleve/v2 v2.6.1
 	github.com/blevesearch/bleve_index_api v1.4.1
@@ -26,6 +27,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
 	golang.org/x/crypto v0.57.0
+	golang.org/x/image v0.46.0
 	golang.org/x/text v0.42.0
 	google.golang.org/api v0.298.0
 	google.golang.org/grpc v1.83.2
@@ -125,7 +127,6 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
-	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
