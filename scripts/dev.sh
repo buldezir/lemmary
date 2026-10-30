@@ -3,8 +3,8 @@
 #
 # The runner itself lives in the overlay repository (see scripts/overlay.sh);
 # this resolves it and tells it which tree to run. The overlay starts the
-# servers inside Docker (lemmary-verify:local) on the first free host port from
-# 8081 and prints the URL. LEMMARY_DEV_HOST=1 runs on the host instead.
+# servers inside Docker (lemmary-verify:local) behind a reverse proxy and prints
+# the URL. LEMMARY_DEV_HOST=1 runs on the host instead.
 # Options are passed straight through -- try --help.
 set -euo pipefail
 

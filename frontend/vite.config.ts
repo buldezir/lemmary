@@ -19,6 +19,9 @@ const backend = {
 const DOCS_PORT = 5174
 const docs = {
   target: `http://127.0.0.1:${DOCS_PORT}`,
+  // VitePress's own Vite refuses a Host it does not know, and dev.sh serves the
+  // page under a domain name behind a reverse proxy.
+  changeOrigin: true,
   // The docs client opens an HMR socket back through whatever origin served
   // the page, which is this one.
   ws: true,
