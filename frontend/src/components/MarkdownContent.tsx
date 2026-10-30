@@ -126,17 +126,20 @@ function ReportLink({ chatId, reportId, children }: { chatId: string; reportId: 
     }
   }
   return (
-    <>
+    <span className="my-2 flex flex-col gap-1 border-l-2 border-oxblood bg-bright px-3 py-2 font-medium">
       <button
         type="button"
-        className="underline hover:text-oxblood disabled:opacity-60"
+        className="self-start text-left text-oxblood underline underline-offset-4 hover:text-ink disabled:opacity-60"
         disabled={state === 'busy'}
         onClick={() => void download()}
       >
+        <span aria-hidden="true" className="inline-block w-4">
+          ↓
+        </span>
         {children}
       </button>
-      {state === 'failed' && <span className="ml-1 text-madder">{t('chats.reportFailed')}</span>}
-    </>
+      {state === 'failed' && <span className="text-xs font-normal text-madder">{t('chats.reportFailed')}</span>}
+    </span>
   )
 }
 
