@@ -141,11 +141,11 @@ func TestResearchEmitsWebSteps(t *testing.T) {
 func TestResearchAnswerInstructionAsksForWebCitationsOnlyWithTheWeb(t *testing.T) {
 	t.Parallel()
 
-	without := researchAnswerInstruction(false)
+	without := researchAnswerInstruction(false, false)
 	if strings.Contains(without, "https://") {
 		t.Fatalf("answer instruction asks for web citations with no web: %s", without)
 	}
-	with := researchAnswerInstruction(true)
+	with := researchAnswerInstruction(true, false)
 	if !strings.Contains(with, "https://") {
 		t.Errorf("answer instruction does not say how to cite a page: %s", with)
 	}

@@ -142,6 +142,24 @@ Models that emit tool calls in their content rather than natively (the DSML
 path) are told to answer after one round of tool results, so they cannot chain a
 count into a survey into a read; they get one tool round and the answer.
 
+## Charts and PDF reports
+
+Research can show figures as a chart and write a report to download as a PDF.
+
+- **`create_chart`.** A bar, line or pie chart of figures the run gathered,
+  such as a `count_documents` breakdown by year or survey totals by month. It is
+  drawn in the answer, with its figures under **Show the data**. Up to 100
+  labels and 8 series; a pie takes one series of at most 8 slices.
+- **`create_pdf`.** Asked for a report, a document or a PDF, the model writes
+  the report in markdown with its charts embedded, and the answer links to it.
+  The link downloads an A4 PDF. Cited documents print as their titles; web links
+  stay clickable.
+
+Neither is stored as a file. A chart or a report is named by a hash of the tool
+call that made it, and the PDF is laid out from the conversation on every
+download, so it is deleted with the chat and copied with a fork. A model on the
+DSML path gets one tool round, so its reports cannot embed a chart.
+
 ## Paths, chats and settings
 
 Each page is its own path — `/rag/search` and `/rag/research` — so which one a chat belongs to is carried by the URL and survives a reload, the back button, a bookmark and a shared link. `/rag` on its own redirects to AI assisted search.

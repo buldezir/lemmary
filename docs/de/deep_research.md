@@ -162,6 +162,27 @@ werden angewiesen, nach einer Runde Tool-Ergebnisse zu antworten, sodass sie
 keine Zählung an eine Sichtung und diese an einen Lesevorgang ketten können; sie
 erhalten eine Tool-Runde und dann die Antwort.
 
+## Diagramme und PDF-Berichte {#charts-and-pdf-reports}
+
+Research kann Zahlen als Diagramm zeigen und einen Bericht schreiben, den Sie
+als PDF herunterladen.
+
+- **`create_chart`.** Ein Balken-, Linien- oder Kreisdiagramm aus Zahlen, die
+  der Lauf gesammelt hat, etwa eine Aufschlüsselung von `count_documents` nach
+  Jahr oder Summen einer Sichtung nach Monat. Es wird in der Antwort gezeichnet,
+  seine Zahlen stehen unter **Daten anzeigen**. Bis zu 100 Beschriftungen und 8
+  Reihen; ein Kreisdiagramm nimmt eine Reihe mit höchstens 8 Segmenten.
+- **`create_pdf`.** Wird nach einem Bericht, einem Dokument oder einem PDF
+  gefragt, schreibt das Modell den Bericht in Markdown mit eingebetteten
+  Diagrammen, und die Antwort verlinkt ihn. Der Link lädt ein A4-PDF herunter.
+  Zitierte Dokumente erscheinen mit ihrem Titel; Weblinks bleiben anklickbar.
+
+Keines von beiden wird als Datei gespeichert. Ein Diagramm oder ein Bericht
+heißt nach einem Hash des Tool-Aufrufs, der ihn erzeugt hat, und das PDF wird bei
+jedem Download aus der Unterhaltung gesetzt; es wird also mit dem Chat gelöscht
+und mit einer Abzweigung kopiert. Ein Modell auf dem DSML-Pfad erhält eine
+Tool-Runde, daher können seine Berichte kein Diagramm einbetten.
+
 ## Pfade, Chats und Einstellungen {#paths-chats-and-settings}
 
 Jede Seite hat ihren eigenen Pfad – `/rag/search` und `/rag/research` –, sodass die Zugehörigkeit eines Chats in der URL steckt und ein Neuladen, die Zurück-Schaltfläche, ein Lesezeichen und einen geteilten Link übersteht. `/rag` allein leitet auf die KI-gestützte Suche weiter.

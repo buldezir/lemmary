@@ -21,6 +21,17 @@ describe('applyStep', () => {
     applyStep(steps, { kind: 'count', status: 'done', count: 2 })
     expect(steps[1].label).toBe('Counted 2 documents')
   })
+
+  // Charts and reports report only when they are made: there is no pending line.
+  it('names the chart and the report a run made', () => {
+    const steps: ResearchStep[] = []
+    applyStep(steps, { kind: 'chart', status: 'done', query: 'Spend by year' })
+    applyStep(steps, { kind: 'pdf', status: 'done', query: 'Spending 2025' })
+    expect(steps).toEqual([
+      { kind: 'chart', label: 'Charted “Spend by year”', done: true },
+      { kind: 'pdf', label: 'Wrote the report “Spending 2025”', done: true },
+    ])
+  })
 })
 
 describe('foldSteps', () => {

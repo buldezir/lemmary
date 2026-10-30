@@ -10,6 +10,8 @@ cloud.google.com/go/longrunning v1.2.0 h1:WjYH3YHBGCxGJP9M4dWGHBfXr/cFIjMkNgWcJj
 cloud.google.com/go/longrunning v1.2.0/go.mod h1:5KMQALFGOCtFoi2xSOA1u3H7WKlhmckgiyFw7+LGQp0=
 cloud.google.com/go/vision/v2 v2.15.0 h1:aTR1vj4++WtS9HD6YdGuoaYygMTJ873WaoV9sYjlQCc=
 cloud.google.com/go/vision/v2 v2.15.0/go.mod h1:DUdjdFkXqPvEoPC4WDYFvYCn0LlAZ4vVz29A0bXvW90=
+codeberg.org/go-pdf/fpdf v0.12.0 h1:g8E/1VqGqB2lZUUaqQrrTnA0IEJLPTTX1DZ0qS/ZmhU=
+codeberg.org/go-pdf/fpdf v0.12.0/go.mod h1:WJNJ2bvCj81rZBdhOf7lKOGoSl+OKMXcIcXqDcP8r5Y=
 github.com/RoaringBitmap/roaring/v2 v2.28.0 h1:DgbDUowq/upwAdbVCuH+aDrQ3dHonkRcRqn1TkCp/Xg=
 github.com/RoaringBitmap/roaring/v2 v2.28.0/go.mod h1:BZufmFbox589n3j5eOmyTaLSGXbRLc2LmQvjKjzSEGU=
 github.com/anthropics/anthropic-sdk-go v1.73.0 h1:brLt0oVV6LH0YcG6O6G3pBnIVDJQ/QPoXul+OJHXEFc=

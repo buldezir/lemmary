@@ -80,7 +80,7 @@ export function ChatTranscript({
                   : 'border border-line bg-paper text-ink'
               }`}
             >
-              {turn.role === 'user' ? turn.content : <MarkdownContent content={turn.content} />}
+              {turn.role === 'user' ? turn.content : <MarkdownContent content={turn.content} chatId={conversationId} />}
             </div>
           </div>
           {renderExtra?.(turn)}
