@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, type ComponentProps, type ReactNode } from 'react'
 import type { Components, ExtraProps } from 'react-markdown'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import { Link } from '@tanstack/react-router'
 import { t } from '../i18n'
@@ -143,11 +145,18 @@ function ReportLink({ chatId, reportId, children }: { chatId: string; reportId: 
   )
 }
 
-/** Without chatId a report link is plain text. */
-export function MarkdownContent({ content, chatId }: { content: string; chatId?: string }) {
+const htmlPlugins = [rehypeRaw, rehypeSanitize]
+
+/** Without chatId a report link is plain text. `html` renders embedded HTML, sanitized. */
+export function MarkdownContent({ content, chatId, html }: { content: string; chatId?: string; html?: boolean }) {
   return (
     <ChatContext value={chatId}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={urlTransform}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={html ? htmlPlugins : undefined}
+        components={components}
+        urlTransform={urlTransform}
+      >
         {content}
       </ReactMarkdown>
     </ChatContext>

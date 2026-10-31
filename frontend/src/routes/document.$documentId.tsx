@@ -1,4 +1,4 @@
-import { type SubmitEvent, useEffect, useRef, useState } from 'react'
+import { type ComponentProps, type ReactNode, type SubmitEvent, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ClientResponseError } from 'pocketbase'
 import { pb } from '../lib/pb'
@@ -51,6 +51,7 @@ import { ShareDialog, ShareSummary } from '../components/ShareDialog'
 import { RelatedDocuments } from '../components/RelatedDocuments'
 import { DocumentPreview } from '../components/DocumentPreview'
 import { useStoredFlag } from '../hooks/useStoredFlag'
+import { MarkdownContent } from '../components/MarkdownContent'
 import { useAppMeta } from '../hooks/useAppMeta'
 import { previewKind } from '../lib/documentPreview'
 import { anyJobRunning } from '../lib/api/jobs'
@@ -257,14 +258,19 @@ export function DocumentDetailPage() {
   const [retranslating, setRetranslating] = useState(false)
   const translating = translationWanted && (translation.loading || retranslating)
   const sideBySide = translationWanted && ocrView === 'both'
-  const ocrTextareaClass = `min-h-[28.8rem] font-mono text-xs leading-relaxed ${sideBySide ? 'sm:h-[57.6rem]' : ''}`
+  const [ocrMarkdownPreferred, setOcrMarkdown] = useStoredFlag('lemmary.ocrMarkdown', false)
+  const ocrMarkdown = ocrMarkdownPreferred && !editing
+  const [ocrExpanded, setOcrExpanded] = useState(false)
+  const ocrPaneSize = ocrExpanded ? 'h-full' : `min-h-[28.8rem] ${sideBySide ? 'sm:h-[57.6rem]' : ''}`
+  const ocrTextareaClass = `${ocrPaneSize} font-mono text-xs leading-relaxed`
+  const ocrMarkdownClass = `${textareaClass(false)} ${ocrPaneSize} ${ocrExpanded ? '' : 'h-[28.8rem]'} overflow-y-auto`
 
-  const originalOcrRef = useRef<HTMLTextAreaElement>(null)
-  const translatedOcrRef = useRef<HTMLTextAreaElement>(null)
+  const originalOcrRef = useRef<HTMLElement | null>(null)
+  const translatedOcrRef = useRef<HTMLElement | null>(null)
   // Setting the other pane's scrollTop fires its scroll event in turn; that
   // echo is skipped so the two panes do not fight over the position.
-  const scrollEcho = useRef<HTMLTextAreaElement | null>(null)
-  function syncOcrScroll(from: HTMLTextAreaElement | null, to: HTMLTextAreaElement | null) {
+  const scrollEcho = useRef<HTMLElement | null>(null)
+  function syncOcrScroll(from: HTMLElement | null, to: HTMLElement | null) {
     if (!sideBySide || !from || !to) {
       return
     }
@@ -1013,92 +1019,163 @@ export function DocumentDetailPage() {
             </label>
 
             <div className={`${labelClass} sm:col-span-2`}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span id="ocr-text-label">{t('documentPage.fieldOcr')}</span>
-                {canTranslate && (
-                  <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-                    {/* Kept in the layout while hidden, so on a narrow row its
-                        appearing cannot wrap the toggle onto another line. */}
-                    <button
-                      type="button"
-                      disabled={translating}
-                      onClick={() => void onRetranslate()}
-                      aria-label={t('documentPage.retranslate')}
-                      title={t('documentPage.retranslate')}
-                      className={`rounded-xs border border-line-strong bg-surface px-1.5 py-1 text-ink-muted transition-colors hover:bg-bright hover:text-ink disabled:opacity-50 ${
-                        ocrView === 'original' ? 'invisible' : ''
-                      }`}
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.75"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-4 w-4"
-                        aria-hidden="true"
+              <OcrFrame expanded={ocrExpanded} onClose={() => setOcrExpanded(false)}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span id="ocr-text-label">{t('documentPage.fieldOcr')}</span>
+                  {(hasOcrText || editing) && (
+                    <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setOcrExpanded(!ocrExpanded)}
+                        aria-label={t(ocrExpanded ? 'documentPage.ocrCollapse' : 'documentPage.ocrExpand')}
+                        title={t(ocrExpanded ? 'documentPage.ocrCollapse' : 'documentPage.ocrExpand')}
+                        className="rounded-xs border border-line-strong bg-surface px-1.5 py-1 text-ink-muted transition-colors hover:bg-bright hover:text-ink"
                       >
-                        <polyline points="23 4 23 10 17 10" />
-                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                      </svg>
-                    </button>
-                    <div role="group" aria-label={t('documentPage.ocrView')} className="flex">
-                      {(Object.keys(OCR_VIEW_LABELS) as OcrView[]).map((view) => (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.75"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-4 w-4"
+                          aria-hidden="true"
+                        >
+                          {ocrExpanded ? (
+                            <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+                          ) : (
+                            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                          )}
+                        </svg>
+                      </button>
+                      {!editing && (
                         <button
-                          key={view}
                           type="button"
-                          aria-pressed={ocrView === view}
-                          onClick={() => setOcrView(view)}
-                          className={`-ml-px border px-3 py-1 text-xs font-medium transition-colors first:ml-0 first:rounded-l-xs last:rounded-r-xs ${
-                            view === 'both' ? 'max-sm:hidden' : ''
-                          } ${view === 'translated' ? 'max-sm:rounded-r-xs' : ''} ${
-                            ocrView === view
-                              ? 'relative border-ink bg-ink text-paper hover:bg-oxblood'
+                          aria-pressed={ocrMarkdown}
+                          onClick={() => setOcrMarkdown(!ocrMarkdown)}
+                          className={`rounded-xs border px-3 py-1 text-xs font-medium transition-colors ${
+                            ocrMarkdown
+                              ? 'border-ink bg-ink text-paper hover:bg-oxblood'
                               : 'border-line-strong bg-surface text-ink-muted hover:bg-bright'
                           }`}
                         >
-                          {OCR_VIEW_LABELS[view]}
+                          {t('documentPage.ocrMarkdown')}
                         </button>
-                      ))}
+                      )}
+                      {canTranslate && (
+                        <>
+                          {/* Kept in the layout while hidden, so on a narrow row its
+                              appearing cannot wrap the toggle onto another line. */}
+                          <button
+                            type="button"
+                            disabled={translating}
+                            onClick={() => void onRetranslate()}
+                            aria-label={t('documentPage.retranslate')}
+                            title={t('documentPage.retranslate')}
+                            className={`rounded-xs border border-line-strong bg-surface px-1.5 py-1 text-ink-muted transition-colors hover:bg-bright hover:text-ink disabled:opacity-50 ${
+                              ocrView === 'original' ? 'invisible' : ''
+                            }`}
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.75"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            >
+                              <polyline points="23 4 23 10 17 10" />
+                              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                            </svg>
+                          </button>
+                          <div role="group" aria-label={t('documentPage.ocrView')} className="flex">
+                            {(Object.keys(OCR_VIEW_LABELS) as OcrView[]).map((view) => (
+                              <button
+                                key={view}
+                                type="button"
+                                aria-pressed={ocrView === view}
+                                onClick={() => setOcrView(view)}
+                                className={`-ml-px border px-3 py-1 text-xs font-medium transition-colors first:ml-0 first:rounded-l-xs last:rounded-r-xs ${
+                                  view === 'both' ? 'max-sm:hidden' : ''
+                                } ${view === 'translated' ? 'max-sm:rounded-r-xs' : ''} ${
+                                  ocrView === view
+                                    ? 'relative border-ink bg-ink text-paper hover:bg-oxblood'
+                                    : 'border-line-strong bg-surface text-ink-muted hover:bg-bright'
+                                }`}
+                              >
+                                {OCR_VIEW_LABELS[view]}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
-                  </div>
+                  )}
+                </div>
+                <div
+                  className={`${sideBySide ? 'grid gap-3 sm:grid-cols-2' : 'flex'} ${ocrExpanded ? 'min-h-0 flex-1' : ''}`}
+                >
+                  {!(translationWanted && ocrView === 'translated') &&
+                    (ocrMarkdown ? (
+                      <OcrMarkdownPane
+                        ref={(element) => {
+                          originalOcrRef.current = element
+                        }}
+                        aria-labelledby="ocr-text-label"
+                        className={ocrMarkdownClass}
+                        onScroll={() => syncOcrScroll(originalOcrRef.current, translatedOcrRef.current)}
+                        text={document.ocr_text ?? ''}
+                      />
+                    ) : (
+                      <textarea
+                        ref={(element) => {
+                          originalOcrRef.current = element
+                        }}
+                        rows={22}
+                        readOnly={!editing}
+                        aria-labelledby="ocr-text-label"
+                        className={`${textareaClass(editing)} ${ocrTextareaClass}`}
+                        onScroll={() => syncOcrScroll(originalOcrRef.current, translatedOcrRef.current)}
+                        value={document.ocr_text ?? ''}
+                        onChange={(event) => setDocument({ ...document, ocr_text: event.target.value })}
+                      />
+                    ))}
+                  {translationWanted &&
+                    (ocrMarkdown && !translating ? (
+                      <OcrMarkdownPane
+                        ref={(element) => {
+                          translatedOcrRef.current = element
+                        }}
+                        aria-label={t('documentPage.ocrTranslatedTo', { language: resultLanguage ?? '' })}
+                        className={ocrMarkdownClass}
+                        onScroll={() => syncOcrScroll(translatedOcrRef.current, originalOcrRef.current)}
+                        text={translation.data ?? ''}
+                      />
+                    ) : (
+                      <textarea
+                        ref={(element) => {
+                          translatedOcrRef.current = element
+                        }}
+                        rows={22}
+                        readOnly
+                        aria-label={t('documentPage.ocrTranslatedTo', { language: resultLanguage ?? '' })}
+                        className={`${textareaClass(false)} ${ocrTextareaClass}`}
+                        onScroll={() => syncOcrScroll(translatedOcrRef.current, originalOcrRef.current)}
+                        value={translating ? t('documentPage.translating') : (translation.data ?? '')}
+                      />
+                    ))}
+                </div>
+                {translationWanted && translation.error && !translating && (
+                  <span className="text-xs font-normal text-madder">{translation.error}</span>
                 )}
-              </div>
-              <div
-                className={sideBySide ? 'grid gap-3 sm:grid-cols-2' : 'flex'}
-              >
-                {!(translationWanted && ocrView === 'translated') && (
-                  <textarea
-                    ref={originalOcrRef}
-                    rows={22}
-                    readOnly={!editing}
-                    aria-labelledby="ocr-text-label"
-                    className={`${textareaClass(editing)} ${ocrTextareaClass}`}
-                    onScroll={() => syncOcrScroll(originalOcrRef.current, translatedOcrRef.current)}
-                    value={document.ocr_text ?? ''}
-                    onChange={(event) => setDocument({ ...document, ocr_text: event.target.value })}
-                  />
+                {editing && (
+                  <span className="text-xs font-normal text-ink-soft">{t('documentPage.ocrEditHint')}</span>
                 )}
-                {translationWanted && (
-                  <textarea
-                    ref={translatedOcrRef}
-                    rows={22}
-                    readOnly
-                    aria-label={t('documentPage.ocrTranslatedTo', { language: resultLanguage ?? '' })}
-                    className={`${textareaClass(false)} ${ocrTextareaClass}`}
-                    onScroll={() => syncOcrScroll(translatedOcrRef.current, originalOcrRef.current)}
-                    value={translating ? t('documentPage.translating') : (translation.data ?? '')}
-                  />
-                )}
-              </div>
-              {translationWanted && translation.error && !translating && (
-                <span className="text-xs font-normal text-madder">{translation.error}</span>
-              )}
-              {editing && (
-                <span className="text-xs font-normal text-ink-soft">{t('documentPage.ocrEditHint')}</span>
-              )}
+              </OcrFrame>
             </div>
 
             <div className="flex items-center gap-4 sm:col-span-2">
@@ -1264,6 +1341,29 @@ function fieldClass(editing: boolean) {
 
 function textareaClass(editing: boolean) {
   return `${fieldClass(editing)} min-h-48 resize-y`
+}
+
+function OcrFrame({ expanded, onClose, children }: { expanded: boolean; onClose: () => void; children: ReactNode }) {
+  if (!expanded) return children
+  return (
+    <dialog
+      ref={(dialog) => {
+        if (dialog && !dialog.open) dialog.showModal()
+      }}
+      onClose={onClose}
+      className="m-auto flex h-[calc(100dvh-2rem)] max-h-none w-[calc(100vw-2rem)] max-w-none flex-col gap-1.5 border border-line bg-surface p-4 text-sm font-medium text-ink-muted backdrop:bg-ink/40"
+    >
+      {children}
+    </dialog>
+  )
+}
+
+function OcrMarkdownPane({ text, ...props }: ComponentProps<'div'> & { text: string }) {
+  return (
+    <div role="region" tabIndex={0} {...props}>
+      <MarkdownContent content={text} html />
+    </div>
+  )
 }
 
 // Tailwind's xl, as a media query.

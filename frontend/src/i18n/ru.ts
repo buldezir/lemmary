@@ -1222,6 +1222,9 @@ export const ru: Catalog = {
   'documentPage.fieldOcr': 'OCR-текст',
   'documentPage.retranslate': 'Перевести заново',
   'documentPage.ocrView': 'Вид OCR-текста',
+  'documentPage.ocrMarkdown': 'Markdown',
+  'documentPage.ocrExpand': 'Открыть на весь экран',
+  'documentPage.ocrCollapse': 'Закрыть полноэкранный режим',
   'documentPage.ocrTranslatedTo': 'OCR-текст в переводе на {language}',
   'documentPage.translating': 'Перевод...',
   'documentPage.ocrEditHint':
