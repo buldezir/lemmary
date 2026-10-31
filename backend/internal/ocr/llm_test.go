@@ -297,3 +297,39 @@ func TestExtractTextRendersPagesWhenTheFilePartIsRefused(t *testing.T) {
 		t.Fatalf("retry should carry two page images and no file part, got %.300s", bodies[1])
 	}
 }
+
+// A provider refusing a PDF for its size answers 400 too; that error must reach
+// the user, not set off the rendered-pages retry.
+func TestExtractTextReturnsASizeRefusalUnchanged(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{
+		`{"error":{"message":"Invalid 'messages[1].content[1].file.file_data': string too long. Expected a string with maximum length 52428800, but got a string with length 60000000 instead.","type":"invalid_request_error","param":"messages[1].content[1].file.file_data","code":"string_above_max_length"}}`,
+		`{"error":{"message":"File is too large","type":"invalid_request_error"}}`,
+	} {
+		var calls atomic.Int64
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(body))
+		}))
+		t.Cleanup(srv.Close)
+
+		path := filepath.Join(t.TempDir(), "scan.pdf")
+		if err := os.WriteFile(path, testpdf.Multipage(1), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p := NewLLMProvider(aiprovider.Provider{
+			SDK:     aiprovider.SDKOpenAI,
+			APIKey:  "test-key",
+			BaseURL: srv.URL + "/v1",
+		}, "test-model", 5*time.Second, slog.Default())
+		_, err := p.ExtractText(context.Background(), path, "application/pdf")
+		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "too") {
+			t.Errorf("err = %v, want the provider's size refusal", err)
+		}
+		if calls.Load() != 1 {
+			t.Errorf("requests = %d, want 1 (no rendered-pages retry)", calls.Load())
+		}
+	}
+}

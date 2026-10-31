@@ -113,11 +113,13 @@ func (p *LLMProvider) complete(ctx context.Context, parts []openai.ChatCompletio
 }
 
 // A gateway in front of a model that reads images but not PDF file parts
-// (OpenCode Go's chat models) refuses the part with a 400 naming it.
+// (OpenCode Go's chat models) refuses the part with a 400 asking for a file_id
+// or file_data. A size refusal names file_data alone and must reach the user
+// rather than be retried as an even larger request of rendered pages.
 func filePartRefused(err error) bool {
 	var apiErr *openai.Error
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest &&
-		strings.Contains(strings.ToLower(apiErr.RawJSON()), "file")
+		strings.Contains(strings.ToLower(apiErr.RawJSON()), "file_id")
 }
 
 // ponytail: every page in one request; split into per-page calls if a long PDF
