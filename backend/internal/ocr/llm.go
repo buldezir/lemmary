@@ -18,21 +18,8 @@ import (
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
-	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/pdftool"
 )
-
-const llmOCRMaxFileBytes = 10 * 1024 * 1024
-
-// maxFileBytes is llmOCRMaxFileBytes for a hosted model. Lemmary Local AI reads
-// the file with Apple Vision rather than a model and takes a 128 MiB body, so it
-// gets every file documents.file can hold.
-func maxFileBytes(sdk string) int {
-	if sdk == aiprovider.SDKLemmaryLocalAI {
-		return int(models.MaxFileBytes)
-	}
-	return llmOCRMaxFileBytes
-}
 
 const llmOCRPageEdge = 2000
 
@@ -43,10 +30,9 @@ const llmOCRPrompt = "Extract all text from this document. Return plain text onl
 // model is served on, and which of the two SDKs speaks to it, is that type's
 // business, and a second client here meant two places had to agree about it.
 type LLMProvider struct {
-	llm      *ai.OpenAIClient
-	model    string
-	maxBytes int
-	logger   *slog.Logger
+	llm    *ai.OpenAIClient
+	model  string
+	logger *slog.Logger
 }
 
 func NewLLMProvider(p aiprovider.Provider, model string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) *LLMProvider {
@@ -54,10 +40,9 @@ func NewLLMProvider(p aiprovider.Provider, model string, timeout time.Duration, 
 		timeout = 40 * time.Second
 	}
 	return &LLMProvider{
-		llm:      ai.NewOpenAIClient(p.SDK, p.APIKey, model, p.BaseURL, "", "", timeout, logger, extra...),
-		model:    model,
-		maxBytes: maxFileBytes(p.SDK),
-		logger:   logger,
+		llm:    ai.NewOpenAIClient(p.SDK, p.APIKey, model, p.BaseURL, "", "", timeout, logger, extra...),
+		model:  model,
+		logger: logger,
 	}
 }
 
@@ -70,9 +55,6 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("read file for OCR: %w", err)
-	}
-	if len(data) > p.maxBytes {
-		return "", fmt.Errorf("LLM OCR supports files up to %d bytes (got %d)", p.maxBytes, len(data))
 	}
 
 	effectiveMime := effectiveMimeType(mimeType, filePath)
@@ -131,11 +113,13 @@ func (p *LLMProvider) complete(ctx context.Context, parts []openai.ChatCompletio
 }
 
 // A gateway in front of a model that reads images but not PDF file parts
-// (OpenCode Go's chat models) refuses the part with a 400 naming it.
+// (OpenCode Go's chat models) refuses the part with a 400 asking for a file_id
+// or file_data. A size refusal names file_data alone and must reach the user
+// rather than be retried as an even larger request of rendered pages.
 func filePartRefused(err error) bool {
 	var apiErr *openai.Error
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest &&
-		strings.Contains(strings.ToLower(apiErr.RawJSON()), "file")
+		strings.Contains(strings.ToLower(apiErr.RawJSON()), "file_id")
 }
 
 // ponytail: every page in one request; split into per-page calls if a long PDF

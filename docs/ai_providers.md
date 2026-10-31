@@ -423,6 +423,10 @@ the chat endpoint and the text comes back as the completion. OpenRouter lists
 only models advertising `file` input; OpenAI's catalogue says nothing, so choose
 a file-capable model yourself.
 
+Lemmary sends any file up to the 47 MB document cap. The file travels base64
+encoded, about a third larger, so a big scan can still exceed a provider's own
+request limit; the provider's error then names it.
+
 ### Anthropic models
 
 The same shape as OpenAI's: the document goes to the model and the text comes

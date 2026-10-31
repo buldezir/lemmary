@@ -1762,7 +1762,7 @@ export const en = {
   'ocrTest.loadingProviders': 'Loading providers...',
   'ocrTest.noProviders': 'No providers configured',
   'ocrTest.chooseFile': 'Choose a file',
-  'ocrTest.dropHint': 'or drop it here (max 10 MB)',
+  'ocrTest.dropHint': 'or drop it here (max 47 MB)',
   'ocrTest.running': 'Running OCR...',
   'ocrTest.run': 'Run OCR',
   'ocrTest.result': 'Result',

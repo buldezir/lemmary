@@ -16,7 +16,7 @@ page before you do.
 | Document chat | ✅ |
 | Metadata extraction | ✅ |
 | Deep Research (and its per-document helper) | ✅ |
-| OCR | ✅ — a PDF or an image, up to 10 MB, read by the bound model |
+| OCR | ✅ — a PDF or an image, up to 47 MB, read by the bound model |
 | Embeddings | ❌ — keep a keyed provider or the sidecar bound |
 
 OCR works the same way it does on OpenAI or OpenRouter: the file goes to the

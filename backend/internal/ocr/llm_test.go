@@ -21,15 +21,43 @@ import (
 	"lemmary/backend/internal/pdftool/testpdf"
 )
 
-// A scan between 10 MiB and documents.file's limit must still reach Apple
-// Vision; a hosted model keeps the smaller cap.
-func TestMaxFileBytesFollowsTheSDK(t *testing.T) {
+// A scan up to documents.file's limit reaches a hosted model; issue #157 was a
+// 17 MB PDF refused locally before any request was made.
+func TestExtractTextSendsAFileOfTheDocumentCap(t *testing.T) {
 	t.Parallel()
-	if got := maxFileBytes(aiprovider.SDKLemmaryLocalAI); int64(got) != models.MaxFileBytes {
-		t.Errorf("lemmary_local_ai cap = %d, want %d", got, models.MaxFileBytes)
+	var received atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n, _ := io.Copy(io.Discard, r.Body)
+		received.Store(n)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":      "chatcmpl-ocr",
+			"object":  "chat.completion",
+			"created": 1,
+			"model":   "test-model",
+			"choices": []map[string]any{{
+				"index":         0,
+				"message":       map[string]any{"role": "assistant", "content": "page text"},
+				"finish_reason": "stop",
+			}},
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	path := filepath.Join(t.TempDir(), "scan.png")
+	if err := os.WriteFile(path, make([]byte, models.MaxFileBytes), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if got := maxFileBytes(aiprovider.SDKOpenAI); got != llmOCRMaxFileBytes {
-		t.Errorf("openai cap = %d, want %d", got, llmOCRMaxFileBytes)
+	p := NewLLMProvider(aiprovider.Provider{
+		SDK:     aiprovider.SDKOpenAI,
+		APIKey:  "test-key",
+		BaseURL: srv.URL + "/v1",
+	}, "test-model", 30*time.Second, slog.Default())
+	if _, err := p.ExtractText(context.Background(), path, "image/png"); err != nil {
+		t.Fatalf("ExtractText: %v", err)
+	}
+	if received.Load() < models.MaxFileBytes {
+		t.Errorf("request body = %d bytes, want at least the %d-byte file", received.Load(), models.MaxFileBytes)
 	}
 }
 
@@ -267,5 +295,41 @@ func TestExtractTextRendersPagesWhenTheFilePartIsRefused(t *testing.T) {
 	}
 	if strings.Contains(bodies[1], `"file_data"`) || strings.Count(bodies[1], "data:image/png;base64,") != 2 {
 		t.Fatalf("retry should carry two page images and no file part, got %.300s", bodies[1])
+	}
+}
+
+// A provider refusing a PDF for its size answers 400 too; that error must reach
+// the user, not set off the rendered-pages retry.
+func TestExtractTextReturnsASizeRefusalUnchanged(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{
+		`{"error":{"message":"Invalid 'messages[1].content[1].file.file_data': string too long. Expected a string with maximum length 52428800, but got a string with length 60000000 instead.","type":"invalid_request_error","param":"messages[1].content[1].file.file_data","code":"string_above_max_length"}}`,
+		`{"error":{"message":"File is too large","type":"invalid_request_error"}}`,
+	} {
+		var calls atomic.Int64
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(body))
+		}))
+		t.Cleanup(srv.Close)
+
+		path := filepath.Join(t.TempDir(), "scan.pdf")
+		if err := os.WriteFile(path, testpdf.Multipage(1), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p := NewLLMProvider(aiprovider.Provider{
+			SDK:     aiprovider.SDKOpenAI,
+			APIKey:  "test-key",
+			BaseURL: srv.URL + "/v1",
+		}, "test-model", 5*time.Second, slog.Default())
+		_, err := p.ExtractText(context.Background(), path, "application/pdf")
+		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "too") {
+			t.Errorf("err = %v, want the provider's size refusal", err)
+		}
+		if calls.Load() != 1 {
+			t.Errorf("requests = %d, want 1 (no rendered-pages retry)", calls.Load())
+		}
 	}
 }
