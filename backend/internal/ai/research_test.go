@@ -738,10 +738,16 @@ func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 		"the user attached them as the place to start: read those first",
 		"invoice",
 		"en,de",
+		answerLanguageRule,
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("research prompt missing %q: %s", want, prompt)
 		}
+	}
+	// The answer instruction is itself an English user message, so "the latest
+	// message" would name it rather than the question.
+	if instruction := researchAnswerInstruction(false, false); !strings.Contains(instruction, answerLanguageRule) || strings.Contains(instruction, "latest message") {
+		t.Fatalf("answer instruction does not pin the question's language: %s", instruction)
 	}
 }
 

@@ -966,13 +966,15 @@ func ScopeNote(scope int) string {
 		"Earlier answers may cite documents outside it, which can no longer be read. Say so when it matters to the answer.]", scope)
 }
 
+const answerLanguageRule = "Write the answer in the language the user's question is written in, not the language of these instructions or of the documents."
+
 func researchAnswerInstruction(web, artifacts bool) string {
 	instruction := `Stop searching and reading. Do not call any tools and do not output tool markup.
 Write the final answer for the user now, in markdown, using only what the tool results above actually contain.
 Cite each claim with a markdown link to the document it came from: [Document title](/document/<id>), using ids from the tool results.
 If you were asked for a total or a comparison, list the per-document figures you extracted before giving the result; when a survey reported totals, use those figures rather than adding rows yourself.
 If the evidence is incomplete, say what is missing instead of filling the gap.
-Answer in the same language as the user's latest message.`
+` + answerLanguageRule
 	if web {
 		instruction += `
 Cite a claim taken from the web as [Page title](https://...), with the URL the tool returned. Say which claims came from the web rather than from the archive.`
@@ -1003,6 +1005,7 @@ There is no limit on how many searches or reads you may make. Stop gathering and
 Not every tool is backed on every question. When a call comes back saying it is not available or not enabled, do not try it again: work with the tools that answer, and say what you could not check.
 Cite real document ids from tool results only. Never invent a document or an id.
 If the archive does not contain the answer, say so plainly and say what is missing.
+` + answerLanguageRule + `
 
 You can also reach the public web with web_search and web_fetch, for what the archive cannot hold: current prices, rates and rules, a company's present details, anything that changed after the documents were written. Web access is granted per question, so these are the calls most likely to come back refused.
 The archive is still the primary source. Search it first, and use the web to check or complete what you found there rather than instead of looking.

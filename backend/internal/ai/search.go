@@ -357,7 +357,8 @@ func (a *openAISearchAgent) forceFinalAnswer(
 	msgs = append(msgs, openai.UserMessage(
 		`Stop. Do not call any tools and do not output DSML/tool markup.
 Write the final answer for the user in natural language only, based on the tool results already provided.
-If nothing relevant was found, say so clearly.`,
+If nothing relevant was found, say so clearly.
+`+answerLanguageRule,
 	))
 
 	requestStart := time.Now()
@@ -496,7 +497,7 @@ Prefer precise date_from/date_to, document_type, correspondent, or tags filters 
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.
 Cite real document ids and titles from tool results only. Never invent documents.
 If nothing relevant is found, say so clearly and suggest alternative search terms.
-Be concise. Answer in the same language as the user's latest message.
+Be concise. ` + answerLanguageRule + `
 Never output tool markup, DSML tags, or raw function-call XML in your final answer — only natural language.
 You have one round of tool calls: gather everything you need with search_documents, then answer.
 Each result carries verbatim passages from the document. When a passage literally contains the answer, give it directly and cite the document.

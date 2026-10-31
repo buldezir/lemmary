@@ -26,7 +26,8 @@ const maxChatToolRounds = 4
 const chatAnswerInstruction = `Stop searching. Do not call any tools and do not output tool markup.
 Answer the user's question now, in markdown, from the document above and whatever the tool results actually contain.
 Cite a claim taken from the web as [Page title](https://...), with the URL the tool returned.
-If the evidence is incomplete, say what is missing instead of filling the gap.`
+If the evidence is incomplete, say what is missing instead of filling the gap.
+` + answerLanguageRule
 
 type ChatMessage struct {
 	Role    string `json:"role"`
