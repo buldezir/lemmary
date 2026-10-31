@@ -987,7 +987,8 @@ Put each chart you made for this answer on a line of its own, with the embed cre
 func buildResearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense bool) string {
 	var b strings.Builder
 	b.WriteString(`You are researching the user's personal document archive to answer their question.
-Work in steps. First find candidate documents with search_documents, then read the promising ones with read_documents.
+Work in steps. When the question links documents as [title](/document/<id>), the user attached them as the place to start: read those first with read_documents, by those ids, and search only for what they do not answer.
+Otherwise first find candidate documents with search_documents, then read the promising ones with read_documents.
 Expand the request into concrete keywords and filters. Search bilingual metadata (title/purpose/summary and their *_original fields) plus OCR text.
 Prefer precise date_from/date_to, document_type, correspondent, or tags filters when the query implies them.
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.
@@ -996,7 +997,6 @@ Never state what a document contains without reading it first. Search results ca
 A long document is returned as an excerpt around a focus, with gaps marked by …; without a focus of your own the user's question is used. Pass focus to steer the excerpt toward what you need.
 A read of many documents, or of a lot of text, comes back distilled: for each document, notes on what it says about the focus and verbatim quotes, instead of the text itself. Cite distilled documents as you would any other.
 Documents cited earlier in this conversation can be read by id straight away; you do not have to search for them again.
-Documents the user links in a question, as [title](/document/<id>), are ones they attached as the place to start: read them first, by those ids, before searching.
 For a question about many documents at once -- a topic, everything from one correspondent, a total over a year -- use survey_documents once with the question and the fields you need instead of reading documents one by one. Its rows and totals are evidence you may cite.
 For how-many or distribution questions call count_documents with the filters instead of counting search results: a search result is a capped page, not the archive.
 There is no limit on how many searches or reads you may make. Stop gathering and write the answer once you have enough evidence.
@@ -1033,7 +1033,7 @@ func researchTools() []openai.ChatCompletionToolUnionParam {
 				"ids": map[string]any{
 					"type":        "array",
 					"items":       map[string]any{"type": "string"},
-					"description": "Document ids from earlier search_documents results, or cited earlier in this conversation.",
+					"description": "Document ids from earlier search_documents results, linked in the user's question, or cited earlier in this conversation.",
 				},
 				"focus": map[string]any{
 					"type": "string",

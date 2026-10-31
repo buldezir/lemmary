@@ -370,10 +370,11 @@ const maxLinkedDocuments = 50
 
 // linkedDocuments are the documents the conversation's questions link to: the
 // ones attached with @, where the run is told to start. Readable by id like an
-// earlier turn's hits, once the user may read them.
+// earlier turn's hits, once the user may read them. Newest question first, so
+// the cap drops the oldest attachments.
 func linkedDocuments(app documentLookup, userID string, history []ai.ChatMessage, content string) []ai.DocumentHit {
 	questions := []string{content}
-	for _, msg := range history {
+	for _, msg := range slices.Backward(history) {
 		if msg.Role == chat.RoleUser {
 			questions = append(questions, msg.Content)
 		}

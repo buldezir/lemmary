@@ -735,6 +735,7 @@ func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 	for _, want := range []string{
 		"read_documents",
 		"Never state what a document contains without reading it",
+		"the user attached them as the place to start: read those first",
 		"invoice",
 		"en,de",
 	} {

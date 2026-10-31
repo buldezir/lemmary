@@ -99,13 +99,13 @@ Fragefeld, und eine Liste von Dokumenten öffnet sich — zuerst die neuesten, d
 die, die zu dem passen, was Sie nach dem `@` tippen. Mit den Pfeiltasten und
 Enter (oder einem Klick) wählen Sie eines aus; es steht dann als Pille über der
 Frage. Sein × entfernt es wieder, ebenso die Rücktaste ganz am Anfang der Frage.
-Research erfährt, dass es mit diesen Dokumenten beginnen soll, und liest sie,
-bevor es sucht; gesucht wird trotzdem, sobald sie die Frage nicht allein
-beantworten.
+Research wird angewiesen, mit diesen Dokumenten zu beginnen: sie zu lesen, bevor
+es sucht, und nur nach dem zu suchen, was sie nicht beantworten.
 
 Die Frage behält ihre Pillen im Chat, jede ein Link auf ihr Dokument, und
 spätere Fragen im selben Chat können sie erneut lesen. Ein angehängtes Dokument
-bleibt erreichbar, auch wenn die Filter unter **Umfang** es ausschließen würden.
+bleibt erreichbar, auch wenn die Filter unter **Umfang** es ausschließen würden
+oder gar nichts treffen.
 
 ## Dokumente eingrenzen {#limiting-the-documents}
 
