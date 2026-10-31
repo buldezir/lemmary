@@ -1044,6 +1044,9 @@ export const en = {
   'documentPage.fieldOcr': 'OCR text',
   'documentPage.retranslate': 'Re-translate',
   'documentPage.ocrView': 'OCR text view',
+  'documentPage.ocrMarkdown': 'Markdown',
+  'documentPage.ocrExpand': 'Open full screen',
+  'documentPage.ocrCollapse': 'Close full screen',
   'documentPage.ocrTranslatedTo': 'OCR text translated to {language}',
   'documentPage.translating': 'Translating...',
   'documentPage.ocrEditHint':

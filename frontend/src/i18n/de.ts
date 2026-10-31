@@ -1099,6 +1099,9 @@ export const de: Catalog = {
   'documentPage.fieldOcr': 'OCR-Text',
   'documentPage.retranslate': 'Neu übersetzen',
   'documentPage.ocrView': 'Ansicht des OCR-Texts',
+  'documentPage.ocrMarkdown': 'Markdown',
+  'documentPage.ocrExpand': 'Vollbild öffnen',
+  'documentPage.ocrCollapse': 'Vollbild schließen',
   'documentPage.ocrTranslatedTo': 'OCR-Text übersetzt in {language}',
   'documentPage.translating': 'Wird übersetzt...',
   'documentPage.ocrEditHint':

@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, type ComponentProps, type ReactNode } from 'react'
-import type { Components, ExtraProps } from 'react-markdown'
+import type { Components, ExtraProps, Options } from 'react-markdown'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import { Link } from '@tanstack/react-router'
 import { t } from '../i18n'
@@ -61,8 +63,16 @@ const components: Components = {
     </div>
   ),
   thead: ({ children }) => <thead className="border-b border-line-strong">{children}</thead>,
-  th: ({ children }) => <th className="px-2 py-1 font-semibold">{children}</th>,
-  td: ({ children }) => <td className="border-t border-line px-2 py-1">{children}</td>,
+  th: ({ children, colSpan, rowSpan, style, scope }) => (
+    <th colSpan={colSpan} rowSpan={rowSpan} style={style} scope={scope} className="px-2 py-1 font-semibold">
+      {children}
+    </th>
+  ),
+  td: ({ children, colSpan, rowSpan, style, headers }) => (
+    <td colSpan={colSpan} rowSpan={rowSpan} style={style} headers={headers} className="border-t border-line px-2 py-1">
+      {children}
+    </td>
+  ),
   pre: ({ node, children }) => {
     const chart = parseChart(chartSource(node) ?? '')
     if (chart) return <Chart spec={chart} />
@@ -143,11 +153,24 @@ function ReportLink({ chatId, reportId, children }: { chatId: string; reportId: 
   )
 }
 
-/** Without chatId a report link is plain text. */
-export function MarkdownContent({ content, chatId }: { content: string; chatId?: string }) {
+// Embedded HTML is untrusted, and an image would make the viewer's browser
+// fetch whatever URL it names, so images are dropped along with scripts.
+const htmlSchema = {
+  ...defaultSchema,
+  tagNames: defaultSchema.tagNames?.filter((tag) => !['img', 'picture', 'source'].includes(tag)),
+}
+const htmlPlugins: Options['rehypePlugins'] = [rehypeRaw, [rehypeSanitize, htmlSchema]]
+
+/** Without chatId a report link is plain text. `html` renders embedded HTML, sanitized. */
+export function MarkdownContent({ content, chatId, html }: { content: string; chatId?: string; html?: boolean }) {
   return (
     <ChatContext value={chatId}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={urlTransform}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={html ? htmlPlugins : undefined}
+        components={components}
+        urlTransform={urlTransform}
+      >
         {content}
       </ReactMarkdown>
     </ChatContext>
