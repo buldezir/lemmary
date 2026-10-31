@@ -420,6 +420,9 @@ export const de: Catalog = {
   'documentPreview.imageFailed': 'Das Bild konnte nicht geladen werden.',
 
   'chatComposer.ctrlEnter': 'Strg + Enter',
+  'chatComposer.attach': 'Dokument anhängen',
+  'chatComposer.attached': 'Angehängte Dokumente',
+  'chatComposer.detach': '{title} entfernen',
 
   'chatTranscript.label': 'Chatverlauf',
   'chatTranscript.loading': 'Chat wird geladen...',
@@ -858,7 +861,8 @@ export const de: Catalog = {
   'research.hint': 'Liest die Dokumente und antwortet mit Quellenangaben. {link}.',
   'research.howItWorks': 'So funktioniert es',
   'research.researching': 'Wird recherchiert...',
-  'research.emptyHint': 'Versuchen Sie etwa: „Wie viel habe ich 2024 für das Auto ausgegeben?“',
+  'research.emptyHint':
+    'Versuchen Sie etwa: „Wie viel habe ich 2024 für das Auto ausgegeben?“ Mit @ hängen Sie ein Dokument an, bei dem die Recherche beginnt.',
   'research.forkTitle':
     'Diesen Chat bis zu dieser Antwort kopieren und dort weitermachen; dieser bleibt unverändert.',
   'research.fork': 'Ab hier abzweigen',

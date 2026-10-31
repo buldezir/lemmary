@@ -20,6 +20,7 @@ import (
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/i18n"
 	"lemmary/backend/internal/metrics"
+	"lemmary/backend/internal/strutil"
 	"lemmary/backend/internal/websearch"
 )
 
@@ -240,6 +241,9 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		return searchTurn{}, true, writeError(e, http.StatusServiceUnavailable, "AI search is not configured; update Settings.")
 	}
 
+	linked := linkedDocuments(app, searchUserID, history, content)
+	req.Scope = withLinked(req.Scope, linked)
+
 	tools, err := buildAgentTools(app, rt, idx, searchUserID, true, req.Scope)
 	if err != nil {
 		app.Logger().Error("search list tags failed", slog.Any("error", err))
@@ -251,7 +255,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		tools.web = snap.WebSearch
 	}
 
-	priorDocuments := scopedHits(searchPriorDocuments(app, session), req.Scope)
+	priorDocuments := scopedHits(append(linked, searchPriorDocuments(app, session)...), req.Scope)
 
 	// Last, so a failure above cannot leave an empty conversation behind, and
 	// before the provider, so the agent loop runs inside the session it will be
@@ -359,6 +363,50 @@ func rememberFilters(app core.App, session *core.Record, filters json.RawMessage
 	if err := chat.SetFilters(app, session, filters); err != nil {
 		app.Logger().Warn("search filters not saved", slog.Any("error", err))
 	}
+}
+
+// maxLinkedDocuments bounds the lookups a conversation's links cost a turn.
+const maxLinkedDocuments = 50
+
+// linkedDocuments are the documents the conversation's questions link to: the
+// ones attached with @, where the run is told to start. Readable by id like an
+// earlier turn's hits, once the user may read them.
+func linkedDocuments(app documentLookup, userID string, history []ai.ChatMessage, content string) []ai.DocumentHit {
+	questions := []string{content}
+	for _, msg := range history {
+		if msg.Role == chat.RoleUser {
+			questions = append(questions, msg.Content)
+		}
+	}
+	ids := ai.LinkedDocumentIDs(strings.Join(questions, "\n"))
+	ids = ids[:min(len(ids), maxLinkedDocuments)]
+	hits := make([]ai.DocumentHit, 0, len(ids))
+	for _, id := range ids {
+		record, err := app.FindRecordById("documents", id)
+		if err != nil || !CanReadDocument(app, record, userID) {
+			continue
+		}
+		hits = append(hits, ai.DocumentHit{
+			ID:           record.Id,
+			Title:        strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
+			DocumentDate: truncateDate(record.GetString("document_date")),
+			Summary:      strutil.TruncateRunes(record.GetString("summary"), maxSummaryLen),
+		})
+	}
+	return hits
+}
+
+// withLinked lets a document attached by name through whatever the filters
+// keep: picking it was as deliberate as picking them. Nil stays unscoped.
+func withLinked(scope []string, linked []ai.DocumentHit) []string {
+	if scope == nil {
+		return nil
+	}
+	for _, hit := range linked {
+		scope = append(scope, hit.ID)
+	}
+	slices.Sort(scope)
+	return slices.Compact(scope)
 }
 
 // searchPriorDocuments carries the earlier turns' hits: a follow-up is usually

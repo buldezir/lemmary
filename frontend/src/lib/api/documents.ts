@@ -19,7 +19,8 @@ import {
   type CustomFieldValues,
   type FieldValueRecord,
 } from './customFields'
-import type { DocumentOwner } from '../documentQuery'
+import { searchableTerm, type DocumentOwner } from '../documentQuery'
+import type { DocumentMention } from '../documentLink'
 
 /** A custom_field_options row: a correspondent or a document type. */
 export type OptionRecord = {
@@ -618,6 +619,26 @@ export async function countMatchingDocuments(
     ...(filter ? { filter } : {}),
   })
   return result.totalItems
+}
+
+/**
+ * Documents to attach to a question with @: the search's ranking once the text
+ * reaches the index's prefix floor, the newest whose title holds it before.
+ */
+export async function findDocumentsToMention(q: string, limit = 8): Promise<DocumentMention[]> {
+  const term = searchableTerm(q)
+  if (term) {
+    const result = await searchDocuments({ q: term, page: 1, perPage: limit })
+    return result.items.map(({ id, title }) => ({ id, title }))
+  }
+  await ensureAuth()
+  const result = await pb.collection('documents').getList<DocumentMention>(1, limit, {
+    fields: 'id,title',
+    sort: '-created',
+    requestKey: null,
+    ...(q ? { filter: pb.filter('title ~ {:q}', { q }) } : {}),
+  })
+  return result.items
 }
 
 /**

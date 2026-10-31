@@ -92,6 +92,21 @@ schon immer war. Jeder Aufruf protokolliert eine Zeile, `deep search retrieval
 lexical=… dense=… fused=… embedded=…`; dort sollten Sie nachsehen, wenn eine
 Antwort ein Dokument übersehen zu haben scheint.
 
+## Dokumente anhängen {#attaching-documents}
+
+Wenn Sie schon wissen, wo die Antwort beginnt, sagen Sie es: Tippen Sie `@` ins
+Fragefeld, und eine Liste von Dokumenten öffnet sich — zuerst die neuesten, dann
+die, die zu dem passen, was Sie nach dem `@` tippen. Mit den Pfeiltasten und
+Enter (oder einem Klick) wählen Sie eines aus; es steht dann als Pille über der
+Frage. Sein × entfernt es wieder, ebenso die Rücktaste ganz am Anfang der Frage.
+Research erfährt, dass es mit diesen Dokumenten beginnen soll, und liest sie,
+bevor es sucht; gesucht wird trotzdem, sobald sie die Frage nicht allein
+beantworten.
+
+Die Frage behält ihre Pillen im Chat, jede ein Link auf ihr Dokument, und
+spätere Fragen im selben Chat können sie erneut lesen. Ein angehängtes Dokument
+bleibt erreichbar, auch wenn die Filter unter **Umfang** es ausschließen würden.
+
 ## Dokumente eingrenzen {#limiting-the-documents}
 
 Unter dem Fragefeld klappt **Umfang** die Filter aus den Massenaktionen auf:

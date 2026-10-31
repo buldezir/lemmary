@@ -462,6 +462,9 @@ export const ru: Catalog = {
   'documentPreview.imageFailed': 'Не удалось загрузить изображение.',
 
   'chatComposer.ctrlEnter': 'Ctrl + Enter',
+  'chatComposer.attach': 'Прикрепить документ',
+  'chatComposer.attached': 'Прикреплённые документы',
+  'chatComposer.detach': 'Убрать {title}',
 
   'chatTranscript.label': 'История чата',
   'chatTranscript.loading': 'Загрузка чата...',
@@ -947,7 +950,8 @@ export const ru: Catalog = {
   'research.hint': 'Читает документы и отвечает со ссылками на источники. {link}.',
   'research.howItWorks': 'Как это работает',
   'research.researching': 'Исследование...',
-  'research.emptyHint': 'Например: «сколько я потратил на машину в 2024 году?»',
+  'research.emptyHint':
+    'Например: «сколько я потратил на машину в 2024 году?» Введите @, чтобы прикрепить документ, с которого начать.',
   'research.forkTitle':
     'Скопировать этот чат до этого ответа и продолжить в копии, оставив этот чат как есть.',
   'research.fork': 'Ответвить отсюда',

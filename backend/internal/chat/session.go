@@ -151,9 +151,9 @@ func ParseKind(raw string) (Kind, bool) {
 
 // DeriveTitle names a session after the message that started it. Whitespace is
 // collapsed first: a pasted multi-line question would otherwise put newlines
-// into a sidebar row.
+// into a sidebar row. An attached document reads as @title.
 func DeriveTitle(firstUserMessage string) string {
-	collapsed := strings.Join(strings.Fields(firstUserMessage), " ")
+	collapsed := strings.Join(strings.Fields(ai.MentionText(firstUserMessage)), " ")
 	if collapsed == "" {
 		return UntitledSession
 	}

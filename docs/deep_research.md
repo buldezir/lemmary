@@ -82,6 +82,20 @@ Each call logs one line, `deep search retrieval lexical=… dense=… fused=…
 embedded=…`, which is where to look when an answer seems to have missed a
 document.
 
+## Attaching documents
+
+When you already know where the answer starts, say so: type `@` in the question
+box and a list of documents opens — the newest first, then those matching what
+you type after the `@`. Arrow keys and Enter (or a click) pick one, and it sits
+above the question as a pill; its × removes it, and so does Backspace at the
+very start of the question. Research is told those are the documents to start
+from and reads them before it searches; it still searches whenever they do not
+answer the question on their own.
+
+The question keeps its pills in the chat, each a link to its document, and
+later questions in the same chat can read them again. An attached document is
+reachable even when the **Scope** filters below would leave it out.
+
 ## Limiting the documents
 
 Under the question box, **Scope** folds open the filters from Bulk actions:

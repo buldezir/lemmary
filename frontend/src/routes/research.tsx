@@ -305,6 +305,7 @@ export function ResearchPage() {
               ? () => void cancelSearchRun({ sessionId: ws.sessionId as string })
               : ws.endRun
           }
+          attachable
           autoFocus
         />
       </ChatPanel>

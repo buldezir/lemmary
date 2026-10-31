@@ -402,6 +402,9 @@ export const en = {
   'documentPreview.imageFailed': 'The image could not be loaded.',
 
   'chatComposer.ctrlEnter': 'Ctrl + Enter',
+  'chatComposer.attach': 'Attach a document',
+  'chatComposer.attached': 'Attached documents',
+  'chatComposer.detach': 'Remove {title}',
 
   'chatTranscript.label': 'Chat transcript',
   'chatTranscript.loading': 'Loading chat...',
@@ -817,7 +820,8 @@ export const en = {
   'research.hint': 'Read the documents and answer, with citations. {link}.',
   'research.howItWorks': 'How it works',
   'research.researching': 'Researching...',
-  'research.emptyHint': 'Try something like: "how much did I spend on the car in 2024?"',
+  'research.emptyHint':
+    'Try something like: "how much did I spend on the car in 2024?" Type @ to attach a document to start from.',
   'research.forkTitle':
     'Copy this chat up to this answer and continue there, leaving this one as it is.',
   'research.fork': 'Fork from here',

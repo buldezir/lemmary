@@ -903,6 +903,23 @@ func normalizeIDs(ids []string) []string {
 // silently unwrapped as if the id were invented.
 var citationPattern = regexp.MustCompile(`\[([^\]\n]*)\]\(/document/([A-Za-z0-9_-]+)(?:\?page=\d+)?\)`)
 
+// LinkedDocumentIDs are the documents a message links to, each once, in the
+// order they appear: on a question, the ones the user attached with @.
+func LinkedDocumentIDs(text string) []string {
+	var ids []string
+	for _, match := range citationPattern.FindAllStringSubmatch(text, -1) {
+		if !slices.Contains(ids, match[2]) {
+			ids = append(ids, match[2])
+		}
+	}
+	return ids
+}
+
+// MentionText writes each document link back as the @title it was attached as.
+func MentionText(text string) string {
+	return citationPattern.ReplaceAllString(text, "@$1")
+}
+
 // validateCitations unwraps links to documents the run never saw, so a model
 // that invents an id produces plain text rather than a link to nothing.
 func validateCitations(reply string, seenIDs map[string]struct{}) string {
@@ -979,6 +996,7 @@ Never state what a document contains without reading it first. Search results ca
 A long document is returned as an excerpt around a focus, with gaps marked by …; without a focus of your own the user's question is used. Pass focus to steer the excerpt toward what you need.
 A read of many documents, or of a lot of text, comes back distilled: for each document, notes on what it says about the focus and verbatim quotes, instead of the text itself. Cite distilled documents as you would any other.
 Documents cited earlier in this conversation can be read by id straight away; you do not have to search for them again.
+Documents the user links in a question, as [title](/document/<id>), are ones they attached as the place to start: read them first, by those ids, before searching.
 For a question about many documents at once -- a topic, everything from one correspondent, a total over a year -- use survey_documents once with the question and the fields you need instead of reading documents one by one. Its rows and totals are evidence you may cite.
 For how-many or distribution questions call count_documents with the filters instead of counting search results: a search result is a capped page, not the archive.
 There is no limit on how many searches or reads you may make. Stop gathering and write the answer once you have enough evidence.

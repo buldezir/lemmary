@@ -40,6 +40,13 @@ func TestDeriveTitleCollapsesWhitespace(t *testing.T) {
 	}
 }
 
+func TestDeriveTitleShowsAttachedDocumentsAsMentions(t *testing.T) {
+	got := chat.DeriveTitle("what does [My lease](/document/abc123) say about pets")
+	if got != "what does @My lease say about pets" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestDeriveTitleTruncates(t *testing.T) {
 	got := chat.DeriveTitle(strings.Repeat("a", 200))
 	if utf8.RuneCountInString(got) != chat.MaxTitleRunes+1 {
