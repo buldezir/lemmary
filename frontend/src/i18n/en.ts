@@ -351,6 +351,9 @@ export const en = {
   'useDocumentList.markedReviewedOne': 'Marked reviewed.',
   'useDocumentList.markedReviewedMany': 'Marked {count} reviewed.',
   'useDocumentList.markReviewedFailed': 'Could not mark as reviewed',
+  'useDocumentList.nothingReviewable':
+    'None of these can be marked reviewed yet. A failed document needs its corrections saved first.',
+  'useDocumentList.reviewSkipped': 'Skipped {count}: still processing, or failed and not edited yet.',
   'useDocumentList.confirmDeleteOne': 'Delete this document?',
   'useDocumentList.confirmDeleteMany': {
     one: 'Delete these {count} documents?',

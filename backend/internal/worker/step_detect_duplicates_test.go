@@ -203,6 +203,22 @@ func TestMarkingADuplicateReviewedKeepsItApart(t *testing.T) {
 		}
 	}
 
+	// A reprocess that failed keeps duplicate_of; once edited by hand, the
+	// failed copy is reviewable and kept apart the same way.
+	failed := saveReviewTestDocument(t, app, userID, "Invoice, fixed by hand", original.Id)
+	failed.Set("processing_status", models.DocStatusFailed)
+	failed.Set("metadata_source", models.MetadataSourceUser)
+	if err := app.Save(failed); err != nil {
+		t.Fatal(err)
+	}
+	kept := markReviewTestDocumentReviewed(t, app, failed.Id)
+	if kept.GetString("duplicate_of") != "" || kept.GetString("processing_status") != models.DocStatusPending {
+		t.Fatalf("failed copy: duplicate_of=%q status=%q", kept.GetString("duplicate_of"), kept.GetString("processing_status"))
+	}
+	if got := reviewTestJobSteps(t, app, kept.Id); !slices.Equal(got, []string{models.StepEmbed, models.StepLinkRelated}) {
+		t.Fatalf("failed copy queued %v", got)
+	}
+
 	reviewed := markReviewTestDocumentReviewed(t, app, original.Id)
 	if got := reviewed.GetString("processing_status"); got != models.DocStatusCompleted {
 		t.Fatalf("a document that is no duplicate: status %q, want completed", got)
