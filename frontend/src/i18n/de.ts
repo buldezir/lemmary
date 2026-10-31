@@ -369,6 +369,10 @@ export const de: Catalog = {
   'useDocumentList.markedReviewedOne': 'Als geprüft markiert.',
   'useDocumentList.markedReviewedMany': '{count} als geprüft markiert.',
   'useDocumentList.markReviewedFailed': 'Konnte nicht als geprüft markiert werden',
+  'useDocumentList.nothingReviewable':
+    'Keines davon kann schon als geprüft markiert werden. Bei einem fehlgeschlagenen Dokument zuerst die Korrekturen speichern.',
+  'useDocumentList.reviewSkipped':
+    '{count} übersprungen: noch in Verarbeitung oder fehlgeschlagen und noch nicht bearbeitet.',
   'useDocumentList.confirmDeleteOne': 'Dieses Dokument löschen?',
   'useDocumentList.confirmDeleteMany': {
     one: 'Diese {count} Dokumente löschen?',

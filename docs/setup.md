@@ -345,6 +345,8 @@ Two ways out, both of which set the status to `completed`:
 - **Save corrections** on the detail page — fixing a misread `document_date` and saving counts as reviewing it.
 - **Mark reviewed**, when the metadata is already right — on the detail page, on a card in the list, or on a selection of cards at once from the Inbox. It writes nothing but the status, so `metadata_source` still records that the model wrote the metadata.
 
+A **failed** document stays failed when you save corrections, since processing did not finish; once you have, **Mark reviewed** appears for it too and moves it to `completed`, your metadata standing in for what the pipeline could not produce.
+
 With **Always require review** on, extraction also asks the model for up to three **suggested tags**: new names not yet in your vocabulary. They appear as dashed `+ name` chips on the card and the detail page while the document waits, and accepting one creates the tag and adds it to the document. Suggestions are stored on the processing job, never on the document, and vanish once it is reviewed. Tags are otherwise never created by the AI.
 
 Marking a possible duplicate reviewed says it is not one, and keeps both as documents of their own. `duplicate_of` is cleared, the pair is remembered so neither the pipeline nor **Scan for duplicates** links them again, and the document is queued for what a duplicate skips: embedding and related links, plus AI metadata extraction when it has no title yet and nobody wrote its metadata by hand. With **Always require review** on, that extraction brings it back to the Inbox like any other. To drop the copy instead, delete it.

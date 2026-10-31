@@ -95,7 +95,8 @@ func (s *DetectDuplicatesStep) Run(ctx context.Context, state *StepState) error 
 }
 
 // Marking a possible duplicate reviewed keeps it as a document of its own,
-// whichever way it is marked (Inbox, document page, metadata save, MCP): the
+// whichever way it is marked (Inbox, document page, metadata save, MCP), and
+// also when a reprocess of it failed and its owner edited it by hand: the
 // pair is kept apart from then on, and the steps a duplicate skips are queued.
 // Extraction only when it has no title yet and nobody wrote its metadata by
 // hand, so what an import or the owner gave it is not overwritten.
@@ -105,8 +106,9 @@ func (s *DetectDuplicatesStep) Run(ctx context.Context, state *StepState) error 
 // document, link included, over this one.
 func keepReviewedDuplicate(e *core.RecordEvent) error {
 	record := e.Record
+	was := record.Original().GetString("processing_status")
 	if record.GetString("duplicate_of") == "" ||
-		record.Original().GetString("processing_status") != models.DocStatusNeedsReview ||
+		(was != models.DocStatusNeedsReview && was != models.DocStatusFailed) ||
 		record.GetString("processing_status") != models.DocStatusCompleted {
 		return e.Next()
 	}

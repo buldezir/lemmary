@@ -30,7 +30,7 @@ type mcpUpdateArgs struct {
 	DocumentType  *string   `json:"document_type,omitempty" jsonschema:"Document type name, created if new; empty clears it."`
 	Correspondent *string   `json:"correspondent,omitempty" jsonschema:"Correspondent name, created if new; empty clears it."`
 	Tags          *[]string `json:"tags,omitempty" jsonschema:"The whole tag list as exact names of existing tags. Replaces the current tags; an empty list removes them all."`
-	MarkReviewed  bool      `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review document to completed. A possible duplicate is kept as a document of its own and processed again."`
+	MarkReviewed  bool      `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review document, or a failed one whose metadata was edited by hand, to completed. A possible duplicate is kept as a document of its own and processed again."`
 }
 
 type mcpIDsArgs struct {
@@ -155,6 +155,9 @@ func updateMCPDocument(app core.App, userID string, args mcpUpdateArgs) (mcpDocu
 	if err != nil {
 		return mcpDocument{}, err
 	}
+	if args.editsMetadata() {
+		record.Set("metadata_source", models.MetadataSourceUser)
+	}
 	if err := applyMCPUpdate(app, userID, record, args); err != nil {
 		return mcpDocument{}, err
 	}
@@ -168,9 +171,6 @@ func updateMCPDocument(app core.App, userID string, args mcpUpdateArgs) (mcpDocu
 	writes, err := documentFieldWrites(app, record, fields)
 	if err != nil {
 		return mcpDocument{}, err
-	}
-	if args.editsMetadata() {
-		record.Set("metadata_source", models.MetadataSourceUser)
 	}
 	err = app.RunInTransaction(func(txApp core.App) error {
 		if err := models.SaveFieldValues(txApp, record, writes); err != nil {
@@ -218,10 +218,22 @@ func applyMCPUpdate(app core.App, userID string, record *core.Record, args mcpUp
 		}
 		record.Set("tags", ids)
 	}
-	if args.MarkReviewed && record.GetString("processing_status") == models.DocStatusNeedsReview {
+	if args.MarkReviewed && canMarkReviewed(record) {
 		record.Set("processing_status", models.DocStatusCompleted)
 	}
 	return nil
+}
+
+// canMarkReviewed mirrors frontend/src/lib/documentStatus.ts: a failed document
+// can be marked reviewed once its owner has edited it by hand.
+func canMarkReviewed(record *core.Record) bool {
+	switch record.GetString("processing_status") {
+	case models.DocStatusNeedsReview:
+		return true
+	case models.DocStatusFailed:
+		return record.GetString("metadata_source") == models.MetadataSourceUser
+	}
+	return false
 }
 
 func reprocessMCPDocuments(app core.App, userID string, args mcpReprocessArgs) (reprocess.Result, error) {

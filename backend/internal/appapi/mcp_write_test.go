@@ -169,6 +169,25 @@ func TestMCPMarkReviewedAloneKeepsTheMetadataSource(t *testing.T) {
 	}
 }
 
+// A failed document is reviewable only once someone has edited it by hand,
+// here in the same call.
+func TestMCPMarkReviewedFailedNeedsAnEdit(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "owner@example.com")
+	document := makeQueueDocument(t, app, owner, models.DocStatusFailed, "text")
+	session := connectMCPWrites(t, app, owner, config.MCPEdit)
+
+	var got mcpDocument
+	callMCP(t, session, "update_document", map[string]any{"id": document.Id, "mark_reviewed": true}, &got)
+	if got.ProcessingStatus != models.DocStatusFailed {
+		t.Fatalf("unedited status = %q", got.ProcessingStatus)
+	}
+	callMCP(t, session, "update_document", map[string]any{"id": document.Id, "title": "Scan", "mark_reviewed": true}, &got)
+	if got.ProcessingStatus != models.DocStatusCompleted {
+		t.Fatalf("edited status = %q", got.ProcessingStatus)
+	}
+}
+
 func TestMCPUploadStoresAPendingDocument(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "owner@example.com")

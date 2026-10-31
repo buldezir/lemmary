@@ -405,6 +405,10 @@ export const ru: Catalog = {
   'useDocumentList.markedReviewedOne': 'Отмечено как проверенное.',
   'useDocumentList.markedReviewedMany': 'Отмечено проверенными: {count}.',
   'useDocumentList.markReviewedFailed': 'Не удалось отметить как проверенные',
+  'useDocumentList.nothingReviewable':
+    'Пока ни один из них нельзя отметить как проверенный. Для документа с ошибкой сначала сохраните исправления.',
+  'useDocumentList.reviewSkipped':
+    'Пропущено: {count} — ещё обрабатываются или завершились ошибкой и не отредактированы.',
   'useDocumentList.confirmDeleteOne': 'Удалить этот документ?',
   'useDocumentList.confirmDeleteMany': {
     one: 'Удалить {count} документ?',

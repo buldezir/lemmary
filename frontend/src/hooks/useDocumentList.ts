@@ -18,6 +18,7 @@ import {
 import { CORRESPONDENT_FIELD_ID, DOCUMENT_TYPE_FIELD_ID } from '../lib/api/customFields'
 import { acceptSuggestedTag, listTags } from '../lib/api/tags'
 import { getLatestJobsFor } from '../lib/api/jobs'
+import { canMarkReviewed } from '../lib/documentStatus'
 import {
   defaultDocumentQuery,
   documentQuerySearch,
@@ -410,16 +411,19 @@ export function useDocumentList({
 
   /**
    * No confirmation, unlike reprocess: this overwrites nothing. Filtered to
-   * documents still reading needs_review because a refresh can land between the
+   * documents still reviewable because a refresh can land between the
    * tick and the click, and the Inbox holds failed and queued documents too.
    */
   async function onMarkReviewed(ids: string[]) {
     const waiting = documents
-      .filter(
-        (document) => ids.includes(document.id) && document.processing_status === 'needs_review',
-      )
+      .filter((document) => ids.includes(document.id) && canMarkReviewed(document))
       .map((document) => document.id)
-    if (waiting.length === 0) return
+    const skipped = ids.length - waiting.length
+    if (waiting.length === 0) {
+      setMessage('')
+      setError(t('useDocumentList.nothingReviewable'))
+      return
+    }
 
     try {
       setMarkingReviewed(true)
@@ -427,10 +431,12 @@ export function useDocumentList({
       setMessage('')
       await markDocumentsReviewed(waiting)
       setSelectedIds(new Set())
-      setMessage(
+      const marked =
         waiting.length === 1
           ? t('useDocumentList.markedReviewedOne')
-          : t('useDocumentList.markedReviewedMany', { count: waiting.length }),
+          : t('useDocumentList.markedReviewedMany', { count: waiting.length })
+      setMessage(
+        skipped > 0 ? `${marked} ${t('useDocumentList.reviewSkipped', { count: skipped })}` : marked,
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : t('useDocumentList.markReviewedFailed'))
