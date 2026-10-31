@@ -4,7 +4,12 @@ import { t, tNode } from '../i18n'
 import { SHARED_TAG_NAME, type DocumentRecord } from '../lib/api/documents'
 import { CORRESPONDENT_FIELD_ID, DOCUMENT_TYPE_FIELD_ID, optionName } from '../lib/api/customFields'
 import { pb } from '../lib/pb'
-import { DOCUMENT_STATUS_LABELS, DOCUMENT_STATUS_STYLES, reviewReason } from '../lib/documentStatus'
+import {
+  canMarkReviewed as reviewable,
+  DOCUMENT_STATUS_LABELS,
+  DOCUMENT_STATUS_STYLES,
+  reviewReason,
+} from '../lib/documentStatus'
 import { summarizeJob, type ProcessingJobRecord } from '../lib/processing'
 import { pendingTagSuggestions } from '../lib/tagSuggestions'
 import { ProcessingStatus } from './ProcessingStatus'
@@ -124,7 +129,7 @@ export function DocumentCard({
   // A shared document is read-only, so its own owner's review is not the
   // reader's to clear.
   const canMarkReviewed =
-    Boolean(onMarkReviewed) && !shared && document.processing_status === 'needs_review'
+    Boolean(onMarkReviewed) && !shared && reviewable(document)
   const status = DOCUMENT_STATUS_STYLES[document.processing_status]
   // Over the preview they sit on the page's bottom edge, each on its own backing,
   // and the rows that do not fit in the lower part of the page are cut off.

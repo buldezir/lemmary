@@ -5,6 +5,7 @@ import { listShareRecipients, shareDocuments } from '../lib/api/shares'
 import { addTagsToDocuments, findOrCreateTag, removeTagsFromDocuments, type TagRecord } from '../lib/api/tags'
 import { REPROCESS_MODE_OPTIONS, type ReprocessMode } from '../lib/processing'
 import { tagKey } from '../lib/tagSuggestions'
+import { canMarkReviewed } from '../lib/documentStatus'
 import { useAsync } from '../hooks/useAsync'
 import {
   useDocumentFilterOptions,
@@ -159,7 +160,7 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
   if (none && panel) setPanel(null)
   const open = panel
   const ids = selectedOnPage.map((document) => document.id)
-  const reviewable = selectedOnPage.filter((document) => document.processing_status === 'needs_review')
+  const reviewable = selectedOnPage.filter(canMarkReviewed)
   const reviewed = selectedOnPage.filter((document) => document.processing_status === 'completed')
 
   async function run(action: () => Promise<string>, fallbackError: string) {

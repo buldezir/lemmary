@@ -65,7 +65,7 @@ export function InboxPage() {
 
         {/* Always review: markDocumentsReviewed narrows a selection to the
             documents actually waiting for it, so a mixed page cannot mark a
-            failed one reviewed. */}
+            failed one reviewed before its owner has edited it. */}
         {!loading && documents.length > 0 && (
           <DocumentGrid list={list} bulkMode="review" allowDelete />
         )}
