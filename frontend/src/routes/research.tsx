@@ -29,6 +29,7 @@ import {
   tagIds,
   type DocumentQuery,
 } from '../lib/documentQuery'
+import { splitAttachments } from '../lib/documentLink'
 import { applyStep, type ResearchStep } from '../lib/researchSteps'
 import {
   contextOverflowWarning,
@@ -106,8 +107,13 @@ export function ResearchPage() {
       setDraft('')
       setLiveUsage(null)
       try {
-        const ids = scoped ? await scopeIds(scope, scopeTerm, scopeCount) : undefined
-        if (ids) setScopeCount(ids.length)
+        const matched = scoped ? await scopeIds(scope, scopeTerm, scopeCount) : undefined
+        if (matched) setScopeCount(matched.length)
+        // Attached documents are in scope whatever the filters keep, so they
+        // can also stand in for filters that keep nothing.
+        const attached = splitAttachments(content).documents.map((doc) => doc.id)
+        const ids = matched && [...new Set([...matched, ...attached])]
+        if (ids?.length === 0) throw new Error(t('research.scopeEmpty'))
         return await ws.runTurn(
           {
             sessionId: id,
@@ -305,6 +311,7 @@ export function ResearchPage() {
               ? () => void cancelSearchRun({ sessionId: ws.sessionId as string })
               : ws.endRun
           }
+          attachable
           autoFocus
         />
       </ChatPanel>
@@ -367,21 +374,19 @@ const maxScopeDocuments = 10000
 type ScopeCount = number | 'failed'
 
 /**
- * The ids a scoped turn is sent with. A count already in hand refuses an empty
- * or too wide scope without a request; the collection itself stops at the cap.
+ * The ids the filters match. A count already in hand skips the request for an
+ * empty scope and refuses a too wide one; the collection itself stops at the cap.
  */
 async function scopeIds(
   query: DocumentQuery,
   term: string,
   count: ScopeCount | null,
 ): Promise<string[]> {
-  if (count === 0) throw new Error(t('research.scopeEmpty'))
+  if (count === 0) return []
   if (typeof count === 'number' && count > maxScopeDocuments) {
     throw new Error(t('documents.tooManyMatches', { count: maxScopeDocuments }))
   }
-  const ids = await listMatchingDocumentIds(term, listFilters(query), maxScopeDocuments)
-  if (ids.length === 0) throw new Error(t('research.scopeEmpty'))
-  return ids
+  return listMatchingDocumentIds(term, listFilters(query), maxScopeDocuments)
 }
 
 /**

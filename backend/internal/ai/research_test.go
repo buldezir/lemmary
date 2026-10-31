@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -688,6 +689,17 @@ func TestValidateCitationsUnwrapsInventedDocuments(t *testing.T) {
 	}
 }
 
+func TestLinkedDocumentIDsAndMentionText(t *testing.T) {
+	t.Parallel()
+	question := "Compare [Lease](/document/a1) with [Old lease](/document/b2) and [Lease](/document/a1)"
+	if got := LinkedDocumentIDs(question); !slices.Equal(got, []string{"a1", "b2"}) {
+		t.Fatalf("LinkedDocumentIDs = %v, want [a1 b2]", got)
+	}
+	if got := MentionText(question); got != "Compare @Lease with @Old lease and @Lease" {
+		t.Fatalf("MentionText = %q", got)
+	}
+}
+
 func TestDecodeReadArgsAcceptsLooseShapes(t *testing.T) {
 	t.Parallel()
 	args, err := decodeReadArgs(`{"ids":["b"," a ","a",""]}`)
@@ -723,6 +735,7 @@ func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 	for _, want := range []string{
 		"read_documents",
 		"Never state what a document contains without reading it",
+		"the user attached them as the place to start: read those first",
 		"invoice",
 		"en,de",
 	} {

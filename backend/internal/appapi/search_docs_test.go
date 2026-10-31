@@ -1,6 +1,7 @@
 package appapi
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -85,6 +86,51 @@ func TestReadUserDocumentsRefusesAnotherOwnersDocument(t *testing.T) {
 	}
 	if len(asSuper) != 2 {
 		t.Fatalf("superuser should read both, got %#v", asSuper)
+	}
+}
+
+// Past the cap, the oldest attachments are the ones dropped: the newest are what
+// the next question follows from.
+func TestLinkedDocumentsKeepTheNewestPastTheCap(t *testing.T) {
+	app := stubDocuments{recs: map[string]*core.Record{"now": readableDocument("now", "me", "Now", "")}}
+	var history []ai.ChatMessage
+	for i := range maxLinkedDocuments + 10 {
+		id := "d" + strconv.Itoa(i)
+		app.recs[id] = readableDocument(id, "me", id, "")
+		history = append(history, ai.ChatMessage{Role: "user", Content: "see [x](/document/" + id + ")"})
+	}
+
+	got := linkedDocuments(app, "me", history, "and [now](/document/now)")
+	if len(got) != maxLinkedDocuments || got[0].ID != "now" {
+		t.Fatalf("expected %d documents led by the current question's, got %d starting %q", maxLinkedDocuments, len(got), got[0].ID)
+	}
+	newest, oldestKept := "d"+strconv.Itoa(maxLinkedDocuments+9), "d"+strconv.Itoa(11)
+	if got[1].ID != newest || got[len(got)-1].ID != oldestKept {
+		t.Fatalf("expected %s down to %s after the current question's, got %s down to %s", newest, oldestKept, got[1].ID, got[len(got)-1].ID)
+	}
+}
+
+func TestLinkedDocumentsAreTheCallersAcrossTheConversation(t *testing.T) {
+	app := stubDocuments{recs: map[string]*core.Record{
+		"mine":     readableDocument("mine", "me", "My lease", ""),
+		"earlier":  readableDocument("earlier", "me", "Old lease", ""),
+		"tsomeone": readableDocument("tsomeone", "someone-else", "Their lease", ""),
+	}}
+	history := []ai.ChatMessage{
+		{Role: "user", Content: "start from [Old lease](/document/earlier)"},
+		{Role: "assistant", Content: "see [Their lease](/document/tsomeone)"},
+	}
+
+	got := linkedDocuments(app, "me", history, "compare [x](/document/mine) and [y](/document/tsomeone)")
+	if len(got) != 2 || got[0].ID != "mine" || got[1].ID != "earlier" || got[0].Title != "My lease" {
+		t.Fatalf("expected the caller's own linked documents, titled from the record, got %#v", got)
+	}
+
+	if scope := withLinked([]string{"b", "mine"}, got); !slices.Equal(scope, []string{"b", "earlier", "mine"}) {
+		t.Fatalf("attached documents should join a filtered scope once each, got %v", scope)
+	}
+	if withLinked(nil, got) != nil {
+		t.Fatal("no scope must stay no scope, not narrow to the attached documents")
 	}
 }
 

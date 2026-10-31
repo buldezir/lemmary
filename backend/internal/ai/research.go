@@ -903,6 +903,23 @@ func normalizeIDs(ids []string) []string {
 // silently unwrapped as if the id were invented.
 var citationPattern = regexp.MustCompile(`\[([^\]\n]*)\]\(/document/([A-Za-z0-9_-]+)(?:\?page=\d+)?\)`)
 
+// LinkedDocumentIDs are the documents a message links to, each once, in the
+// order they appear: on a question, the ones the user attached with @.
+func LinkedDocumentIDs(text string) []string {
+	var ids []string
+	for _, match := range citationPattern.FindAllStringSubmatch(text, -1) {
+		if !slices.Contains(ids, match[2]) {
+			ids = append(ids, match[2])
+		}
+	}
+	return ids
+}
+
+// MentionText writes each document link back as the @title it was attached as.
+func MentionText(text string) string {
+	return citationPattern.ReplaceAllString(text, "@$1")
+}
+
 // validateCitations unwraps links to documents the run never saw, so a model
 // that invents an id produces plain text rather than a link to nothing.
 func validateCitations(reply string, seenIDs map[string]struct{}) string {
@@ -970,7 +987,8 @@ Put each chart you made for this answer on a line of its own, with the embed cre
 func buildResearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense bool) string {
 	var b strings.Builder
 	b.WriteString(`You are researching the user's personal document archive to answer their question.
-Work in steps. First find candidate documents with search_documents, then read the promising ones with read_documents.
+Work in steps. When the question links documents as [title](/document/<id>), the user attached them as the place to start: read those first with read_documents, by those ids, and search only for what they do not answer.
+Otherwise first find candidate documents with search_documents, then read the promising ones with read_documents.
 Expand the request into concrete keywords and filters. Search bilingual metadata (title/purpose/summary and their *_original fields) plus OCR text.
 Prefer precise date_from/date_to, document_type, correspondent, or tags filters when the query implies them.
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.
@@ -1015,7 +1033,7 @@ func researchTools() []openai.ChatCompletionToolUnionParam {
 				"ids": map[string]any{
 					"type":        "array",
 					"items":       map[string]any{"type": "string"},
-					"description": "Document ids from earlier search_documents results, or cited earlier in this conversation.",
+					"description": "Document ids from earlier search_documents results, linked in the user's question, or cited earlier in this conversation.",
 				},
 				"focus": map[string]any{
 					"type": "string",

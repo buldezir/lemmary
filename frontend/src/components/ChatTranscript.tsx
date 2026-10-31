@@ -1,7 +1,34 @@
 import { type ReactNode, useEffect, useRef } from 'react'
+import { Link } from '@tanstack/react-router'
 import { t } from '../i18n'
 import { MarkdownContent } from './MarkdownContent'
 import type { ChatTurn } from '../lib/api/chats'
+import { splitAttachments } from '../lib/documentLink'
+
+/** A question as typed, under the documents attached to it as pills. */
+function QuestionText({ content }: { content: string }) {
+  const { question, documents } = splitAttachments(content)
+  return (
+    <>
+      {documents.length > 0 && (
+        <span className="mb-2 flex flex-wrap gap-1.5">
+          {documents.map((doc) => (
+            <Link
+              key={doc.id}
+              to="/document/$documentId"
+              params={{ documentId: doc.id }}
+              title={doc.title}
+              className="max-w-full truncate rounded-xs border border-paper/40 px-2 py-0.5 text-xs hover:bg-paper/10"
+            >
+              {doc.title}
+            </Link>
+          ))}
+        </span>
+      )}
+      {question}
+    </>
+  )
+}
 
 type ChatTranscriptProps = {
   /** The conversation on screen; changing it starts the scroll behaviour over. */
@@ -80,7 +107,11 @@ export function ChatTranscript({
                   : 'border border-line bg-paper text-ink'
               }`}
             >
-              {turn.role === 'user' ? turn.content : <MarkdownContent content={turn.content} chatId={conversationId} />}
+              {turn.role === 'user' ? (
+                <QuestionText content={turn.content} />
+              ) : (
+                <MarkdownContent content={turn.content} chatId={conversationId} />
+              )}
             </div>
           </div>
           {renderExtra?.(turn)}
