@@ -446,6 +446,11 @@ Chat-Endpunkt gesendet, und der Text kommt als Completion zurück. OpenRouter li
 auf, die `file`-Eingabe angeben; der Katalog von OpenAI sagt nichts dazu, wählen Sie also
 selbst ein Modell, das Dateien verarbeiten kann.
 
+Lemmary sendet jede Datei bis zur Dokumentgrenze von 47 MB. Die Datei reist
+base64-kodiert und damit etwa ein Drittel größer, sodass ein großer Scan trotzdem
+das Anfragelimit des Anbieters überschreiten kann; die Fehlermeldung des Anbieters
+nennt es dann.
+
 ### Anthropic-Modelle {#anthropic-models}
 
 Dasselbe Prinzip wie bei OpenAI: Das Dokument geht an das Modell, und der Text kommt als

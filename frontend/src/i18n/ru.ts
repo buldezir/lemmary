@@ -2032,7 +2032,7 @@ export const ru: Catalog = {
   'ocrTest.loadingProviders': 'Загрузка провайдеров...',
   'ocrTest.noProviders': 'Провайдеры не настроены',
   'ocrTest.chooseFile': 'Выберите файл',
-  'ocrTest.dropHint': 'или перетащите его сюда (до 10 MB)',
+  'ocrTest.dropHint': 'или перетащите его сюда (до 47 MB)',
   'ocrTest.running': 'Выполняется OCR...',
   'ocrTest.run': 'Запустить OCR',
   'ocrTest.result': 'Результат',

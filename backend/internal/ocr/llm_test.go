@@ -21,15 +21,43 @@ import (
 	"lemmary/backend/internal/pdftool/testpdf"
 )
 
-// A scan between 10 MiB and documents.file's limit must still reach Apple
-// Vision; a hosted model keeps the smaller cap.
-func TestMaxFileBytesFollowsTheSDK(t *testing.T) {
+// A scan up to documents.file's limit reaches a hosted model; issue #157 was a
+// 17 MB PDF refused locally before any request was made.
+func TestExtractTextSendsAFileOfTheDocumentCap(t *testing.T) {
 	t.Parallel()
-	if got := maxFileBytes(aiprovider.SDKLemmaryLocalAI); int64(got) != models.MaxFileBytes {
-		t.Errorf("lemmary_local_ai cap = %d, want %d", got, models.MaxFileBytes)
+	var received atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n, _ := io.Copy(io.Discard, r.Body)
+		received.Store(n)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":      "chatcmpl-ocr",
+			"object":  "chat.completion",
+			"created": 1,
+			"model":   "test-model",
+			"choices": []map[string]any{{
+				"index":         0,
+				"message":       map[string]any{"role": "assistant", "content": "page text"},
+				"finish_reason": "stop",
+			}},
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	path := filepath.Join(t.TempDir(), "scan.png")
+	if err := os.WriteFile(path, make([]byte, models.MaxFileBytes), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if got := maxFileBytes(aiprovider.SDKOpenAI); got != llmOCRMaxFileBytes {
-		t.Errorf("openai cap = %d, want %d", got, llmOCRMaxFileBytes)
+	p := NewLLMProvider(aiprovider.Provider{
+		SDK:     aiprovider.SDKOpenAI,
+		APIKey:  "test-key",
+		BaseURL: srv.URL + "/v1",
+	}, "test-model", 30*time.Second, slog.Default())
+	if _, err := p.ExtractText(context.Background(), path, "image/png"); err != nil {
+		t.Fatalf("ExtractText: %v", err)
+	}
+	if received.Load() < models.MaxFileBytes {
+		t.Errorf("request body = %d bytes, want at least the %d-byte file", received.Load(), models.MaxFileBytes)
 	}
 }
 

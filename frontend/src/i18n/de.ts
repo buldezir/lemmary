@@ -1852,7 +1852,7 @@ export const de: Catalog = {
   'ocrTest.loadingProviders': 'Anbieter werden geladen...',
   'ocrTest.noProviders': 'Keine Anbieter konfiguriert',
   'ocrTest.chooseFile': 'Datei wählen',
-  'ocrTest.dropHint': 'oder hierher ziehen (max. 10 MB)',
+  'ocrTest.dropHint': 'oder hierher ziehen (max. 47 MB)',
   'ocrTest.running': 'OCR läuft...',
   'ocrTest.run': 'OCR ausführen',
   'ocrTest.result': 'Ergebnis',

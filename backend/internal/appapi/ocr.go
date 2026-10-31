@@ -11,11 +11,12 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/ocr"
 	"lemmary/backend/internal/textextract"
 )
 
-const ocrTestMaxFileBytes = 10 * 1024 * 1024
+const ocrTestMaxFileBytes = models.MaxFileBytes
 
 // pickableProvider is deliberately not providerResponse, which carries
 // api_key_set and the signed-in ChatGPT account. This list is readable by any

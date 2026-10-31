@@ -17,7 +17,7 @@ ganze Seite zu lesen.
 | Chat mit Dokumenten | ✅ |
 | Metadatenextraktion | ✅ |
 | Deep Research (und sein Helfer pro Dokument) | ✅ |
-| OCR | ✅ – ein PDF oder ein Bild, bis 10 MB, gelesen vom zugewiesenen Modell |
+| OCR | ✅ – ein PDF oder ein Bild, bis 47 MB, gelesen vom zugewiesenen Modell |
 | Embeddings | ❌ – behalten Sie einen Anbieter mit Schlüssel oder den Sidecar zugewiesen |
 
 OCR funktioniert genauso wie bei OpenAI oder OpenRouter: Die Datei geht als Anhang an
