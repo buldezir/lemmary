@@ -1,4 +1,4 @@
-import { type ComponentProps, type ReactNode, type SubmitEvent, useEffect, useRef, useState } from 'react'
+import { type ComponentProps, type ReactNode, type SubmitEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ClientResponseError } from 'pocketbase'
 import { pb } from '../lib/pb'
@@ -267,6 +267,18 @@ export function DocumentDetailPage() {
 
   const originalOcrRef = useRef<HTMLElement | null>(null)
   const translatedOcrRef = useRef<HTMLElement | null>(null)
+  // Full screen mounts the panes afresh inside the dialog, and back again on
+  // close, so their scroll position is carried across by hand.
+  const ocrScroll = useRef([0, 0])
+  function expandOcr(expanded: boolean) {
+    ocrScroll.current = [originalOcrRef.current?.scrollTop ?? 0, translatedOcrRef.current?.scrollTop ?? 0]
+    setOcrExpanded(expanded)
+  }
+  useLayoutEffect(() => {
+    const [original, translated] = ocrScroll.current
+    if (originalOcrRef.current) originalOcrRef.current.scrollTop = original
+    if (translatedOcrRef.current) translatedOcrRef.current.scrollTop = translated
+  }, [ocrExpanded])
   // Setting the other pane's scrollTop fires its scroll event in turn; that
   // echo is skipped so the two panes do not fight over the position.
   const scrollEcho = useRef<HTMLElement | null>(null)
@@ -1019,14 +1031,19 @@ export function DocumentDetailPage() {
             </label>
 
             <div className={`${labelClass} sm:col-span-2`}>
-              <OcrFrame expanded={ocrExpanded} onClose={() => setOcrExpanded(false)}>
+              <OcrFrame expanded={ocrExpanded} onClose={() => expandOcr(false)}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span id="ocr-text-label">{t('documentPage.fieldOcr')}</span>
                   {(hasOcrText || editing) && (
                     <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                      {editing && ocrExpanded && (
+                        <Button type="submit" size="xs" disabled={saving}>
+                          {saving ? t('documentPage.saving') : t('documentPage.saveCorrections')}
+                        </Button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => setOcrExpanded(!ocrExpanded)}
+                        onClick={() => expandOcr(!ocrExpanded)}
                         aria-label={t(ocrExpanded ? 'documentPage.ocrCollapse' : 'documentPage.ocrExpand')}
                         title={t(ocrExpanded ? 'documentPage.ocrCollapse' : 'documentPage.ocrExpand')}
                         className="rounded-xs border border-line-strong bg-surface px-1.5 py-1 text-ink-muted transition-colors hover:bg-bright hover:text-ink"
@@ -1350,7 +1367,10 @@ function OcrFrame({ expanded, onClose, children }: { expanded: boolean; onClose:
       ref={(dialog) => {
         if (dialog && !dialog.open) dialog.showModal()
       }}
-      onClose={onClose}
+      onCancel={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
       className="m-auto flex h-[calc(100dvh-2rem)] max-h-none w-[calc(100vw-2rem)] max-w-none flex-col gap-1.5 border border-line bg-surface p-4 text-sm font-medium text-ink-muted backdrop:bg-ink/40"
     >
       {children}

@@ -18,4 +18,24 @@ describe('MarkdownContent', () => {
     expect(html).not.toContain('onclick')
     expect(html).not.toContain('<script')
   })
+
+  it('keeps merged table cells', () => {
+    const html = renderToStaticMarkup(
+      <MarkdownContent
+        content={'<table><tr><th colspan="2" scope="col">Total</th></tr><tr><td rowspan="3" align="center">A</td></tr></table>'}
+        html
+      />,
+    )
+    expect(html).toContain('<th colSpan="2" scope="col"')
+    expect(html).toContain('<td rowSpan="3" style="text-align:center"')
+  })
+
+  it('drops images, which would fetch any URL they name', () => {
+    for (const src of ['https://example.test/pixel.png', '//example.test/x.png', '/api/documents/x']) {
+      const html = renderToStaticMarkup(
+        <MarkdownContent content={`<img src="${src}">\n\n![a](${src})\n\n<picture><source srcset="${src}"></picture>`} html />,
+      )
+      expect(html).not.toContain(src)
+    }
+  })
 })
