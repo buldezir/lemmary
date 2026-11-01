@@ -12,7 +12,7 @@ import { useAsync } from '../hooks/useAsync'
 import { useDocumentFilterOptions, useDocumentList } from '../hooks/useDocumentList'
 import { useStoredFlag } from '../hooks/useStoredFlag'
 import type { BulkMode } from '../components/DocumentBulkBar'
-import { DocumentFilters } from '../components/DocumentFilters'
+import { DocumentFilters, DocumentSortMenu, OwnerMenu } from '../components/DocumentFilters'
 import { DocumentGrid } from '../components/DocumentGrid'
 import { DocumentTimeline } from '../components/DocumentTimeline'
 import { t } from '../i18n'
@@ -74,12 +74,13 @@ export function IndexPage() {
 
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('index.title')}</h2>
           <p className="text-sm text-ink-soft">{t('index.intro')}</p>
         </div>
         <div className="flex shrink-0 gap-2">
+          <DocumentSortMenu query={query} updateQuery={updateQuery} />
           {hasActiveFilters(query) && list.totalItems > 0 && (
             <button
               type="button"
@@ -110,6 +111,7 @@ export function IndexPage() {
           >
             {t('index.aiSearch')}
           </Link>
+          <OwnerMenu query={query} updateQuery={updateQuery} className="sm:hidden" />
         </div>
       </div>
 
@@ -123,7 +125,7 @@ export function IndexPage() {
           onToggleExpanded={() => setShowTimeline((shown) => !shown)}
           className={
             showTimeline
-              ? 'order-last lg:order-first lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:w-44 lg:shrink-0 lg:overflow-y-auto'
+              ? 'order-last lg:order-first lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:w-36 lg:shrink-0 lg:overflow-y-auto'
               : // Collapsed it is a rule down the side of the grid, so it wants the
                 // row's height rather than a sticky box of its own.
                 'order-last h-4 lg:order-first lg:h-auto lg:w-4 lg:shrink-0 lg:self-stretch'

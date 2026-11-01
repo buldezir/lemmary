@@ -12,7 +12,7 @@ import {
   type DocumentList,
 } from '../hooks/useDocumentList'
 import { Combobox } from '../components/Combobox'
-import { DocumentFilters } from '../components/DocumentFilters'
+import { DocumentFilters, DocumentSortMenu } from '../components/DocumentFilters'
 import { BulkDocumentCard } from '../components/BulkDocumentCard'
 import { Pagination } from '../components/Pagination'
 import { Button } from '../components/ui'
@@ -25,7 +25,10 @@ export function BulkActionsPage() {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('bulk.title')}</h2>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('bulk.title')}</h2>
+        <DocumentSortMenu query={query} updateQuery={updateQuery} />
+      </div>
 
       <div className="flex flex-col gap-4">
         <DocumentFilters

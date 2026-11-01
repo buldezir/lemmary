@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 import { t } from '../i18n'
+import { listboxClassName, listOptionClassName } from './ui'
 
 export type ComboboxOption = {
   value: string
@@ -279,9 +280,7 @@ export function Combobox({
       {open && (
         <ul
           role="listbox"
-          className={`absolute z-20 max-h-56 w-full overflow-auto rounded-xs border border-line bg-surface py-1 shadow-sm ${
-            dropUp ? 'bottom-full mb-1' : 'mt-1'
-          }`}
+          className={`${listboxClassName} w-full ${dropUp ? 'bottom-full mb-1' : 'mt-1'}`}
         >
           {filteredOptions.length === 0 ? (
             <li className="px-3 py-1.5 text-sm text-ink-faint">{t('combobox.noMatches')}</li>
@@ -296,7 +295,7 @@ export function Combobox({
                   ref={highlighted ? highlightedRef : undefined}
                   role="option"
                   aria-selected={selected}
-                  className={`cursor-pointer truncate px-3 py-1.5 text-sm ${
+                  className={`${listOptionClassName} ${
                     highlighted ? 'bg-wash text-ink' : 'text-ink-muted'
                   } ${selected ? 'font-medium' : ''}`}
                   title={option.label}
