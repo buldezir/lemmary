@@ -80,6 +80,7 @@ export function useDocumentList({
     correspondent: correspondentFilter,
     tags: tagFilter,
     untagged,
+    sort,
     page,
   } = query
   const statusFilter = fixedStatus ?? query.status
@@ -187,7 +188,8 @@ export function useDocumentList({
               owner: ownerFilter,
             })
           : await pb.collection('documents').getList<DocumentRecord>(page, pageSize, {
-              sort: '-created',
+              // Dates and titles repeat, and a tie reorders across pages.
+              sort: sort.endsWith('created') ? sort : `${sort},-created`,
               expand: DOCUMENT_EXPAND,
               ...(filter ? { filter } : {}),
             })
@@ -269,6 +271,7 @@ export function useDocumentList({
     untagged,
     debouncedSearch,
     ownerFilter,
+    sort,
     updateQuery,
   ])
 

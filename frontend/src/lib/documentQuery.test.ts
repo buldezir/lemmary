@@ -38,6 +38,7 @@ describe('parseDocumentQuery', () => {
       tags: 'tag1,tag2',
       untagged: false,
       owner: 'all',
+      sort: '-created',
       undated: true,
       page: 3,
     })
@@ -102,6 +103,7 @@ describe('documentQuerySearch', () => {
       tags: 'tag1,tag2',
       untagged: false,
       owner: 'shared' as const,
+      sort: 'document_date' as const,
       undated: false,
       page: 4,
     }
@@ -166,6 +168,14 @@ describe('the untagged filter', () => {
     })
     expect(hasActiveFilters({ ...defaultDocumentQuery, untagged: true })).toBe(true)
   })
+})
+
+test('sort keeps a known value, defaults anything else and is no filter', () => {
+  expect(parseDocumentQuery({ sort: '-document_date' }).sort).toBe('-document_date')
+  expect(parseDocumentQuery({ sort: '-title' }).sort).toBe('-title')
+  expect(parseDocumentQuery({ sort: 'size' }).sort).toBe('-created')
+  expect(documentQuerySearch({ ...defaultDocumentQuery, sort: '-created' })).toEqual({})
+  expect(hasActiveFilters({ ...defaultDocumentQuery, sort: 'created' })).toBe(false)
 })
 
 test('owner keeps a known value and defaults anything else', () => {

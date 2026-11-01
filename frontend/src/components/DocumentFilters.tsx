@@ -1,10 +1,17 @@
 import { t } from '../i18n'
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import type { OptionRecord } from '../lib/api/documents'
-import { MIN_SEARCH_LENGTH, tagIds, type DocumentOwner, type DocumentQuery } from '../lib/documentQuery'
+import {
+  MIN_SEARCH_LENGTH,
+  tagIds,
+  type DocumentOwner,
+  type DocumentQuery,
+  type DocumentSort,
+} from '../lib/documentQuery'
 import type { TagRecord } from '../lib/api/tags'
 import { Combobox } from './Combobox'
 import { FilterCombobox } from './FilterCombobox'
+import { IconSelect } from './IconSelect'
 import { TagFilter } from './TagFilter'
 import { dateInputClassName } from './ui'
 
@@ -68,6 +75,9 @@ export function DocumentFilters({
             onChange={(next, untagged) => updateQuery({ tags: next.join(','), untagged })}
           />
         )}
+        {owner && (
+          <OwnerMenu query={query} updateQuery={updateQuery} className="hidden sm:block" />
+        )}
         {status !== undefined && (
           <Combobox
             value={status}
@@ -84,13 +94,7 @@ export function DocumentFilters({
         )}
       </div>
 
-      <div
-        className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${
-          owner
-            ? 'lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)]'
-            : 'lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)]'
-        }`}
-      >
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)]">
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-ink-soft">{t('documentFilters.from')}</span>
           <input
@@ -112,18 +116,6 @@ export function DocumentFilters({
             className={dateInputClassName}
           />
         </label>
-        {owner && (
-          <FilterCombobox
-            label={t('documentFilters.owner')}
-            value={query.owner}
-            allLabel={t('documentFilters.all')}
-            options={[
-              { value: 'mine', label: t('documentFilters.mine') },
-              { value: 'shared', label: t('documentFilters.shared') },
-            ]}
-            onChange={(next) => updateQuery({ owner: next as DocumentOwner })}
-          />
-        )}
         <FilterCombobox
           label={t('documentFilters.type')}
           value={query.type}
@@ -143,5 +135,68 @@ export function DocumentFilters({
         />
       </div>
     </div>
+  )
+}
+
+const SORT_LABELS: Record<DocumentSort, () => string> = {
+  '-created': () => t('documentFilters.sortAddedDesc'),
+  created: () => t('documentFilters.sortAddedAsc'),
+  '-document_date': () => t('documentFilters.sortDateDesc'),
+  document_date: () => t('documentFilters.sortDateAsc'),
+  title: () => t('documentFilters.sortTitleAsc'),
+  '-title': () => t('documentFilters.sortTitleDesc'),
+}
+
+/** A search is ranked by relevance, so the menu stands down while one is active. */
+export function DocumentSortMenu({
+  query,
+  updateQuery,
+}: {
+  query: DocumentQuery
+  updateQuery: (patch: Partial<DocumentQuery>) => void
+}) {
+  const searching = query.q !== ''
+  return (
+    <IconSelect
+      label={t('documentFilters.sort')}
+      icon="M7 4v12M4 13l3 3 3-3M13 16V4M10 7l3-3 3 3"
+      value={searching ? 'relevance' : query.sort}
+      disabled={searching}
+      options={
+        searching
+          ? [{ value: 'relevance', label: t('documentFilters.sortRelevance') }]
+          : Object.entries(SORT_LABELS).map(([value, label]) => ({ value, label: label() }))
+      }
+      onChange={(next) => updateQuery({ sort: next as DocumentSort })}
+    />
+  )
+}
+
+/**
+ * On a phone the filter row stacks, where one icon would take a whole line, so
+ * the page shows a second copy in its header there and this one hides.
+ */
+export function OwnerMenu({
+  query,
+  updateQuery,
+  className,
+}: {
+  query: DocumentQuery
+  updateQuery: (patch: Partial<DocumentQuery>) => void
+  className: string
+}) {
+  return (
+    <IconSelect
+      label={t('documentFilters.owner')}
+      icon="M10 9.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM4.5 16.5a5.5 5.5 0 0 1 11 0"
+      value={query.owner}
+      options={[
+        { value: 'all', label: t('documentFilters.allOwners') },
+        { value: 'mine', label: t('documentFilters.mine') },
+        { value: 'shared', label: t('documentFilters.shared') },
+      ]}
+      className={className}
+      onChange={(next) => updateQuery({ owner: next as DocumentOwner })}
+    />
   )
 }

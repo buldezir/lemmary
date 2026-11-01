@@ -16,6 +16,21 @@ function owner(value: unknown): DocumentOwner {
   return DOCUMENT_OWNERS.find((known) => known === value) ?? 'all'
 }
 
+/** PocketBase sort expressions; the first is the default. */
+export const DOCUMENT_SORTS = [
+  '-created',
+  'created',
+  '-document_date',
+  'document_date',
+  'title',
+  '-title',
+] as const
+export type DocumentSort = (typeof DOCUMENT_SORTS)[number]
+
+function sort(value: unknown): DocumentSort {
+  return DOCUMENT_SORTS.find((known) => known === value) ?? DOCUMENT_SORTS[0]
+}
+
 /** Matches the index's prefix floor, fulltext.minPrefixLen. */
 export const MIN_SEARCH_LENGTH = 3
 
@@ -53,6 +68,8 @@ export type DocumentQuery = {
   untagged: boolean
   /** Whose documents: the caller's own, those shared with them, or 'all'. */
   owner: DocumentOwner
+  /** Ignored while searching: a search is ranked by relevance. */
+  sort: DocumentSort
   /** 1-based. */
   page: number
 }
@@ -74,6 +91,7 @@ export const defaultDocumentQuery: DocumentQuery = {
   tags: '',
   untagged: false,
   owner: 'all',
+  sort: '-created',
   page: 1,
 }
 
@@ -126,6 +144,7 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
     tags: untagged ? '' : tagIds(raw.tags).join(','),
     untagged,
     owner: owner(raw.owner),
+    sort: sort(raw.sort),
     page: pageNumber(raw.page),
   }
 }
@@ -159,5 +178,5 @@ export function inboxQuerySearch(raw: DocumentQueryInput): Partial<DocumentQuery
 
 /** Whether the list is narrowed at all, which decides the empty-state wording. */
 export function hasActiveFilters(query: DocumentQuery): boolean {
-  return Object.keys(documentQuerySearch(query)).some((key) => key !== 'page')
+  return Object.keys(documentQuerySearch(query)).some((key) => key !== 'page' && key !== 'sort')
 }
