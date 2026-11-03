@@ -43,11 +43,12 @@ env:
 # poppler on the runner.
 jobs:
   test:
-    if: github.event_name == 'pull_request'
-    # A fork's pull request gets no private overlay key, so
-    # ./scripts/test-all.sh fails rather than reporting a green run that never
-    # executed e2e.
-    runs-on: ubuntu-latest
+    # A fork's pull request is skipped: this runs on a self-hosted runner, and
+    # ./scripts/test-all.sh comes from the pull request, so a fork's code would
+    # run on our machine. It would get no overlay key either. `meta` skips forks
+    # too, so a skipped test here still builds nothing.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: gh-runner-arm-1
     permissions:
       contents: read
 
