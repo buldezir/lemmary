@@ -48,7 +48,7 @@ jobs:
     # run on our machine. It would get no overlay key either. `meta` skips forks
     # too, so a skipped test here still builds nothing.
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: gh-runner-arm-1
+    runs-on: [self-hosted, ARM64]
     permissions:
       contents: read
 
