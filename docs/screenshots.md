@@ -80,8 +80,9 @@ button.
 ![Documents list on a phone](./screenshots/documents-mobile.png)
 
 **Bulk Actions**, behind the gear menu, is the same list made for working on
-many documents at once: mark them reviewed, assign or remove tags, share them,
-or queue steps to run again.
+many documents at once: mark them reviewed, assign or remove tags, set or clear
+one field (document type, correspondent or a custom field), share them, or
+queue steps to run again.
 
 ![Bulk Actions, every invoice selected and a tag picked](./screenshots/bulk.png)
 

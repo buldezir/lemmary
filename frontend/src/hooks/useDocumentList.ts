@@ -98,6 +98,8 @@ export function useDocumentList({
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  // Apart from error, so the reload an action triggers cannot wipe the action's failure.
+  const [loadError, setLoadError] = useState('')
   const [message, setMessage] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
@@ -209,7 +211,7 @@ export function useDocumentList({
         setDocuments(result.items)
         setTotalItems(result.totalItems)
         setTotalPages(result.totalPages)
-        setError('')
+        setLoadError('')
       } catch (err) {
         // Overlapping refreshes can autocancel each other; the surviving
         // request has the fresh data.
@@ -217,7 +219,7 @@ export function useDocumentList({
           return
         }
         if (active) {
-          setError(err instanceof Error ? err.message : t('useDocumentList.loadFailed'))
+          setLoadError(err instanceof Error ? err.message : t('useDocumentList.loadFailed'))
         }
       } finally {
         if (active && isInitial) {
@@ -517,7 +519,7 @@ export function useDocumentList({
     totalItems,
     totalPages,
     loading,
-    error,
+    error: error || loadError,
     message,
     libraryVersion,
     selectedIds,
