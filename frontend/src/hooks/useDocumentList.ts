@@ -30,6 +30,7 @@ import { onDocumentsChanged } from '../lib/documentEvents'
 import { REPROCESS_MODE_LABELS, type ProcessingJobRecord, type ReprocessMode } from '../lib/processing'
 import { PAGE_SIZES, parsePageSize } from '../lib/pagination'
 import { useAsync } from './useAsync'
+import { useDocumentSort } from '../lib/userSettings'
 import { useStoredValue } from './useStoredFlag'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 
@@ -68,7 +69,8 @@ export function useDocumentList({
   // The filters are the URL, not state, so the page is reproducible and Back
   // steps through it. The URL only carries the filters that are set, so the
   // defaults are filled back in here.
-  const parsed = parseDocumentQuery(useSearch({ strict: false }))
+  const defaultSort = useDocumentSort()
+  const parsed = parseDocumentQuery(useSearch({ strict: false }), defaultSort)
   const query = filters ? parsed : { ...defaultDocumentQuery, page: parsed.page }
   const navigate = useNavigate({ from: route })
   const {
@@ -126,18 +128,18 @@ export function useDocumentList({
       void navigate({
         to: route,
         search: (current) => {
-          const next = documentQuerySearch({
-            ...parseDocumentQuery(current),
-            page: 1,
-            ...patch,
-          })
+          const next = documentQuerySearch(
+            { ...parseDocumentQuery(current, defaultSort), page: 1, ...patch },
+            defaultSort,
+          )
           if (fixedStatus !== undefined) delete next.status
+          if (!filters) delete next.sort
           return next
         },
         replace,
       })
     },
-    [navigate, route, fixedStatus],
+    [navigate, route, fixedStatus, filters, defaultSort],
   )
 
   // Box -> URL, once the typing settles. Skipped while the two already agree,

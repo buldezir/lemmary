@@ -4,14 +4,16 @@ import { listboxClassName, listOptionClassName } from './ui'
 
 /**
  * A select whose trigger is an icon button, for a setting that does not earn a
- * field's width. The list is the Combobox's. Anything but the first option
- * marks the button, so a narrowed list does not hide behind a bare icon.
+ * field's width. The list is the Combobox's. Anything but the default (the
+ * first option unless given) marks the button, so a narrowed list does not hide
+ * behind a bare icon.
  */
 export function IconSelect({
   label,
   icon,
   value,
   options,
+  defaultValue = options[0]?.value,
   disabled = false,
   className = '',
   onChange,
@@ -21,6 +23,7 @@ export function IconSelect({
   icon: string
   value: string
   options: ComboboxOption[]
+  defaultValue?: string
   disabled?: boolean
   className?: string
   onChange: (value: string) => void
@@ -87,7 +90,7 @@ export function IconSelect({
         onClick={() => (open ? setOpen(false) : openList())}
         onKeyDown={onKeyDown}
         className={`flex items-center justify-center rounded-xs border bg-surface px-2.5 py-2 transition-colors hover:bg-bright hover:text-ink focus:border-oxblood focus:ring-1 focus:ring-oxblood focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
-          selectedIndex > 0 ? 'border-oxblood text-oxblood' : 'border-line-strong text-ink-muted'
+          value !== defaultValue ? 'border-oxblood text-oxblood' : 'border-line-strong text-ink-muted'
         }`}
       >
         <svg

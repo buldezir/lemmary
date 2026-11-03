@@ -2,6 +2,7 @@ import { t } from '../i18n'
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import type { OptionRecord } from '../lib/api/documents'
 import {
+  DOCUMENT_SORT_LABELS,
   MIN_SEARCH_LENGTH,
   tagIds,
   type DocumentOwner,
@@ -13,6 +14,7 @@ import { Combobox } from './Combobox'
 import { FilterCombobox } from './FilterCombobox'
 import { IconSelect } from './IconSelect'
 import { TagFilter } from './TagFilter'
+import { useDocumentSort } from '../lib/userSettings'
 import { dateInputClassName } from './ui'
 
 /**
@@ -138,15 +140,6 @@ export function DocumentFilters({
   )
 }
 
-const SORT_LABELS: Record<DocumentSort, () => string> = {
-  '-created': () => t('documentFilters.sortAddedDesc'),
-  created: () => t('documentFilters.sortAddedAsc'),
-  '-document_date': () => t('documentFilters.sortDateDesc'),
-  document_date: () => t('documentFilters.sortDateAsc'),
-  title: () => t('documentFilters.sortTitleAsc'),
-  '-title': () => t('documentFilters.sortTitleDesc'),
-}
-
 /** A search is ranked by relevance, so the menu stands down while one is active. */
 export function DocumentSortMenu({
   query,
@@ -156,16 +149,18 @@ export function DocumentSortMenu({
   updateQuery: (patch: Partial<DocumentQuery>) => void
 }) {
   const searching = query.q !== ''
+  const defaultSort = useDocumentSort()
   return (
     <IconSelect
       label={t('documentFilters.sort')}
       icon="M7 4v12M4 13l3 3 3-3M13 16V4M10 7l3-3 3 3"
       value={searching ? 'relevance' : query.sort}
+      defaultValue={searching ? 'relevance' : defaultSort}
       disabled={searching}
       options={
         searching
           ? [{ value: 'relevance', label: t('documentFilters.sortRelevance') }]
-          : Object.entries(SORT_LABELS).map(([value, label]) => ({ value, label: label() }))
+          : Object.entries(DOCUMENT_SORT_LABELS).map(([value, label]) => ({ value, label: label() }))
       }
       onChange={(next) => updateQuery({ sort: next as DocumentSort })}
     />
