@@ -133,12 +133,13 @@ export function useDocumentList({
             defaultSort,
           )
           if (fixedStatus !== undefined) delete next.status
+          if (!filters) delete next.sort
           return next
         },
         replace,
       })
     },
-    [navigate, route, fixedStatus, defaultSort],
+    [navigate, route, fixedStatus, filters, defaultSort],
   )
 
   // Box -> URL, once the typing settles. Skipped while the two already agree,
