@@ -390,7 +390,11 @@ function setDocumentsStatus(
   return updateDocuments(documentIds, { processing_status: status }, allFailed, someFailed)
 }
 
-/** One field on each document, as PUT /fields takes it: null clears, an option field takes a name. */
+/**
+ * One field on each document, as PUT /fields takes it: null clears, an option
+ * field takes a name. A hand edit, so marking a duplicate reviewed afterwards
+ * does not rerun extraction over it.
+ */
 export function setDocumentsField(
   documentIds: string[],
   fieldId: string,
@@ -398,7 +402,7 @@ export function setDocumentsField(
 ): Promise<void> {
   return updateDocuments(
     documentIds,
-    { fields: { [fieldId]: value } },
+    { fields: { [fieldId]: value }, metadata_source: 'user' },
     t('documents.setFieldFailed'),
     (done, failed) => t('documents.setFieldPartial', { done, failed }),
   )

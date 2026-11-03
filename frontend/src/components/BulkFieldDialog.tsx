@@ -45,6 +45,8 @@ export function BulkFieldDialog({
   ]
   const field = fields.find((f) => f.id === fieldId)
   const trimmed = value.trim()
+  const applied = field?.type === 'number' ? Number(trimmed) : trimmed
+  const valid = trimmed !== '' && (typeof applied === 'string' || Number.isFinite(applied))
 
   function pickField(id: string) {
     setFieldId(id)
@@ -126,8 +128,8 @@ export function BulkFieldDialog({
         </Button>
         <Button
           size="sm"
-          disabled={busy || !field || !trimmed}
-          onClick={() => field && onApply(field.id, field.name, field.type === 'number' ? Number(trimmed) : trimmed)}
+          disabled={busy || !field || !valid}
+          onClick={() => field && onApply(field.id, field.name, applied)}
         >
           {t('bulk.apply')}
         </Button>
