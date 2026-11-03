@@ -1527,6 +1527,9 @@ export const en = {
   'account.cardLayoutPreview': 'Preview image (like paperless-ngx)',
   'account.cardLayoutHint':
     'What a card in the document list shows under its title. PDFs and images show their first page; other files keep their summary.',
+  'account.documentSort': 'Default document order',
+  'account.documentSortHint':
+    'How the document list is sorted until you choose another order there. A search is still ranked by relevance.',
   'account.preferencesFailed': 'Could not save the preference.',
   'account.languageHint':
     'Saved to your account, so it follows you to every device, and used for the messages the server sends too. After you sign in, it replaces whatever the sign-in page was showing.',

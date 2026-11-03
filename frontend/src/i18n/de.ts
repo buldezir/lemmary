@@ -1598,6 +1598,9 @@ export const de: Catalog = {
   'account.cardLayoutPreview': 'Vorschaubild (wie paperless-ngx)',
   'account.cardLayoutHint':
     'Was eine Karte in der Dokumentliste unter ihrem Titel zeigt. PDFs und Bilder zeigen ihre erste Seite; andere Dateien behalten ihre Zusammenfassung.',
+  'account.documentSort': 'Standard-Sortierung der Dokumente',
+  'account.documentSortHint':
+    'So wird die Dokumentliste sortiert, bis Sie dort eine andere Reihenfolge wählen. Eine Suche bleibt nach Relevanz geordnet.',
   'account.preferencesFailed': 'Die Präferenz konnte nicht gespeichert werden.',
   'account.languageHint':
     'Wird in Ihrem Konto gespeichert, gilt also auf jedem Gerät, und auch für die Meldungen des Servers. Nach der Anmeldung ersetzt sie die Sprache der Anmeldeseite.',

@@ -1,6 +1,7 @@
 import type { RecordModel } from 'pocketbase'
 import { useEffect, useState } from 'react'
 import { adoptLanguage, languageNames, type Language } from '../i18n'
+import { documentSort, type DocumentSort } from './documentQuery'
 import { AuthRequiredError } from './auth'
 import { pb } from './pb'
 
@@ -12,7 +13,7 @@ export type CardLayout = 'summary' | 'preview'
  * migration. The account writes the field itself, so every key is read
  * defensively and anything unknown counts as no choice.
  */
-export type Preferences = { card_layout?: CardLayout; language?: Language }
+export type Preferences = { card_layout?: CardLayout; language?: Language; document_sort?: DocumentSort }
 
 function preferencesOf(record: RecordModel | null): Record<string, unknown> {
   const stored: unknown = record?.preferences
@@ -30,17 +31,30 @@ export function languageOf(record: RecordModel | null): Language | null {
   return typeof stored === 'string' && Object.hasOwn(languageNames, stored) ? (stored as Language) : null
 }
 
-/** Follows the signed-in account's record, so a saved change applies without a reload. */
-export function useCardLayout(): CardLayout {
-  const [layout, setLayout] = useState(() => cardLayoutOf(pb.authStore.record))
-  useEffect(() => pb.authStore.onChange((_token, record) => setLayout(cardLayoutOf(record))), [])
-  return layout
+/** No choice, and anything this build does not know, is the newest added first. */
+export function documentSortOf(record: RecordModel | null): DocumentSort {
+  return documentSort(preferencesOf(record).document_sort)
 }
+
+/** The list's default order, read when needed: the router validates before any component mounts. */
+export function accountDocumentSort(): DocumentSort {
+  return documentSortOf(pb.authStore.record)
+}
+
+/** Follows the signed-in account's record, so a saved change applies without a reload. */
+function usePreference<T>(read: (record: RecordModel | null) => T): T {
+  const [value, setValue] = useState(() => read(pb.authStore.record))
+  useEffect(() => pb.authStore.onChange((_token, record) => setValue(read(record))), [read])
+  return value
+}
+
+export const useCardLayout = () => usePreference(cardLayoutOf)
+export const useDocumentSort = () => usePreference(documentSortOf)
 
 /**
  * Merged onto the stored object, read fresh: the field is written whole, and the
  * copy from sign-in would drop a key another device saved since. The SDK writes
- * the saved record back into the auth store, which useCardLayout follows.
+ * the saved record back into the auth store, which usePreference follows.
  */
 export async function savePreferences(patch: Preferences) {
   const record = pb.authStore.record
