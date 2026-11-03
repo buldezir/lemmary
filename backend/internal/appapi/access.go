@@ -28,6 +28,10 @@ func CanReadDocument(app shareLookup, record *core.Record, userID string) bool {
 		"document = {:document} && user = {:user}",
 		dbx.Params{"document": record.Id, "user": userID},
 	)
+	if err == nil {
+		return true
+	}
+	_, err = app.FindFirstRecordByFilter("library_shares", "owner = {:owner} && recipient = {:user}", dbx.Params{"owner": record.GetString("user"), "user": userID})
 	return err == nil
 }
 
@@ -37,7 +41,7 @@ func CanReadDocument(app shareLookup, record *core.Record, userID string) bool {
 func ReadableDocumentsSQL(alias, param string) string {
 	ref := "{:" + param + "}"
 	return "(" + alias + ".user = " + ref + " OR EXISTS (SELECT 1 FROM " + CollectionShares +
-		" s WHERE s.document = " + alias + ".id AND s.user = " + ref + "))"
+		" s WHERE s.document = " + alias + ".id AND s.user = " + ref + ") OR EXISTS (SELECT 1 FROM library_shares l WHERE l.owner = " + alias + ".user AND l.recipient = " + ref + "))"
 }
 
 // SharedWith lists the documents other accounts shared with userID, and those
@@ -50,7 +54,7 @@ func SharedWith(app interface {
 		return nil, nil, nil
 	}
 	docs, err := app.FindRecordsByFilter("documents",
-		"document_shares_via_document.user ?= {:user}", "", 0, 0, dbx.Params{"user": userID})
+		"document_shares_via_document.user ?= {:user} || user.library_shares_via_owner.recipient ?= {:user}", "", 0, 0, dbx.Params{"user": userID})
 	if err != nil {
 		return nil, nil, err
 	}

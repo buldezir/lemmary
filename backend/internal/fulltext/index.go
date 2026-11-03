@@ -46,13 +46,14 @@ var indexAllHook func(app core.App, idx bleve.Index) (int, error)
 // worker takes writeMu.RLock per task, so a rebuild pauses the queue without
 // stalling the record hooks that enqueue. WaitIdle joins the queue via qCond.
 type Index struct {
-	mu           sync.RWMutex // held for the duration of Bleve ops; exclusive for close/swap
-	writeMu      sync.RWMutex // writers RLock; Rebuild/Close take Lock
-	rebuildMu    sync.Mutex   // serializes Rebuild
-	idx          bleve.Index
-	path         string
-	versionPath  string
-	needsRebuild bool
+	libraryOwners func(string) ([]string, error)
+	mu            sync.RWMutex // held for the duration of Bleve ops; exclusive for close/swap
+	writeMu       sync.RWMutex // writers RLock; Rebuild/Close take Lock
+	rebuildMu     sync.Mutex   // serializes Rebuild
+	idx           bleve.Index
+	path          string
+	versionPath   string
+	needsRebuild  bool
 
 	// Optional (nil when no embedding model is bound); everything touching it
 	// takes the locks above in the same order.

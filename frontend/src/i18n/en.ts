@@ -1537,6 +1537,12 @@ export const en = {
   'account.passwordWrong': 'The current password is wrong.',
   'account.passwordRejected': 'The new password was refused; use at least 8 characters.',
   'account.passwordFailed': 'Could not change the password.',
+  'account.sharing': "Sharing",
+  'librarySharing.description': "Share all documents you own with other accounts, including documents you add in the future. Recipients can read and download them, but cannot edit, delete or share them onward.",
+  'librarySharing.empty': "Your library is not shared with anyone.",
+  'librarySharing.revokeHint': "Removing library access preserves any documents you shared individually.",
+  'librarySharing.inherited': "Access through Account → Sharing",
+  'librarySharing.manage': "Manage library access under Account → Sharing.",
   'account.title': 'Account',
   'account.intro': 'How you and your agents sign in to this archive.',
 

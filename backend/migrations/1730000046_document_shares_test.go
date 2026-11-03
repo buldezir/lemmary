@@ -316,3 +316,109 @@ func TestSharesGoAwayWithTheirDocumentAndTheirUser(t *testing.T) {
 		t.Fatal("share outlived its recipient")
 	}
 }
+
+func TestLibraryShareCoversFutureDocumentsAndPreservesExplicitShares(t *testing.T) {
+	app := bootMigratedApp(t)
+	owner := makeUser(t, app, "library-owner@example.com")
+	reader := makeUser(t, app, "library-reader@example.com")
+	stranger := makeUser(t, app, "library-stranger@example.com")
+	existing := makeDocument(t, app, owner, "existing")
+	explicit := makeDocument(t, app, owner, "explicit")
+	makeShare(t, app, explicit, reader)
+	coll, err := app.FindCollectionByNameOrId(librarySharesCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := core.NewRecord(coll)
+	grant.Set("owner", owner)
+	grant.Set("recipient", reader)
+	if err := app.Save(grant); err != nil {
+		t.Fatal(err)
+	}
+	future := makeDocument(t, app, owner, "future")
+	docs := documentRules(t, app)
+	for _, id := range []string{existing, explicit, future} {
+		if !canAccess(t, app, "documents", id, asUser(t, app, reader), docs.ViewRule) {
+			t.Fatalf("reader cannot read %s", id)
+		}
+		for _, info := range []*core.RequestInfo{asUser(t, app, stranger), {}} {
+			if canAccess(t, app, "documents", id, info, docs.ViewRule) {
+				t.Fatal("unrelated caller can read library")
+			}
+		}
+		if canAccess(t, app, "documents", id, asUser(t, app, reader), docs.UpdateRule) {
+			t.Fatal("reader can edit library")
+		}
+	}
+	if !canAccess(t, app, librarySharesCollection, grant.Id, asUser(t, app, owner), coll.DeleteRule) {
+		t.Fatal("owner cannot revoke")
+	}
+	if canAccess(t, app, librarySharesCollection, grant.Id, asUser(t, app, reader), coll.DeleteRule) {
+		t.Fatal("reader can revoke")
+	}
+	if err := app.Save(core.NewRecord(coll)); err == nil {
+		t.Fatal("missing relations accepted")
+	}
+	duplicate := core.NewRecord(coll)
+	duplicate.Set("owner", owner)
+	duplicate.Set("recipient", reader)
+	if err := app.Save(duplicate); err == nil {
+		t.Fatal("duplicate grant accepted")
+	}
+	if err := app.Delete(grant); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{existing, future} {
+		if canAccess(t, app, "documents", id, asUser(t, app, reader), docs.ViewRule) {
+			t.Fatal("revoked library still readable")
+		}
+	}
+	if !canAccess(t, app, "documents", explicit, asUser(t, app, reader), docs.ViewRule) {
+		t.Fatal("explicit grant lost")
+	}
+}
+
+func TestLibraryGrantDoesNotReshareAndFollowsOwnership(t *testing.T) {
+	app := bootMigratedApp(t)
+	owner := makeUser(t, app, "library-owner@example.com")
+	reader := makeUser(t, app, "library-reader@example.com")
+	third := makeUser(t, app, "library-third@example.com")
+	borrowed := makeDocument(t, app, third, "borrowed")
+	makeShare(t, app, borrowed, owner)
+	own := makeDocument(t, app, owner, "owned")
+	coll, err := app.FindCollectionByNameOrId(librarySharesCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := core.NewRecord(coll)
+	grant.Set("owner", owner)
+	grant.Set("recipient", reader)
+	if err := app.Save(grant); err != nil {
+		t.Fatal(err)
+	}
+	docs := documentRules(t, app)
+	if canAccess(t, app, "documents", borrowed, asUser(t, app, reader), docs.ViewRule) {
+		t.Fatal("borrowed document reshared")
+	}
+	record, err := app.FindRecordById("documents", own)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Set("user", third)
+	if err := app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+	if canAccess(t, app, "documents", own, asUser(t, app, reader), docs.ViewRule) {
+		t.Fatal("library access survived ownership transfer")
+	}
+	account, err := app.FindRecordById("users", reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Delete(account); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.FindRecordById(librarySharesCollection, grant.Id); err == nil {
+		t.Fatal("deleted recipient left a grant")
+	}
+}

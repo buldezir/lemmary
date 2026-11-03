@@ -42,6 +42,7 @@ const (
 )
 
 type Query struct {
+	libraryOwners    []string
 	Text             string
 	UserID           string
 	ProcessingStatus string
@@ -136,6 +137,10 @@ var boostedTextFields = []boostedField{
 }
 
 func (i *Index) Search(q Query) (Result, error) {
+	q, err := i.scopeQuery(q)
+	if err != nil {
+		return Result{}, err
+	}
 	i.WaitIdle()
 	empty := Result{Hits: []Hit{}}
 	text := strings.TrimSpace(q.Text)
@@ -249,6 +254,10 @@ func (i *Index) IDsByKeyword(field, value string) ([]string, error) {
 // complete is false when there were more than limit, the caller's signal that
 // the list cannot be used as a pre-filter for the chunk index.
 func (i *Index) EligibleIDs(q Query, limit int) ([]string, bool, error) {
+	q, err := i.scopeQuery(q)
+	if err != nil {
+		return nil, false, err
+	}
 	filter := filterQuery(q)
 	if filter == nil || limit <= 0 {
 		return nil, true, nil
@@ -258,7 +267,7 @@ func (i *Index) EligibleIDs(q Query, limit int) ([]string, bool, error) {
 		ids      []string
 		complete bool
 	)
-	err := i.withIndex(func(b bleve.Index) error {
+	err = i.withIndex(func(b bleve.Index) error {
 		// One over the limit, so a full page is distinguishable from one that
 		// happened to end exactly there.
 		req := bleve.NewSearchRequestOptions(filter, limit+1, 0, false)
@@ -282,6 +291,10 @@ func (i *Index) EligibleIDs(q Query, limit int) ([]string, bool, error) {
 // highlighting. total is the full match count whatever the limit; complete is
 // whether ids holds all of it. Search is the wrong tool here: it highlights.
 func (i *Index) MatchingIDs(q Query, limit int) (ids []string, total uint64, complete bool, err error) {
+	q, err = i.scopeQuery(q)
+	if err != nil {
+		return nil, 0, false, err
+	}
 	i.WaitIdle()
 	text := strings.TrimSpace(q.Text)
 	if text == "" {
@@ -327,6 +340,10 @@ func (i *Index) MatchingIDs(q Query, limit int) (ids []string, total uint64, com
 
 // The text is required; a filters-only count is the database's job.
 func (i *Index) CountMatching(q Query) (uint64, error) {
+	q, err := i.scopeQuery(q)
+	if err != nil {
+		return 0, err
+	}
 	i.WaitIdle()
 	text := strings.TrimSpace(q.Text)
 	if text == "" {
@@ -382,13 +399,17 @@ func countRung(b bleve.Index, bq query.Query) (*bleve.SearchResult, error) {
 // The post-filter for the case EligibleIDs could not pre-filter: the dense list
 // is short, so asking about its documents beats enumerating every allowed one.
 func (i *Index) KeepEligible(q Query, ids []string) ([]string, error) {
+	q, err := i.scopeQuery(q)
+	if err != nil {
+		return nil, err
+	}
 	filter := filterQuery(q)
 	if filter == nil || len(ids) == 0 {
 		return ids, nil
 	}
 
 	var kept []string
-	err := i.withIndex(func(b bleve.Index) error {
+	err = i.withIndex(func(b bleve.Index) error {
 		bq := bleve.NewConjunctionQuery(filter, bleve.NewDocIDQuery(ids))
 		req := bleve.NewSearchRequestOptions(bq, len(ids), 0, false)
 		res, err := b.Search(req)
@@ -456,11 +477,11 @@ func filterConjuncts(q Query) []query.Query {
 			// Readable by me and owned by somebody else. Expressed as one
 			// boolean because a lone MustNot matches nothing in bleve.
 			shared := bleve.NewBooleanQuery()
-			shared.AddMust(termQuery(FieldUser, userID))
+			shared.AddMust(readableQuery(q))
 			shared.AddMustNot(termQuery(FieldOwner, userID))
 			conjuncts = append(conjuncts, shared)
 		default:
-			conjuncts = append(conjuncts, termQuery(FieldUser, userID))
+			conjuncts = append(conjuncts, readableQuery(q))
 		}
 	}
 	if status := strings.TrimSpace(q.ProcessingStatus); status != "" && status != "all" {
@@ -865,4 +886,21 @@ func plainFragment(s string) string {
 	s = strings.ReplaceAll(s, "</mark>", "")
 	s = html.UnescapeString(s)
 	return strings.TrimSpace(s)
+}
+
+func (i *Index) scopeQuery(q Query) (Query, error) {
+	if q.UserID == "" || i.libraryOwners == nil {
+		return q, nil
+	}
+	owners, err := i.libraryOwners(q.UserID)
+	q.libraryOwners = owners
+	return q, err
+}
+
+func readableQuery(q Query) query.Query {
+	own := termQuery(FieldUser, q.UserID)
+	if len(q.libraryOwners) == 0 {
+		return own
+	}
+	return bleve.NewDisjunctionQuery(own, anyTermQuery(FieldOwner, q.libraryOwners))
 }

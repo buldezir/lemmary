@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 
@@ -26,6 +27,17 @@ func Register(app core.App, idx *Index) {
 		idx = New()
 	}
 
+	idx.libraryOwners = func(userID string) ([]string, error) {
+		grants, err := app.FindAllRecords("library_shares", dbx.HashExp{"recipient": userID})
+		if err != nil {
+			return nil, err
+		}
+		owners := make([]string, 0, len(grants))
+		for _, grant := range grants {
+			owners = append(owners, grant.GetString("owner"))
+		}
+		return owners, nil
+	}
 	app.OnBootstrap().Bind(&hook.Handler[*core.BootstrapEvent]{
 		Priority: -10,
 		Func: func(e *core.BootstrapEvent) error {

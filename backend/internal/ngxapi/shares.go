@@ -50,8 +50,8 @@ func sharedEntityIDs(app core.App, collection, authID string) ([]any, error) {
 		var options []string
 		err := app.DB().NewQuery(
 			"SELECT DISTINCT v.[[option]] FROM {{" + models.CustomFieldValuesCollection + "}} v" +
-				" JOIN {{" + appapi.CollectionShares + "}} s ON s.[[document]] = v.[[document]]" +
-				" WHERE s.[[user]] = {:user} AND v.[[field]] = {:field} AND v.[[option]] != ''").
+				" JOIN {{documents}} d ON d.[[id]] = v.[[document]]" +
+				" WHERE " + appapi.ReadableDocumentsSQL("d", "user") + " AND d.[[user]] != {:user} AND v.[[field]] = {:field} AND v.[[option]] != ''").
 			Bind(dbx.Params{"user": authID, "field": fieldID}).Column(&options)
 		if err != nil {
 			return nil, err
@@ -66,8 +66,7 @@ func sharedEntityIDs(app core.App, collection, authID string) ([]any, error) {
 	var rows []string
 	err := app.DB().NewQuery(
 		"SELECT d.[[tags]] FROM {{documents}} d" +
-			" JOIN {{" + appapi.CollectionShares + "}} s ON s.[[document]] = d.[[id]]" +
-			" WHERE s.[[user]] = {:user}").
+			" WHERE " + appapi.ReadableDocumentsSQL("d", "user") + " AND d.[[user]] != {:user}").
 		Bind(dbx.Params{"user": authID}).Column(&rows)
 	if err != nil {
 		return nil, err

@@ -41,3 +41,34 @@ func TestNameScopeReachesOwnersWhoShareWithTheCaller(t *testing.T) {
 		t.Fatalf("tag ids = %v, want only the sharer's %s", ids, sharerTag.Id)
 	}
 }
+
+func TestLibraryGrantReachesCustomAPIsAndRetrieval(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "library-owner@example.com")
+	reader := makeQueueUser(t, app, "library-reader@example.com")
+	stranger := makeQueueUser(t, app, "library-stranger@example.com")
+	doc := makeQueueDocument(t, app, owner, "completed", "text")
+	coll, err := app.FindCollectionByNameOrId("library_shares")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := core.NewRecord(coll)
+	grant.Set("owner", owner)
+	grant.Set("recipient", reader)
+	if err := app.Save(grant); err != nil {
+		t.Fatal(err)
+	}
+	if !CanReadDocument(app, doc, reader) || CanReadDocument(app, doc, stranger) {
+		t.Fatal("incorrect library access")
+	}
+	ids, owners, err := SharedWith(app, reader)
+	if err != nil || len(ids) != 1 || ids[0] != doc.Id || len(owners) != 1 || owners[0] != owner {
+		t.Fatalf("retrieval scope: %v %v %v", ids, owners, err)
+	}
+	if err := app.Delete(grant); err != nil {
+		t.Fatal(err)
+	}
+	if CanReadDocument(app, doc, reader) {
+		t.Fatal("revoked library readable")
+	}
+}

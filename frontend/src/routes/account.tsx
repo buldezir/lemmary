@@ -1,3 +1,4 @@
+import { listShareRecipients } from '../lib/api/shares'
 import { type SubmitEvent, useId, useState } from 'react'
 import { changePassword, getMe } from '../lib/auth'
 import {
@@ -693,6 +694,7 @@ export function AccountProfilePage() {
 }
 
 export function AccountPage() {
+  const { data: recipients } = useAsync(listShareRecipients, [])
   return (
     <SectionLayout
       title={t('account.title')}
@@ -701,6 +703,7 @@ export function AccountPage() {
       links={[
         { to: '/account', label: t('account.profile'), exact: true },
         { to: '/account/preferences', label: t('account.preferences') },
+        ...(recipients?.length ? [{ to: '/account/sharing' as const, label: t('account.sharing') }] : []),
         { to: '/account/agents', label: t('account.agents') },
         { to: '/account/paperless', label: t('account.paperlessApps') },
         { to: '/account/password', label: t('account.password') },

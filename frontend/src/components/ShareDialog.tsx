@@ -1,3 +1,5 @@
+import { Link } from '@tanstack/react-router'
+import { listLibraryShares, type LibraryShare } from '../lib/api/libraryShares'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   listDocumentShares,
@@ -41,9 +43,10 @@ export function ShareSummary({
     if (!owned) {
       return t('shareDialog.sharedWithYouBy', { name: name(ownerId) })
     }
-    const shares = await listDocumentShares(documentId)
-    return shares.length > 0
-      ? t('shareDialog.sharedWith', { names: shares.map((share) => name(share.user)).join(', ') })
+    const [shares, library] = await Promise.all([listDocumentShares(documentId), listLibraryShares(ownerId)])
+    const readers = [...new Set([...shares.map((share) => share.user), ...library.map((share) => share.recipient)])]
+    return readers.length > 0
+      ? t('shareDialog.sharedWith', { names: readers.map(name).join(', ') })
       : ''
   }, [documentId, ownerId, owned, version])
 
@@ -65,6 +68,7 @@ export function ShareDialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const [users, setUsers] = useState<DirectoryUser[]>([])
+  const [library, setLibrary] = useState<LibraryShare[]>([])
   const [shares, setShares] = useState<ShareRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -74,7 +78,8 @@ export function ShareDialog({
     setLoading(true)
     setError('')
     try {
-      const [accounts, current] = await Promise.all([listShareRecipients(), listDocumentShares(documentId)])
+      const [accounts, current, inherited] = await Promise.all([listShareRecipients(), listDocumentShares(documentId), listLibraryShares()])
+      setLibrary(inherited)
       setUsers(accounts)
       setShares(current)
     } catch (err) {
@@ -101,7 +106,7 @@ export function ShareDialog({
     }
   }, [open, reload])
 
-  const sharedWith = new Set(shares.map((share) => share.user))
+  const sharedWith = new Set([...shares.map((share) => share.user), ...library.map((share) => share.recipient)])
   const available = users.filter((user) => !sharedWith.has(user.id))
   const byID = new Map(users.map((user) => [user.id, user]))
 
@@ -147,7 +152,22 @@ export function ShareDialog({
             onChange={(userId) => void run(() => shareDocument(documentId, userId))}
           />
 
-          {shares.length === 0 ? (
+          {library.length > 0 && (
+            <div className="text-sm text-ink-soft">
+              <Link to="/account/sharing" className="underline">{t('librarySharing.manage')}</Link>
+              <ul>
+                {library.map((grant) => {
+                  const who = byID.get(grant.recipient)
+                  return (
+                    <li key={grant.id}>
+                      {who ? label(who) : t('shareDialog.unknownAccount')} — {t('librarySharing.inherited')}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+          {shares.length === 0 && library.length === 0 ? (
             <p className="text-sm text-ink-soft">{t('shareDialog.notShared')}</p>
           ) : (
             <ul className="flex flex-col gap-1">

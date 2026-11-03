@@ -36,6 +36,9 @@ func countDB(t *testing.T) dbx.Builder {
 	if err != nil {
 		t.Fatalf("create shares table: %v", err)
 	}
+	if _, err := db.NewQuery(`CREATE TABLE library_shares (id TEXT PRIMARY KEY, owner TEXT, recipient TEXT)`).Execute(); err != nil {
+		t.Fatal(err)
+	}
 	rows := []struct {
 		id, user, date, typ, corr, tags string
 	}{
@@ -278,5 +281,23 @@ func TestCountDocumentsIncludesSharedDocuments(t *testing.T) {
 	}
 	if total != 1 {
 		t.Fatalf("sharing a document changed the owner's total: %d, want 1", total)
+	}
+}
+
+func TestCountDocumentsIncludesLiveLibraryGrants(t *testing.T) {
+	db := countDB(t)
+	if _, err := db.NewQuery(`INSERT INTO library_shares (id, owner, recipient) VALUES ('grant', 'you', 'me')`).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	_, total, err := countDocuments(context.Background(), db, countSpec{userID: "me"})
+	if err != nil || total != 6 {
+		t.Fatalf("library count=%d err=%v", total, err)
+	}
+	if _, err := db.NewQuery(`DELETE FROM library_shares`).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	_, total, err = countDocuments(context.Background(), db, countSpec{userID: "me"})
+	if err != nil || total != 5 {
+		t.Fatalf("revoked count=%d err=%v", total, err)
 	}
 }
