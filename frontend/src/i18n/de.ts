@@ -323,6 +323,8 @@ export const de: Catalog = {
   'documents.markReviewedPartial': '{done} als geprüft markiert; {failed} fehlgeschlagen.',
   'documents.markUnreviewedFailed': 'Konnte nicht als ungeprüft markiert werden.',
   'documents.markUnreviewedPartial': '{done} als ungeprüft markiert; {failed} fehlgeschlagen.',
+  'documents.setFieldFailed': 'Feld konnte nicht gesetzt werden.',
+  'documents.setFieldPartial': '{done} aktualisiert; {failed} fehlgeschlagen.',
   'documents.providerDefault': 'Anbieter-Standard',
   'documents.reprocessAllFailed': 'Alle fehlgeschlagenen erneut verarbeiten ({count})',
   'documents.reprocessFailed': 'Erneute Verarbeitung fehlgeschlagen',
@@ -943,6 +945,28 @@ export const de: Catalog = {
   },
   'bulk.shareError': 'Teilen fehlgeschlagen',
   'bulk.reprocessSteps': 'Schritte zur erneuten Verarbeitung',
+  'bulk.setFieldPanel': 'Feld setzen…',
+  'bulk.setFieldTitle': 'Feld setzen',
+  'bulk.setFieldIntro': {
+    one: 'Setzt ein Feld im {count} ausgewählten Dokument. Die übrigen Felder bleiben unverändert.',
+    other: 'Setzt ein Feld in den {count} ausgewählten Dokumenten. Die übrigen Felder bleiben unverändert.',
+  },
+  'bulk.field': 'Feld',
+  'bulk.pickField': 'Feld wählen...',
+  'bulk.value': 'Wert',
+  'bulk.pickValue': 'Wert wählen...',
+  'bulk.pickOrCreateValue': 'Namen wählen oder eingeben...',
+  'bulk.apply': 'Anwenden',
+  'bulk.clearField': 'Feld leeren',
+  'bulk.fieldSet': {
+    one: '{field} in {count} Dokument gesetzt.',
+    other: '{field} in {count} Dokumenten gesetzt.',
+  },
+  'bulk.fieldCleared': {
+    one: '{field} in {count} Dokument geleert.',
+    other: '{field} in {count} Dokumenten geleert.',
+  },
+  'bulk.setFieldError': 'Feld konnte nicht gesetzt werden',
 
   'tagsPage.title': 'Tags',
   'tagsPage.intro':

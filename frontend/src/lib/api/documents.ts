@@ -352,13 +352,12 @@ export async function deleteDocuments(documentIds: string[]): Promise<void> {
 }
 
 /**
- * A status write and nothing else: reviewing is not an edit, so metadata_source
- * still records that the model wrote the metadata. allSettled so one document
- * deleted in another tab does not discard the rest.
+ * One patch to each document. allSettled so one document deleted in another
+ * tab does not discard the rest.
  */
-async function setDocumentsStatus(
+async function updateDocuments(
   documentIds: string[],
-  status: 'completed' | 'needs_review',
+  patch: Record<string, unknown>,
   allFailed: string,
   someFailed: (done: number, failed: number) => string,
 ): Promise<void> {
@@ -366,9 +365,7 @@ async function setDocumentsStatus(
   await ensureAuth()
 
   const results = await Promise.allSettled(
-    documentIds.map((id) =>
-      pb.collection('documents').update(id, { processing_status: status }, { requestKey: null }),
-    ),
+    documentIds.map((id) => pb.collection('documents').update(id, patch, { requestKey: null })),
   )
   notifyDocumentsChanged()
 
@@ -378,6 +375,33 @@ async function setDocumentsStatus(
       failed === documentIds.length ? allFailed : someFailed(documentIds.length - failed, failed),
     )
   }
+}
+
+/**
+ * A status write and nothing else: reviewing is not an edit, so metadata_source
+ * still records that the model wrote the metadata.
+ */
+function setDocumentsStatus(
+  documentIds: string[],
+  status: 'completed' | 'needs_review',
+  allFailed: string,
+  someFailed: (done: number, failed: number) => string,
+): Promise<void> {
+  return updateDocuments(documentIds, { processing_status: status }, allFailed, someFailed)
+}
+
+/** One field on each document, as PUT /fields takes it: null clears, an option field takes a name. */
+export function setDocumentsField(
+  documentIds: string[],
+  fieldId: string,
+  value: string | number | null,
+): Promise<void> {
+  return updateDocuments(
+    documentIds,
+    { fields: { [fieldId]: value } },
+    t('documents.setFieldFailed'),
+    (done, failed) => t('documents.setFieldPartial', { done, failed }),
+  )
 }
 
 export function markDocumentsReviewed(documentIds: string[]): Promise<void> {
