@@ -457,3 +457,99 @@ func TestFusedDocumentPageKeepsSharedDocumentsOffMine(t *testing.T) {
 		t.Fatalf("want only the caller's own document: ok = %v, err = %v, %#v", ok, err, result)
 	}
 }
+
+type libraryScopeApp struct {
+	stubRetrieverApp
+	fail bool
+}
+
+func (a *libraryScopeApp) FindRecordsByFilter(collection any, filter, _ string, _, _ int, _ ...dbx.Params) ([]*core.Record, error) {
+	if a.fail && collection == "library_shares" {
+		return nil, fmt.Errorf("temporary share lookup failure")
+	}
+	if collection == "documents" {
+		if strings.Contains(filter, "library_shares") {
+			return nil, fmt.Errorf("library documents must not be materialized")
+		}
+		return []*core.Record{testDocumentRecord("explicit", "explicit-owner", "rent")}, nil
+	}
+	coll := core.NewBaseCollection("library_shares")
+	coll.Fields.Add(&core.TextField{Name: "owner"})
+	grant := core.NewRecord(coll)
+	grant.Set("owner", "library-owner")
+	return []*core.Record{grant}, nil
+}
+
+type captureLibraryChunks struct {
+	chunks  *retrieval.MemoryChunks
+	queries []retrieval.ChunkQuery
+}
+
+func (c *captureLibraryChunks) SearchChunks(ctx context.Context, q retrieval.ChunkQuery) ([]retrieval.ChunkHit, error) {
+	c.queries = append(c.queries, q)
+	return c.chunks.SearchChunks(ctx, q)
+}
+
+func TestDenseLibraryScopeUsesOwnerRatherThanLibraryDocumentIDs(t *testing.T) {
+	chunks := &captureLibraryChunks{chunks: &retrieval.MemoryChunks{}}
+	for i := range 1500 {
+		chunks.chunks.Chunks = append(chunks.chunks.Chunks, retrieval.MemoryChunk{
+			DocumentID: fmt.Sprintf("library-%d", i), UserID: "library-owner", Text: "monthly rent", Vector: []float32{1},
+		})
+	}
+	for _, entry := range []struct{ id, owner string }{{"explicit", "explicit-owner"}, {"private", "explicit-owner"}, {"unrelated", "stranger"}} {
+		chunks.chunks.Chunks = append(chunks.chunks.Chunks, retrieval.MemoryChunk{DocumentID: entry.id, UserID: entry.owner, Text: "monthly rent", Vector: []float32{1}})
+	}
+	app := &libraryScopeApp{}
+	r := &agentRetriever{app: app, userID: "reader", chunks: chunks, embedQuery: func(context.Context, string) ([]float32, error) { return []float32{1}, nil }}
+	hits := r.searchChunks(context.Background(), fulltext.Query{UserID: "reader"}, "rent", "rent", 2000)
+	if len(hits) != 1501 {
+		t.Fatalf("dense library returned %d documents", len(hits))
+	}
+	q := chunks.queries[0]
+	if len(q.SharedDocumentIDs) != 1 || q.SharedDocumentIDs[0] != "explicit" || len(q.SharedOwnerIDs) != 1 || q.SharedOwnerIDs[0] != "library-owner" {
+		t.Fatalf("unbounded or overbroad chunk scope: %+v", q)
+	}
+	text := r.chunkTextHits(context.Background(), "rent", []string{"library-0", "private"}, 10)
+	if len(text["library-0"]) != 1 || len(text["private"]) != 0 {
+		t.Fatalf("passage access: %v", text)
+	}
+	r.focusRanker(context.Background())("library-0", "monthly rent", "rent")
+	for _, query := range chunks.queries {
+		if len(query.SharedOwnerIDs) != 1 || len(query.SharedDocumentIDs) != 1 {
+			t.Fatal("chunk path lost shared scope")
+		}
+	}
+}
+
+func TestFailedShareLookupIsRetriedAndNeverSentToChunks(t *testing.T) {
+	app := &libraryScopeApp{fail: true}
+	chunks := &captureLibraryChunks{chunks: &retrieval.MemoryChunks{}}
+	r := &agentRetriever{app: app, userID: "reader", chunks: chunks, embedQuery: func(context.Context, string) ([]float32, error) { return []float32{1}, nil }}
+	if _, _, err := r.resolveFilters(ai.SearchDocumentsArgs{Query: "rent", Tags: []string{"rent"}}); err == nil {
+		t.Fatal("share lookup failure hidden")
+	}
+	r.searchChunks(context.Background(), fulltext.Query{UserID: "reader"}, "rent", "rent", 10)
+	if r.sharedLoaded || len(chunks.queries) != 0 {
+		t.Fatal("failed share lookup cached or forwarded")
+	}
+	app.fail = false
+	r.searchChunks(context.Background(), fulltext.Query{UserID: "reader"}, "rent", "rent", 10)
+	if !r.sharedLoaded || len(chunks.queries) != 1 || len(chunks.queries[0].SharedOwnerIDs) != 1 {
+		t.Fatal("share lookup was not retried")
+	}
+}
+
+func TestKeywordSearchWithoutNamedFiltersDoesNotRequireShareLookup(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	r.app = &libraryScopeApp{stubRetrieverApp: r.app.(stubRetrieverApp), fail: true}
+	r.chunks = nil
+	r.embedQuery = nil
+	hits, err := r.search(context.Background(), ai.SearchDocumentsArgs{Query: "insurance"})
+	if err != nil || len(hits) == 0 {
+		t.Fatalf("keyword search required share lookup: %v %v", hits, err)
+	}
+	if r.sharedLoaded {
+		t.Fatal("unfiltered keyword search loaded shares")
+	}
+}

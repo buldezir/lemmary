@@ -49,14 +49,14 @@ func ReadableDocumentsSQL(alias, param string) string {
 // its owner filter by these rather than reindexing chunks on every share change.
 func SharedWith(app interface {
 	FindRecordsByFilter(any, string, string, int, int, ...dbx.Params) ([]*core.Record, error)
-}, userID string) (documentIDs, ownerIDs []string, err error) {
+}, userID string) (documentIDs, ownerIDs, libraryOwners []string, err error) {
 	if userID == "" {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	docs, err := app.FindRecordsByFilter("documents",
-		"document_shares_via_document.user ?= {:user} || user.library_shares_via_owner.recipient ?= {:user}", "", 0, 0, dbx.Params{"user": userID})
+		"document_shares_via_document.user ?= {:user}", "", 0, 0, dbx.Params{"user": userID})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	seen := map[string]bool{}
 	for _, doc := range docs {
@@ -66,5 +66,17 @@ func SharedWith(app interface {
 			ownerIDs = append(ownerIDs, owner)
 		}
 	}
-	return documentIDs, ownerIDs, nil
+	grants, err := app.FindRecordsByFilter("library_shares", "recipient = {:user}", "", 0, 0, dbx.Params{"user": userID})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for _, grant := range grants {
+		owner := grant.GetString("owner")
+		libraryOwners = append(libraryOwners, owner)
+		if !seen[owner] {
+			seen[owner] = true
+			ownerIDs = append(ownerIDs, owner)
+		}
+	}
+	return documentIDs, ownerIDs, libraryOwners, nil
 }

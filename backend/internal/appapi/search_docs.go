@@ -46,26 +46,28 @@ type agentRetriever struct {
 
 	// vectors memoizes this turn's query embeddings: a run repeats the same
 	// phrase across searches and reads.
-	mu           sync.Mutex
-	vectors      map[string][]float32
-	sharedDocs   []string
-	sharedOwners []string
-	sharedLoaded bool
+	mu              sync.Mutex
+	vectors         map[string][]float32
+	sharedDocs      []string
+	sharedOwners    []string
+	sharedLibraries []string
+	sharedLoaded    bool
 }
 
 // loadShares runs once per retriever: a run issues many chunk queries and the
 // shares do not change meaningfully within one.
-func (r *agentRetriever) loadShares() {
+func (r *agentRetriever) loadShares() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.sharedLoaded {
-		return
+		return nil
 	}
-	docs, owners, err := SharedWith(r.app, r.userID)
+	docs, owners, libraries, err := SharedWith(r.app, r.userID)
 	if err != nil {
-		r.app.Logger().Warn("deep search shared documents lookup failed", slog.Any("error", err))
+		return err
 	}
-	r.sharedDocs, r.sharedOwners, r.sharedLoaded = docs, owners, true
+	r.sharedDocs, r.sharedOwners, r.sharedLibraries, r.sharedLoaded = docs, owners, libraries, true
+	return nil
 }
 
 func (r *agentRetriever) inScope(ids []string) []string {
@@ -75,20 +77,17 @@ func (r *agentRetriever) inScope(ids []string) []string {
 	return slices.DeleteFunc(slices.Clone(ids), func(id string) bool { return !inSortedScope(r.scope, id) })
 }
 
-func (r *agentRetriever) sharedIDs() []string {
-	r.loadShares()
-	return r.sharedDocs
-}
-
 // nameScope is whose tags, types and correspondents a filter name may resolve
 // to: the caller's, and those of accounts sharing documents with them, which
 // is whose entities a shared document carries. Nil is unscoped.
-func (r *agentRetriever) nameScope() []string {
+func (r *agentRetriever) nameScope() ([]string, error) {
 	if r.userID == "" {
-		return nil
+		return nil, nil
 	}
-	r.loadShares()
-	return append([]string{r.userID}, r.sharedOwners...)
+	if err := r.loadShares(); err != nil {
+		return nil, err
+	}
+	return append([]string{r.userID}, r.sharedOwners...), nil
 }
 
 type retrieverApp interface {
@@ -201,9 +200,20 @@ func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Q
 		Limit:    fulltext.MaxSearchLimit,
 	}
 	var unresolved []string
+	typeName := strings.TrimSpace(args.DocumentType)
+	corrName := strings.TrimSpace(args.Correspondent)
+	tagNames := normalizeTagNames(args.Tags)
+	var nameScope []string
+	if typeName != "" || corrName != "" || len(tagNames) > 0 {
+		var err error
+		nameScope, err = r.nameScope()
+		if err != nil {
+			return ftQuery, nil, err
+		}
+	}
 
-	if typeName := strings.TrimSpace(args.DocumentType); typeName != "" {
-		typeIDs, err := findOptionIDs(r.app, models.DocumentTypeFieldID, typeName, r.nameScope())
+	if typeName != "" {
+		typeIDs, err := findOptionIDs(r.app, models.DocumentTypeFieldID, typeName, nameScope)
 		if err != nil {
 			return ftQuery, nil, err
 		}
@@ -213,8 +223,8 @@ func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Q
 		ftQuery.DocumentTypeIDs = typeIDs
 	}
 
-	if corrName := strings.TrimSpace(args.Correspondent); corrName != "" {
-		corrIDs, err := findOptionIDs(r.app, models.CorrespondentFieldID, corrName, r.nameScope())
+	if corrName != "" {
+		corrIDs, err := findOptionIDs(r.app, models.CorrespondentFieldID, corrName, nameScope)
 		if err != nil {
 			return ftQuery, nil, err
 		}
@@ -224,8 +234,8 @@ func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Q
 		ftQuery.CorrespondentIDs = corrIDs
 	}
 
-	if tagNames := normalizeTagNames(args.Tags); len(tagNames) > 0 {
-		tagIDs, err := findTagIDsByNames(r.app, tagNames, r.nameScope())
+	if len(tagNames) > 0 {
+		tagIDs, err := findTagIDsByNames(r.app, tagNames, nameScope)
 		if err != nil {
 			return ftQuery, nil, err
 		}
@@ -312,11 +322,16 @@ func (r *agentRetriever) searchChunks(ctx context.Context, ftQuery fulltext.Quer
 		}
 	}
 
+	if err := r.loadShares(); err != nil {
+		r.logChunkFailure(err)
+		return nil
+	}
 	hits, err := r.chunks.SearchChunks(ctx, retrieval.ChunkQuery{
 		Vector:            vector,
 		Text:              text,
 		UserID:            r.userID,
-		SharedDocumentIDs: r.sharedIDs(),
+		SharedDocumentIDs: r.sharedDocs,
+		SharedOwnerIDs:    r.sharedLibraries,
 		DocumentIDs:       eligible,
 		K:                 k,
 	})
@@ -340,10 +355,15 @@ func (r *agentRetriever) chunkTextHits(ctx context.Context, query string, ids []
 	if len(ids) > max {
 		ids = ids[:max]
 	}
+	if err := r.loadShares(); err != nil {
+		r.logChunkFailure(err)
+		return nil
+	}
 	hits, err := r.chunks.SearchChunks(ctx, retrieval.ChunkQuery{
 		Text:              query,
 		UserID:            r.userID,
-		SharedDocumentIDs: r.sharedIDs(),
+		SharedDocumentIDs: r.sharedDocs,
+		SharedOwnerIDs:    r.sharedLibraries,
 		DocumentIDs:       ids,
 		K:                 len(ids) * retrieval.MaxPassagesPerDocument,
 	})
@@ -612,11 +632,16 @@ func (r *agentRetriever) focusRanker(ctx context.Context) focusRanker {
 		// A failed embedding is not fatal: the same call with no vector is a
 		// keyword search, still better than windows cut by byte count.
 		vector, _ := r.queryVector(ctx, focus)
+		if err := r.loadShares(); err != nil {
+			r.logChunkFailure(err)
+			return nil, nil
+		}
 		hits, err := r.chunks.SearchChunks(ctx, retrieval.ChunkQuery{
 			Vector:            vector,
 			Text:              focus,
 			UserID:            r.userID,
-			SharedDocumentIDs: r.sharedIDs(),
+			SharedDocumentIDs: r.sharedDocs,
+			SharedOwnerIDs:    r.sharedLibraries,
 			DocumentIDs:       []string{documentID},
 			K:                 focusChunkK,
 		})

@@ -1,7 +1,8 @@
 package migrations
 
 import (
-	"strings"
+	"database/sql"
+	"errors"
 
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
@@ -9,58 +10,79 @@ import (
 )
 
 const librarySharesCollection = "library_shares"
-const libraryReaderRule = "@request.auth.id != '' && user.library_shares_via_owner.recipient ?= @request.auth.id"
 
 func init() {
-	m.Register(func(app core.App) error {
-		shares := core.NewBaseCollection(librarySharesCollection)
-		owner := "@request.auth.id != '' && owner = @request.auth.id"
-		shares.CreateRule = new(owner + " && recipient != @request.auth.id")
-		shares.ListRule = new(owner + " || (@request.auth.id != '' && recipient = @request.auth.id)")
-		shares.ViewRule = shares.ListRule
-		shares.DeleteRule = new(owner)
-		shares.Fields.Add(
-			&core.RelationField{Name: "owner", Required: true, CollectionId: "_pb_users_auth_", MaxSelect: 1, CascadeDelete: true},
-			&core.RelationField{Name: "recipient", Required: true, CollectionId: "_pb_users_auth_", MaxSelect: 1, CascadeDelete: true},
-			&core.AutodateField{Name: "created", OnCreate: true},
-		)
-		shares.AddIndex("idx_library_shares_pair", true, "owner, recipient", "")
-		shares.AddIndex("idx_library_shares_recipient", false, "recipient", "")
-		if err := app.Save(shares); err != nil {
-			return err
-		}
-		return setLibraryReadRules(app, true)
-	}, func(app core.App) error {
-		if err := setLibraryReadRules(app, false); err != nil {
-			return err
-		}
-		shares, err := app.FindCollectionByNameOrId(librarySharesCollection)
-		if err != nil {
-			return err
-		}
-		return app.Delete(shares)
-	})
+	m.Register(applyLibraryShares, dropLibraryShares)
+}
+
+func applyLibraryShares(app core.App) error {
+	if err := createLibraryShares(app); err != nil {
+		return err
+	}
+	return setLibraryReadRules(app, true)
+}
+
+func createLibraryShares(app core.App) error {
+	if _, err := app.FindCollectionByNameOrId(librarySharesCollection); err == nil {
+		return nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	shares := core.NewBaseCollection(librarySharesCollection)
+	owner := "@request.auth.id != '' && owner = @request.auth.id"
+	shares.CreateRule = new(owner + " && recipient != @request.auth.id")
+	shares.ListRule = new(owner + " || (@request.auth.id != '' && recipient = @request.auth.id)")
+	shares.ViewRule = shares.ListRule
+	shares.DeleteRule = new(owner)
+	shares.Fields.Add(
+		&core.RelationField{Name: "owner", Required: true, CollectionId: "_pb_users_auth_", MaxSelect: 1, CascadeDelete: true},
+		&core.RelationField{Name: "recipient", Required: true, CollectionId: "_pb_users_auth_", MaxSelect: 1, CascadeDelete: true},
+		&core.AutodateField{Name: "created", OnCreate: true},
+	)
+	shares.AddIndex("idx_library_shares_pair", true, "owner, recipient", "")
+	shares.AddIndex("idx_library_shares_recipient", false, "recipient", "")
+	if err := app.Save(shares); err != nil {
+		return err
+	}
+	return nil
+}
+
+func dropLibraryShares(app core.App) error {
+	if err := setLibraryReadRules(app, false); err != nil {
+		return err
+	}
+	shares, err := app.FindCollectionByNameOrId(librarySharesCollection)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return app.Delete(shares)
 }
 
 func setLibraryReadRules(app core.App, enabled bool) error {
-	for _, name := range []string{"documents", "tags", models.CustomFieldOptionsCollection, models.CustomFieldValuesCollection} {
-		coll, err := app.FindCollectionByNameOrId(name)
+	valuesReadRule := "document.user = @request.auth.id || (@request.auth.id != '' && document." + documentSharesCollection + "_via_document.user ?= @request.auth.id)"
+	optionsReadRule := "user = @request.auth.id || (@request.auth.id != '' && " + models.CustomFieldValuesCollection + "_via_option.document." + documentSharesCollection + "_via_document.user ?= @request.auth.id)"
+	for _, entry := range []struct {
+		name, base, path string
+		list             bool
+	}{
+		{"documents", documentReadRule, "user", true},
+		{"tags", namedEntityReadRule("tags"), "documents_via_tags.user", false},
+		{models.CustomFieldOptionsCollection, optionsReadRule, models.CustomFieldValuesCollection + "_via_option.document.user", false},
+		{models.CustomFieldValuesCollection, valuesReadRule, "document.user", true},
+	} {
+		coll, err := app.FindCollectionByNameOrId(entry.name)
 		if err != nil {
 			return err
 		}
-		rule := *coll.ViewRule
-		libraryRule := libraryReaderRule
-		if name == models.CustomFieldValuesCollection {
-			libraryRule = "@request.auth.id != '' && document.user.library_shares_via_owner.recipient ?= @request.auth.id"
-		}
+		rule := entry.base
 		if enabled {
-			rule = "(" + rule + ") || (" + libraryRule + ")"
-		} else {
-			rule = strings.TrimSuffix(strings.TrimPrefix(strings.TrimSuffix(rule, " || ("+libraryRule+")"), "("), ")")
+			rule = "(" + rule + ") || (@request.auth.id != '' && " + entry.path + ".library_shares_via_owner.recipient ?= @request.auth.id)"
 		}
-
 		coll.ViewRule = new(rule)
-		if name == "documents" || name == models.CustomFieldValuesCollection {
+		if entry.list {
 			coll.ListRule = new(rule)
 		}
 		if err := app.Save(coll); err != nil {
