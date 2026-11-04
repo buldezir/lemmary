@@ -36,18 +36,22 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
-# Every job runs on a GitHub-hosted runner, free for a public repository. Each
+# The test job runs on a self-hosted ARM64 runner (its own VM); every other job
+# runs on a GitHub-hosted runner, free for a public repository. Each
 # architecture is built on a runner of that architecture and the two are merged
 # into one manifest, so nothing here runs under emulation. The test job runs
 # verification inside Docker rather than installing Go, Node, Playwright or
 # poppler on the runner.
 jobs:
   test:
-    if: github.event_name == 'pull_request'
-    # A fork's pull request gets no private overlay key, so
-    # ./scripts/test-all.sh fails rather than reporting a green run that never
-    # executed e2e.
-    runs-on: ubuntu-latest
+    # This `if` does not keep fork code off the self-hosted runner: a fork's pull
+    # request runs the fork's copy of this file and can drop it. The repository
+    # requires approval for every outside contributor's workflow run, and that is
+    # the guard. Never approve one: an honest fork is skipped here and by `meta`
+    # anyway, so approving runs nothing useful and only puts the fork's code on
+    # the runner.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, ARM64]
     permissions:
       contents: read
 
