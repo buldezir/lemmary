@@ -1,3 +1,4 @@
+import { listShareRecipients } from '../lib/api/shares'
 import { type SubmitEvent, useId, useState } from 'react'
 import { changePassword, getMe } from '../lib/auth'
 import {
@@ -18,7 +19,14 @@ import { getLimits } from '../lib/api/limits'
 import { LimitsUsage } from '../components/LimitsUsage'
 import { SectionLayout } from '../components/SectionLayout'
 import { Combobox } from '../components/Combobox'
-import { savePreferences, useCardLayout, type CardLayout, type Preferences } from '../lib/userSettings'
+import {
+  savePreferences,
+  useCardLayout,
+  useDocumentSort,
+  type CardLayout,
+  type Preferences,
+} from '../lib/userSettings'
+import { DOCUMENT_SORT_LABELS, type DocumentSort } from '../lib/documentQuery'
 import {
   Button,
   DocsLink,
@@ -539,9 +547,11 @@ function InstanceLimitsSection() {
 
 export function AccountPreferencesPage() {
   const layout = useCardLayout()
+  const documentSort = useDocumentSort()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const languageId = useId()
+  const sortId = useId()
 
   /** True once saved; the caller then applies it. */
   async function save(patch: Preferences) {
@@ -583,6 +593,21 @@ export function AccountPreferencesPage() {
           className="max-w-xs"
         />
         <span className={fieldHintClassName}>{t('account.languageHint')}</span>
+      </div>
+      <div className={`${labelClassName} mb-6`}>
+        <label htmlFor={sortId} className={labelTextClassName}>
+          {t('account.documentSort')}
+        </label>
+        <Combobox
+          id={sortId}
+          value={documentSort}
+          options={Object.entries(DOCUMENT_SORT_LABELS).map(([value, label]) => ({ value, label: label() }))}
+          disabled={saving}
+          onChange={(next) => void save({ document_sort: next as DocumentSort })}
+          bgClassName="bg-surface"
+          className="max-w-xs"
+        />
+        <span className={fieldHintClassName}>{t('account.documentSortHint')}</span>
       </div>
       <fieldset disabled={saving}>
         <legend className={labelTextClassName}>{t('account.cardLayout')}</legend>
@@ -669,6 +694,7 @@ export function AccountProfilePage() {
 }
 
 export function AccountPage() {
+  const { data: recipients } = useAsync(listShareRecipients, [])
   return (
     <SectionLayout
       title={t('account.title')}
@@ -677,6 +703,7 @@ export function AccountPage() {
       links={[
         { to: '/account', label: t('account.profile'), exact: true },
         { to: '/account/preferences', label: t('account.preferences') },
+        ...(recipients?.length ? [{ to: '/account/sharing' as const, label: t('account.sharing') }] : []),
         { to: '/account/agents', label: t('account.agents') },
         { to: '/account/paperless', label: t('account.paperlessApps') },
         { to: '/account/password', label: t('account.password') },

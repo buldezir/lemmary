@@ -1,3 +1,4 @@
+import { AccountSharingPage } from './routes/accountSharing'
 import {
   createRootRoute,
   createRoute,
@@ -6,6 +7,7 @@ import {
   type SearchSchemaInput,
 } from '@tanstack/react-router'
 import { ensureAuth, isAdmin } from './lib/auth'
+import { accountDocumentSort } from './lib/userSettings'
 import {
   documentQuerySearch,
   inboxQuerySearch,
@@ -80,8 +82,10 @@ const indexRoute = createRoute({
   // The SearchSchemaInput brand tells the router the filters are optional going
   // in though all are set coming out; without it every `to: '/'` would have to
   // spell out a full filter set.
-  validateSearch: (search: DocumentQueryInput & SearchSchemaInput) =>
-    documentQuerySearch(parseDocumentQuery(search)),
+  validateSearch: (search: DocumentQueryInput & SearchSchemaInput) => {
+    const defaultSort = accountDocumentSort()
+    return documentQuerySearch(parseDocumentQuery(search, defaultSort), defaultSort)
+  },
   component: IndexPage,
 })
 
@@ -346,6 +350,12 @@ const accountPasswordRoute = createRoute({
   component: AccountPasswordPage,
 })
 
+const accountSharingRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'sharing',
+  component: AccountSharingPage,
+})
+
 const accountPasskeysRoute = createRoute({
   getParentRoute: () => accountRoute,
   path: 'passkeys',
@@ -419,6 +429,7 @@ const routeTree = rootRoute.addChildren([
     accountPaperlessRoute,
     accountPasswordRoute,
     accountPasskeysRoute,
+    accountSharingRoute,
   ]),
   tagsRoute,
   bulkRoute,

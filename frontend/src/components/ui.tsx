@@ -1,6 +1,10 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { accentContrastText } from '../lib/accent'
 
+export const listboxClassName =
+  'absolute z-20 max-h-56 overflow-auto rounded-xs border border-line bg-surface py-1 shadow-sm'
+export const listOptionClassName = 'cursor-pointer truncate px-3 py-1.5 text-sm'
+
 export const inputClassName =
   'w-full rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 export const dateInputClassName =

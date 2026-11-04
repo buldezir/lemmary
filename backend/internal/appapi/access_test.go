@@ -30,14 +30,52 @@ func TestNameScopeReachesOwnersWhoShareWithTheCaller(t *testing.T) {
 	}
 
 	r := &agentRetriever{app: app, userID: reader}
-	if got := r.sharedIDs(); len(got) != 1 || got[0] != shared.Id {
+	if err := r.loadShares(); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.sharedDocs; len(got) != 1 || got[0] != shared.Id {
 		t.Fatalf("shared documents = %v, want [%s]", got, shared.Id)
 	}
-	ids, err := findTagIDsByNames(app, []string{"Invoice"}, r.nameScope())
+	scope, err := r.nameScope()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := findTagIDsByNames(app, []string{"Invoice"}, scope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(ids) != 1 || ids[0] != sharerTag.Id {
 		t.Fatalf("tag ids = %v, want only the sharer's %s", ids, sharerTag.Id)
+	}
+}
+
+func TestLibraryGrantReachesCustomAPIsAndRetrieval(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "library-owner@example.com")
+	reader := makeQueueUser(t, app, "library-reader@example.com")
+	stranger := makeQueueUser(t, app, "library-stranger@example.com")
+	doc := makeQueueDocument(t, app, owner, "completed", "text")
+	coll, err := app.FindCollectionByNameOrId("library_shares")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := core.NewRecord(coll)
+	grant.Set("owner", owner)
+	grant.Set("recipient", reader)
+	if err := app.Save(grant); err != nil {
+		t.Fatal(err)
+	}
+	if !CanReadDocument(app, doc, reader) || CanReadDocument(app, doc, stranger) {
+		t.Fatal("incorrect library access")
+	}
+	ids, owners, libraries, err := SharedWith(app, reader)
+	if err != nil || len(ids) != 0 || len(owners) != 1 || owners[0] != owner || len(libraries) != 1 || libraries[0] != owner {
+		t.Fatalf("retrieval scope: %v %v %v", ids, owners, err)
+	}
+	if err := app.Delete(grant); err != nil {
+		t.Fatal(err)
+	}
+	if CanReadDocument(app, doc, reader) {
+		t.Fatal("revoked library readable")
 	}
 }

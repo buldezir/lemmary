@@ -520,3 +520,38 @@ func TestChunksReplacedReindexesThroughTheQueue(t *testing.T) {
 		t.Fatalf("the listener did not reach the index: %#v", hits)
 	}
 }
+
+func TestChunkSearchUsesLibraryOwnersWithoutSharingExplicitOwnersLibraries(t *testing.T) {
+	src := &fakeChunkSource{spec: testChunkSpec(), chunks: []Chunk{
+		chunkOf("mine", "reader", 0, 0, "monthly rent"),
+		chunkOf("library", "grantor", 0, 0, "monthly rent"),
+		chunkOf("explicit", "other", 0, 0, "monthly rent"),
+		chunkOf("private", "other", 0, 0, "monthly rent"),
+	}}
+	idx := testChunkIndex(t, src)
+	mustRebuildChunks(t, idx)
+	for _, q := range []retrieval.ChunkQuery{
+		{Text: "rent", UserID: "reader", SharedOwnerIDs: []string{"grantor"}, SharedDocumentIDs: []string{"explicit"}, K: 10},
+		{Vector: unit(4, 0), UserID: "reader", SharedOwnerIDs: []string{"grantor"}, SharedDocumentIDs: []string{"explicit"}, K: 10},
+		{Text: "rent", Vector: unit(4, 0), UserID: "reader", SharedOwnerIDs: []string{"grantor"}, SharedDocumentIDs: []string{"explicit"}, K: 10},
+	} {
+		hits := searchChunks(t, idx, q)
+		if len(hits) != 3 {
+			t.Fatalf("library hits: %v", hits)
+		}
+		for _, hit := range hits {
+			if hit.DocumentID == "private" {
+				t.Fatal("explicit owner's private document leaked")
+			}
+		}
+		q.DocumentIDs = []string{"library"}
+		if hits := searchChunks(t, idx, q); len(hits) != 1 || hits[0].DocumentID != "library" {
+			t.Fatalf("document filter ignored: %v", hits)
+		}
+		q.DocumentIDs = nil
+		q.SharedOwnerIDs = nil
+		if hits := searchChunks(t, idx, q); len(hits) != 2 {
+			t.Fatalf("library revocation ignored: %v", hits)
+		}
+	}
+}

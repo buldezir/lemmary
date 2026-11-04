@@ -42,6 +42,7 @@ describe('route tree', () => {
       '/account/paperless',
       '/account/password',
       '/account/passkeys',
+      '/account/sharing',
       '/tags',
       '/bulk',
       '/export',

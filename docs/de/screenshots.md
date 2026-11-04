@@ -88,7 +88,8 @@ Menüschaltfläche gestapelt werden.
 
 **Massenaktionen**, hinter dem Zahnradmenü, ist dieselbe Liste, gemacht für die
 Arbeit an vielen Dokumenten auf einmal: als geprüft markieren, Tags vergeben oder
-entfernen, teilen oder Schritte zur erneuten Ausführung einreihen.
+entfernen, ein Feld setzen oder leeren (Dokumenttyp, Korrespondent oder ein
+eigenes Feld), teilen oder Schritte zur erneuten Ausführung einreihen.
 
 ![Massenaktionen, alle Rechnungen ausgewählt und ein Tag gewählt](../screenshots/bulk.png)
 

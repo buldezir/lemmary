@@ -7,6 +7,7 @@
  * a bad URL can do is show the unfiltered list.
  */
 
+import { t } from '../i18n'
 import { isDocumentStatus } from './documentStatus'
 
 export const DOCUMENT_OWNERS = ['all', 'mine', 'shared'] as const
@@ -14,6 +15,30 @@ export type DocumentOwner = (typeof DOCUMENT_OWNERS)[number]
 
 function owner(value: unknown): DocumentOwner {
   return DOCUMENT_OWNERS.find((known) => known === value) ?? 'all'
+}
+
+/** PocketBase sort expressions; the first is the default. */
+export const DOCUMENT_SORTS = [
+  '-created',
+  'created',
+  '-document_date',
+  'document_date',
+  'title',
+  '-title',
+] as const
+export type DocumentSort = (typeof DOCUMENT_SORTS)[number]
+
+export const DOCUMENT_SORT_LABELS: Record<DocumentSort, () => string> = {
+  '-created': () => t('documentFilters.sortAddedDesc'),
+  created: () => t('documentFilters.sortAddedAsc'),
+  '-document_date': () => t('documentFilters.sortDateDesc'),
+  document_date: () => t('documentFilters.sortDateAsc'),
+  title: () => t('documentFilters.sortTitleAsc'),
+  '-title': () => t('documentFilters.sortTitleDesc'),
+}
+
+export function documentSort(value: unknown, fallback: DocumentSort = DOCUMENT_SORTS[0]): DocumentSort {
+  return DOCUMENT_SORTS.find((known) => known === value) ?? fallback
 }
 
 /** Matches the index's prefix floor, fulltext.minPrefixLen. */
@@ -53,6 +78,8 @@ export type DocumentQuery = {
   untagged: boolean
   /** Whose documents: the caller's own, those shared with them, or 'all'. */
   owner: DocumentOwner
+  /** Ignored while searching: a search is ranked by relevance. */
+  sort: DocumentSort
   /** 1-based. */
   page: number
 }
@@ -74,6 +101,7 @@ export const defaultDocumentQuery: DocumentQuery = {
   tags: '',
   untagged: false,
   owner: 'all',
+  sort: '-created',
   page: 1,
 }
 
@@ -107,8 +135,11 @@ function pageNumber(value: unknown): number {
   return Number.isInteger(raw) && raw >= 1 ? raw : 1
 }
 
-/** Reads a URL's query string into filters, defaulting anything unusable. */
-export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
+/**
+ * Reads a URL's query string into filters, defaulting anything unusable.
+ * `defaultSort` is the account's chosen order, which a URL without ?sort= means.
+ */
+export function parseDocumentQuery(raw: DocumentQueryInput, defaultSort?: DocumentSort): DocumentQuery {
   const status = text(raw.status)
   const untagged = raw.untagged === true || raw.untagged === 'true'
   return {
@@ -126,6 +157,7 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
     tags: untagged ? '' : tagIds(raw.tags).join(','),
     untagged,
     owner: owner(raw.owner),
+    sort: documentSort(raw.sort, defaultSort),
     page: pageNumber(raw.page),
   }
 }
@@ -135,10 +167,14 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
  * plain "/". This is what the route validates *to*, so returning the full set
  * would stamp "?q=&status=all&page=1" onto every link back to the list.
  */
-export function documentQuerySearch(query: DocumentQuery): Partial<DocumentQuery> {
+export function documentQuerySearch(
+  query: DocumentQuery,
+  defaultSort: DocumentSort = defaultDocumentQuery.sort,
+): Partial<DocumentQuery> {
+  const defaults = { ...defaultDocumentQuery, sort: defaultSort }
   const search: Partial<DocumentQuery> = {}
-  for (const key of Object.keys(defaultDocumentQuery) as (keyof DocumentQuery)[]) {
-    if (query[key] !== defaultDocumentQuery[key]) {
+  for (const key of Object.keys(defaults) as (keyof DocumentQuery)[]) {
+    if (query[key] !== defaults[key]) {
       Object.assign(search, { [key]: query[key] })
     }
   }
@@ -159,5 +195,5 @@ export function inboxQuerySearch(raw: DocumentQueryInput): Partial<DocumentQuery
 
 /** Whether the list is narrowed at all, which decides the empty-state wording. */
 export function hasActiveFilters(query: DocumentQuery): boolean {
-  return Object.keys(documentQuerySearch(query)).some((key) => key !== 'page')
+  return Object.keys(documentQuerySearch(query)).some((key) => key !== 'page' && key !== 'sort')
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { hasActiveFilters } from '../lib/documentQuery'
-import { markDocumentsUnreviewed } from '../lib/api/documents'
+import { markDocumentsUnreviewed, setDocumentsField } from '../lib/api/documents'
 import { listShareRecipients, shareDocuments } from '../lib/api/shares'
 import { addTagsToDocuments, findOrCreateTag, removeTagsFromDocuments, type TagRecord } from '../lib/api/tags'
 import { REPROCESS_MODE_OPTIONS, type ReprocessMode } from '../lib/processing'
@@ -13,8 +13,9 @@ import {
   type DocumentList,
 } from '../hooks/useDocumentList'
 import { Combobox } from '../components/Combobox'
-import { DocumentFilters } from '../components/DocumentFilters'
+import { DocumentFilters, DocumentSortMenu } from '../components/DocumentFilters'
 import { BulkDocumentCard } from '../components/BulkDocumentCard'
+import { BulkFieldDialog } from '../components/BulkFieldDialog'
 import { Pagination } from '../components/Pagination'
 import { Button } from '../components/ui'
 import { lang, t } from '../i18n'
@@ -26,7 +27,10 @@ export function BulkActionsPage() {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('bulk.title')}</h2>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('bulk.title')}</h2>
+        <DocumentSortMenu query={query} updateQuery={updateQuery} />
+      </div>
 
       <div className="flex flex-col gap-4">
         <DocumentFilters
@@ -58,7 +62,7 @@ export function BulkActionsPage() {
 
         {!loading && documents.length > 0 && (
           <>
-            <BulkActionBar list={list} tags={filterOptions.tags} />
+            <BulkActionBar list={list} options={filterOptions} />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {documents.map((document) => (
                 <BulkDocumentCard
@@ -144,9 +148,17 @@ function TagPicker({
 
 const groupClassName = 'flex flex-wrap items-center gap-2 sm:border-l sm:border-line sm:pl-4 sm:first:border-l-0 sm:first:pl-0'
 
-function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }) {
+function BulkActionBar({
+  list,
+  options,
+}: {
+  list: DocumentList
+  options: ReturnType<typeof useDocumentFilterOptions>
+}) {
+  const { tags } = options
   const { selectedOnPage } = list
   const [panel, setPanel] = useState<Panel | null>(null)
+  const [settingField, setSettingField] = useState(false)
   const [tagIds, setTagIds] = useState<string[]>([])
   const [untagIds, setUntagIds] = useState<string[]>([])
   const [createdTags, setCreatedTags] = useState<TagRecord[]>([])
@@ -255,6 +267,9 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
           {panelToggle('tags', t('bulk.assignTagsPanel'))}
           {panelToggle('untag', t('bulk.unassignTagsPanel'), carriedTags.length === 0)}
           {panelToggle('share', t('bulk.sharePanel'))}
+          <Button variant="secondary" size="sm" disabled={busy || none} onClick={() => setSettingField(true)}>
+            {t('bulk.setFieldPanel')}
+          </Button>
         </div>
 
         <div role="group" aria-label={t('bulk.groupProcessing')} className={groupClassName}>
@@ -271,6 +286,24 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
           {t('common.delete')}
         </Button>
       </div>
+
+      {settingField && (
+        <BulkFieldDialog
+          count={ids.length}
+          documentTypes={options.documentTypes}
+          correspondents={options.correspondents}
+          busy={busy}
+          onClose={() => setSettingField(false)}
+          onApply={(fieldId, field, value) =>
+            void list
+              .runBulkAction(async () => {
+                await setDocumentsField(ids, fieldId, value)
+                return t(value === null ? 'bulk.fieldCleared' : 'bulk.fieldSet', { field, count: ids.length })
+              }, t('bulk.setFieldError'))
+              .finally(() => setSettingField(false))
+          }
+        />
+      )}
 
       {open && (
         <div className="flex flex-wrap items-center gap-3 border-t border-line bg-wash px-4 py-3">

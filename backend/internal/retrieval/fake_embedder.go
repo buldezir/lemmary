@@ -4,6 +4,7 @@ import (
 	"context"
 	"hash/fnv"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -206,7 +207,7 @@ func (m *MemoryChunks) SearchChunks(_ context.Context, q ChunkQuery) ([]ChunkHit
 }
 
 func chunkVisible(chunk MemoryChunk, q ChunkQuery, shared, eligible map[string]struct{}) bool {
-	if _, ok := shared[chunk.DocumentID]; q.UserID != "" && chunk.UserID != q.UserID && !ok {
+	if _, ok := shared[chunk.DocumentID]; q.UserID != "" && chunk.UserID != q.UserID && !slices.Contains(q.SharedOwnerIDs, chunk.UserID) && !ok {
 		return false
 	}
 	if len(eligible) > 0 {

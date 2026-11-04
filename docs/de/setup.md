@@ -458,6 +458,13 @@ Grenzen:
 
 Das Löschen eines Dokuments löscht dessen Chats unter KI fragen, und das Löschen eines Kontos löscht alle seine Chats. Die Collections `chat_sessions` und `chat_messages` haben keine API-Regeln, sodass sie – wie `passkey_credentials` – über `/api/collections` überhaupt nicht erreichbar sind und `/api/app/chats` der einzige Zugang ist. Das ist beabsichtigt: Ein Client, der eigene `assistant`-Nachrichten schreiben könnte, könnte Text einschleusen, den der Server dem Modell dann als echte frühere Antwort erneut vorspielen würde.
 
+## Bibliothek teilen {#share-your-library}
+
+Wähle unter **Konto → Freigaben** ein anderes Konto aus, um Lesezugriff auf alle eigenen Dokumente zu gewähren, einschließlich künftiger Uploads und Importe. Dieser Bereich erscheint nur, wenn ein weiterer Benutzer existiert. Empfänger können Dokumente lesen und herunterladen, aber nicht bearbeiten, löschen oder weitergeben. Mit dir geteilte Dokumente sind nicht enthalten.
+
+Entferne hier einen Empfänger, um den Bibliothekszugriff zu widerrufen. Einzelne Dokumentfreigaben bleiben bestehen; eine einzelne Freigabe kann den Zugriff auf die gesamte Bibliothek nicht einschränken. Der Freigabedialog kennzeichnet Bibliothekszugriff und verweist auf Konto → Freigaben.
+
+
 ## Fehlerbehebung {#troubleshooting}
 
 - **Hängt im Einrichtungsassistenten, OCR schlägt fehl, KI-Extraktion schlägt fehl:** siehe [KI-Anbieter → Fehlerbehebung](/de/ai_providers#troubleshooting).

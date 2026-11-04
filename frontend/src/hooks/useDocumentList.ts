@@ -36,6 +36,7 @@ import {
 } from '../lib/processing'
 import { PAGE_SIZES, parsePageSize } from '../lib/pagination'
 import { useAsync } from './useAsync'
+import { useDocumentSort } from '../lib/userSettings'
 import { useStoredValue } from './useStoredFlag'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 
@@ -74,7 +75,8 @@ export function useDocumentList({
   // The filters are the URL, not state, so the page is reproducible and Back
   // steps through it. The URL only carries the filters that are set, so the
   // defaults are filled back in here.
-  const parsed = parseDocumentQuery(useSearch({ strict: false }))
+  const defaultSort = useDocumentSort()
+  const parsed = parseDocumentQuery(useSearch({ strict: false }), defaultSort)
   const query = filters ? parsed : { ...defaultDocumentQuery, page: parsed.page }
   const navigate = useNavigate({ from: route })
   const {
@@ -86,6 +88,7 @@ export function useDocumentList({
     correspondent: correspondentFilter,
     tags: tagFilter,
     untagged,
+    sort,
     page,
   } = query
   const statusFilter = fixedStatus ?? query.status
@@ -101,6 +104,8 @@ export function useDocumentList({
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  // Apart from error, so the reload an action triggers cannot wipe the action's failure.
+  const [loadError, setLoadError] = useState('')
   const [message, setMessage] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
@@ -131,18 +136,18 @@ export function useDocumentList({
       void navigate({
         to: route,
         search: (current) => {
-          const next = documentQuerySearch({
-            ...parseDocumentQuery(current),
-            page: 1,
-            ...patch,
-          })
+          const next = documentQuerySearch(
+            { ...parseDocumentQuery(current, defaultSort), page: 1, ...patch },
+            defaultSort,
+          )
           if (fixedStatus !== undefined) delete next.status
+          if (!filters) delete next.sort
           return next
         },
         replace,
       })
     },
-    [navigate, route, fixedStatus],
+    [navigate, route, fixedStatus, filters, defaultSort],
   )
 
   // Box -> URL, once the typing settles. Skipped while the two already agree,
@@ -193,7 +198,8 @@ export function useDocumentList({
               owner: ownerFilter,
             })
           : await pb.collection('documents').getList<DocumentRecord>(page, pageSize, {
-              sort: '-created',
+              // Dates and titles repeat, and a tie reorders across pages.
+              sort: sort.endsWith('created') ? sort : `${sort},-created`,
               expand: DOCUMENT_EXPAND,
               ...(filter ? { filter } : {}),
             })
@@ -211,7 +217,7 @@ export function useDocumentList({
         setDocuments(result.items)
         setTotalItems(result.totalItems)
         setTotalPages(result.totalPages)
-        setError('')
+        setLoadError('')
       } catch (err) {
         // Overlapping refreshes can autocancel each other; the surviving
         // request has the fresh data.
@@ -219,7 +225,7 @@ export function useDocumentList({
           return
         }
         if (active) {
-          setError(err instanceof Error ? err.message : t('useDocumentList.loadFailed'))
+          setLoadError(err instanceof Error ? err.message : t('useDocumentList.loadFailed'))
         }
       } finally {
         if (active && isInitial) {
@@ -275,6 +281,7 @@ export function useDocumentList({
     untagged,
     debouncedSearch,
     ownerFilter,
+    sort,
     updateQuery,
   ])
 
@@ -529,7 +536,7 @@ export function useDocumentList({
     totalItems,
     totalPages,
     loading,
-    error,
+    error: error || loadError,
     message,
     libraryVersion,
     selectedIds,

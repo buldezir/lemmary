@@ -1,6 +1,6 @@
 import type { RecordModel } from 'pocketbase'
 import { describe, expect, test } from 'vitest'
-import { cardLayoutOf, languageOf } from './userSettings'
+import { cardLayoutOf, documentSortOf, languageOf } from './userSettings'
 
 const user = (preferences: unknown) =>
   ({ id: 'u1', collectionId: 'c', collectionName: 'users', preferences }) as RecordModel
@@ -30,6 +30,18 @@ describe('languageOf', () => {
     expect(languageOf(user({ language: 'constructor' }))).toBeNull()
     expect(languageOf(user({}))).toBeNull()
     expect(languageOf(null)).toBeNull()
+  })
+})
+
+describe('documentSortOf', () => {
+  test('reads a known order', () => {
+    expect(documentSortOf(user({ document_sort: '-document_date' }))).toBe('-document_date')
+  })
+
+  test('falls back to the newest added for anything else', () => {
+    expect(documentSortOf(user({ document_sort: 'size' }))).toBe('-created')
+    expect(documentSortOf(user({}))).toBe('-created')
+    expect(documentSortOf(null)).toBe('-created')
   })
 })
 
