@@ -653,3 +653,40 @@ func TestSearchIgnoresAStaleReaderInTheIndex(t *testing.T) {
 		t.Fatalf("search returned %v through a share that no longer exists", f.titles(got.Results))
 	}
 }
+
+func TestLibrarySharesExposeOnlyReadableDocumentMetadata(t *testing.T) {
+	f := newListFixture(t)
+	invoice := createNamed(t, f.app, "document_types", "Invoice", f.userID)
+	doc, err := f.app.FindRecordById("documents", f.docOne)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := models.SaveFieldValue(f.app, doc, models.DocumentTypeField, invoice); err != nil {
+		t.Fatal(err)
+	}
+	coll, err := f.app.FindCollectionByNameOrId("library_shares")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := core.NewRecord(coll)
+	grant.Set("owner", f.userID)
+	grant.Set("recipient", f.otherID)
+	if err := f.app.Save(grant); err != nil {
+		t.Fatal(err)
+	}
+	for collection, want := range map[string]int{"tags": 2, "document_types": 1} {
+		ids, err := sharedEntityIDs(f.app, collection, f.otherID)
+		if err != nil || len(ids) != want {
+			t.Fatalf("%s ids=%v err=%v", collection, ids, err)
+		}
+	}
+	if err := f.app.Delete(grant); err != nil {
+		t.Fatal(err)
+	}
+	for _, collection := range []string{"tags", "document_types"} {
+		ids, err := sharedEntityIDs(f.app, collection, f.otherID)
+		if err != nil || len(ids) != 0 {
+			t.Fatalf("revoked %s ids=%v err=%v", collection, ids, err)
+		}
+	}
+}

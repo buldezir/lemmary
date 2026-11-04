@@ -28,6 +28,7 @@ type ChunkQuery struct {
 	// SharedDocumentIDs pass the UserID filter too: a chunk carries its owner,
 	// and these documents were shared with that user by someone else.
 	SharedDocumentIDs []string
+	SharedOwnerIDs    []string
 	DocumentIDs       []string
 	K                 int
 }

@@ -153,3 +153,49 @@ func shareTestGrant(t *testing.T, app core.App, documentID, userID string) {
 		t.Fatalf("save share: %v", err)
 	}
 }
+
+func TestLibrarySearchUsesLiveGrantsWithoutReindexing(t *testing.T) {
+	idx := testIndex(t)
+	granted := true
+	idx.libraryOwners = func(user string) ([]string, error) {
+		if granted && user == "reader" {
+			return []string{"owner"}, nil
+		}
+		return nil, nil
+	}
+	for _, id := range []string{"existing", "future"} {
+		mustPut(t, idx, id, map[string]any{FieldUser: "owner", FieldOwner: "owner", FieldOCRText: "library invoice"})
+	}
+	mustPut(t, idx, "explicit", map[string]any{FieldUser: []string{"owner", "reader"}, FieldOwner: "owner", FieldOCRText: "library invoice"})
+	mustPut(t, idx, "private", map[string]any{FieldUser: "stranger", FieldOwner: "stranger", FieldOCRText: "library invoice"})
+	for _, owner := range []string{"", OwnerShared, OwnerMine} {
+		q := Query{Text: "invoice", UserID: "reader", Owner: owner}
+		want := 3
+		if owner == OwnerMine {
+			want = 0
+		}
+		if got := searchIDs(t, idx, q); len(got) != want {
+			t.Fatalf("owner=%s: %v", owner, got)
+		}
+		count, err := idx.CountMatching(q)
+		if err != nil || count != uint64(want) {
+			t.Fatalf("count=%d err=%v", count, err)
+		}
+		ids, _, _, err := idx.MatchingIDs(q, 100)
+		if err != nil || len(ids) != want {
+			t.Fatalf("matching=%v err=%v", ids, err)
+		}
+		ids, _, err = idx.EligibleIDs(q, 100)
+		if err != nil || len(ids) != want {
+			t.Fatalf("eligible=%v err=%v", ids, err)
+		}
+		ids, err = idx.KeepEligible(q, []string{"existing", "future", "explicit", "private"})
+		if err != nil || len(ids) != want {
+			t.Fatalf("kept=%v err=%v", ids, err)
+		}
+	}
+	granted = false
+	if got := searchIDs(t, idx, Query{Text: "invoice", UserID: "reader"}); len(got) != 1 || got[0] != "explicit" {
+		t.Fatalf("after revocation: %v", got)
+	}
+}

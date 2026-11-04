@@ -446,6 +446,13 @@ Limits:
 
 Deleting a document deletes its Ask AI chats, and deleting an account deletes all of its chats. The `chat_sessions` and `chat_messages` collections carry no API rules, so — like `passkey_credentials` — they are not reachable through `/api/collections` at all and `/api/app/chats` is the only way in. That is deliberate: a client able to write its own `assistant` messages could plant text that the server would then replay to the model as a genuine prior answer.
 
+## Share your library {#share-your-library}
+
+Under **Account → Sharing**, choose another account to grant read-only access to all documents you own, including future uploads and imports. This section appears only when another user exists. Recipients can read and download documents, but cannot edit, delete or share them onward. Documents shared with you are not included.
+
+Remove a recipient here to revoke library access. Any individual document shares remain active; an individual share cannot override access granted to the whole library. The document sharing dialog identifies library access and points back to Account → Sharing.
+
+
 ## Troubleshooting
 
 - **Stuck on setup wizard, OCR fails, AI extraction fails:** see [AI providers → Troubleshooting](/ai_providers#troubleshooting).

@@ -1611,6 +1611,13 @@ export const de: Catalog = {
   'account.passwordWrong': 'Das aktuelle Passwort ist falsch.',
   'account.passwordRejected': 'Das neue Passwort wurde abgelehnt; verwenden Sie mindestens 8 Zeichen.',
   'account.passwordFailed': 'Das Passwort konnte nicht geändert werden.',
+  'account.sharing': "Freigaben",
+  'librarySharing.description': "Teile alle eigenen Dokumente, auch die, die du künftig hinzufügst.",
+  'librarySharing.permissions': "Nur Lesezugriff: Empfänger können Dokumente ansehen und herunterladen.",
+  'librarySharing.empty': "Deine Bibliothek ist mit niemandem geteilt.",
+  'librarySharing.revokeHint': "Beim Entfernen des Bibliothekszugriffs bleiben einzeln geteilte Dokumente weiterhin freigegeben.",
+  'librarySharing.inherited': "Zugriff über Konto → Freigaben",
+  'librarySharing.manage': "Verwalte den Bibliothekszugriff unter Konto → Freigaben.",
   'account.title': 'Konto',
   'account.intro': 'Wie Sie und Ihre Agenten sich bei diesem Archiv anmelden.',
 

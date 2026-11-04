@@ -1,3 +1,4 @@
+import { AccountSharingPage } from './routes/accountSharing'
 import {
   createRootRoute,
   createRoute,
@@ -349,6 +350,12 @@ const accountPasswordRoute = createRoute({
   component: AccountPasswordPage,
 })
 
+const accountSharingRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'sharing',
+  component: AccountSharingPage,
+})
+
 const accountPasskeysRoute = createRoute({
   getParentRoute: () => accountRoute,
   path: 'passkeys',
@@ -422,6 +429,7 @@ const routeTree = rootRoute.addChildren([
     accountPaperlessRoute,
     accountPasswordRoute,
     accountPasskeysRoute,
+    accountSharingRoute,
   ]),
   tagsRoute,
   bulkRoute,
