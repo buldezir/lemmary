@@ -29,7 +29,7 @@ import { SuggestedTags } from '../components/SuggestedTags'
 import { StepBindingOverride } from '../components/BindingOverride'
 import { Combobox } from '../components/Combobox'
 import { useAsync } from '../hooks/useAsync'
-import { DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
+import { canMarkReviewed, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import {
   defaultReprocessSteps,
   forceStepsForReprocess,
@@ -42,6 +42,7 @@ import {
   jobStillRunning,
   type ProcessingJobRecord,
   type ProcessingStep,
+  reviewFailedConfirmation,
   summarizeJob,
 } from '../lib/processing'
 import { ProcessingStatus } from '../components/ProcessingStatus'
@@ -500,6 +501,9 @@ export function DocumentDetailPage() {
    */
   async function onMarkReviewed() {
     if (!document) return
+    if (document.processing_status === 'failed' && !window.confirm(reviewFailedConfirmation([job]))) {
+      return
+    }
 
     try {
       setMarkingReviewed(true)
@@ -748,7 +752,7 @@ export function DocumentDetailPage() {
             </svg>
           </button>
           )}
-          {owned && document.processing_status === 'needs_review' && (
+          {owned && canMarkReviewed(document) && (
             <Button
               variant="secondary"
               disabled={markingReviewed || editing}

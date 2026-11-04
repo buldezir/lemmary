@@ -5,6 +5,7 @@ import {
   jobDurationMs,
   jobStillRunning,
   parseStepTimestamp,
+  reviewFailedConfirmation,
   stalledAfterMs,
   stepDurationMs,
   summarizeJob,
@@ -332,5 +333,21 @@ describe('summarizeJob', () => {
       summarizeJob(job({ status: 'completed', finished_at: at(-1000), step_runs: [run()] }), now),
     ).toBeNull()
     expect(summarizeJob(null, now)).toBeNull()
+  })
+})
+
+describe('reviewFailedConfirmation', () => {
+  const failedJob: ProcessingJobRecord = {
+    id: 'j1', document: 'd1', status: 'failed', steps: [], started_at: '', finished_at: 'x',
+    created: '', updated: '', step_runs: [run({ status: 'failed', error: 'no text' })],
+  }
+
+  it('names the failed step for one document, and falls back without its job', () => {
+    expect(reviewFailedConfirmation([failedJob])).toMatch(/^OCR failed\. Mark it reviewed anyway\?/)
+    expect(reviewFailedConfirmation([undefined])).toMatch(/^Processing failed\. Mark it reviewed/)
+  })
+
+  it('counts several', () => {
+    expect(reviewFailedConfirmation([failedJob, null])).toMatch(/^Processing failed for 2 of these\./)
   })
 })

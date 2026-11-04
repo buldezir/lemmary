@@ -66,6 +66,10 @@ export const de: Catalog = {
   'processing.retrying': '{step} wird erneut versucht (Versuch {attempt})',
   'processing.stepFailed': '{step} fehlgeschlagen',
   'processing.failed': 'Verarbeitung fehlgeschlagen',
+  'processing.confirmReviewFailedOne':
+    '{reason}. Trotzdem als geprüft markieren?\n\nEs bleibt, wie es ist, und die Suche findet es womöglich erst nach einer erneuten Verarbeitung.',
+  'processing.confirmReviewFailedMany':
+    'Bei {count} davon ist die Verarbeitung fehlgeschlagen. Trotzdem als geprüft markieren?\n\nSie bleiben, wie sie sind, und die Suche findet sie womöglich erst nach einer erneuten Verarbeitung.',
   'processing.notStarted': 'Noch nicht gestartet',
   'processing.notStartedHint':
     'Prüfen Sie, ob die OCR- und KI-Anbieter in den Einstellungen konfiguriert sind, und auf der Seite Aktivität, ob die Verarbeitung pausiert.',
@@ -371,6 +375,10 @@ export const de: Catalog = {
   'useDocumentList.markedReviewedOne': 'Als geprüft markiert.',
   'useDocumentList.markedReviewedMany': '{count} als geprüft markiert.',
   'useDocumentList.markReviewedFailed': 'Konnte nicht als geprüft markiert werden',
+  'useDocumentList.nothingReviewable':
+    'Keines davon kann als geprüft markiert werden: Sie warten noch, werden verarbeitet oder wurden abgebrochen.',
+  'useDocumentList.reviewSkipped':
+    '{count} übersprungen: wartend, in Verarbeitung oder abgebrochen.',
   'useDocumentList.confirmDeleteOne': 'Dieses Dokument löschen?',
   'useDocumentList.confirmDeleteMany': {
     one: 'Diese {count} Dokumente löschen?',

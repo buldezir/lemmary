@@ -73,3 +73,11 @@ export function reviewReason(document: {
   }
   return 'awaiting'
 }
+
+/**
+ * A failed document too: its owner may keep it as it is rather than reprocess
+ * it. Mirrors mark_reviewed in backend/internal/appapi/mcp_write.go.
+ */
+export function canMarkReviewed(document: { processing_status: string }): boolean {
+  return document.processing_status === 'needs_review' || document.processing_status === 'failed'
+}

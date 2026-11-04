@@ -30,7 +30,7 @@ type mcpUpdateArgs struct {
 	DocumentType  *string   `json:"document_type,omitempty" jsonschema:"Document type name, created if new; empty clears it."`
 	Correspondent *string   `json:"correspondent,omitempty" jsonschema:"Correspondent name, created if new; empty clears it."`
 	Tags          *[]string `json:"tags,omitempty" jsonschema:"The whole tag list as exact names of existing tags. Replaces the current tags; an empty list removes them all."`
-	MarkReviewed  bool      `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review document to completed. A possible duplicate is kept as a document of its own and processed again."`
+	MarkReviewed  bool      `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review or failed document to completed; a failed one is kept as it is, without reprocessing. A possible duplicate is kept as a document of its own and processed again."`
 }
 
 type mcpIDsArgs struct {
@@ -218,7 +218,8 @@ func applyMCPUpdate(app core.App, userID string, record *core.Record, args mcpUp
 		}
 		record.Set("tags", ids)
 	}
-	if args.MarkReviewed && record.GetString("processing_status") == models.DocStatusNeedsReview {
+	if status := record.GetString("processing_status"); args.MarkReviewed &&
+		(status == models.DocStatusNeedsReview || status == models.DocStatusFailed) {
 		record.Set("processing_status", models.DocStatusCompleted)
 	}
 	return nil

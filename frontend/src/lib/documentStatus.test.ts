@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  canMarkReviewed,
   DOCUMENT_STATUSES,
   DOCUMENT_STATUS_LABELS,
   isDocumentStatus,
@@ -57,5 +58,18 @@ describe('reviewReason', () => {
   test('treats a missing confidence as awaiting rather than low', () => {
     expect(reviewReason({})).toBe('awaiting')
     expect(reviewReason({ confidence: 0 })).toBe('awaiting')
+  })
+})
+
+describe('canMarkReviewed', () => {
+  test('allows a document waiting for review or one that failed', () => {
+    expect(canMarkReviewed({ processing_status: 'needs_review' })).toBe(true)
+    expect(canMarkReviewed({ processing_status: 'failed' })).toBe(true)
+  })
+
+  test('refuses every other status', () => {
+    for (const status of ['pending', 'processing', 'completed', 'cancelled']) {
+      expect(canMarkReviewed({ processing_status: status })).toBe(false)
+    }
   })
 })

@@ -291,3 +291,12 @@ export function summarizeJob(
 
   return null
 }
+
+/** What marking failed documents reviewed leaves undone, naming the step for one. */
+export function reviewFailedConfirmation(jobs: (ProcessingJobRecord | null | undefined)[]): string {
+  if (jobs.length === 1) {
+    const reason = summarizeJob(jobs[0])?.label ?? t('processing.failed')
+    return t('processing.confirmReviewFailedOne', { reason })
+  }
+  return t('processing.confirmReviewFailedMany', { count: jobs.length })
+}

@@ -65,6 +65,10 @@ export const en = {
   'processing.retrying': 'Retrying {step} (attempt {attempt})',
   'processing.stepFailed': '{step} failed',
   'processing.failed': 'Processing failed',
+  'processing.confirmReviewFailedOne':
+    '{reason}. Mark it reviewed anyway?\n\nIt stays as it is, and search may not find it until it is reprocessed.',
+  'processing.confirmReviewFailedMany':
+    'Processing failed for {count} of these. Mark them reviewed anyway?\n\nThey stay as they are, and search may not find them until they are reprocessed.',
   'processing.notStarted': 'Not started yet',
   'processing.notStartedHint':
     'Check that the OCR and AI providers are configured in Settings, and on the Activity page whether processing is paused.',
@@ -353,6 +357,9 @@ export const en = {
   'useDocumentList.markedReviewedOne': 'Marked reviewed.',
   'useDocumentList.markedReviewedMany': 'Marked {count} reviewed.',
   'useDocumentList.markReviewedFailed': 'Could not mark as reviewed',
+  'useDocumentList.nothingReviewable':
+    'None of these can be marked reviewed: they are still queued, processing or cancelled.',
+  'useDocumentList.reviewSkipped': 'Skipped {count} still queued, processing or cancelled.',
   'useDocumentList.confirmDeleteOne': 'Delete this document?',
   'useDocumentList.confirmDeleteMany': {
     one: 'Delete these {count} documents?',

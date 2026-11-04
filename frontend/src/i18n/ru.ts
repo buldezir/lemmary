@@ -70,6 +70,10 @@ export const ru: Catalog = {
   'processing.retrying': 'Повтор: {step} (попытка {attempt})',
   'processing.stepFailed': '{step}: ошибка',
   'processing.failed': 'Ошибка обработки',
+  'processing.confirmReviewFailedOne':
+    '{reason}. Всё равно отметить как проверенный?\n\nДокумент останется как есть, и поиск может не находить его до повторной обработки.',
+  'processing.confirmReviewFailedMany':
+    'Документов с ошибкой обработки среди выбранных: {count}. Всё равно отметить их как проверенные?\n\nОни останутся как есть, и поиск может не находить их до повторной обработки.',
   'processing.notStarted': 'Ещё не запущено',
   'processing.notStartedHint':
     'Проверьте, что провайдеры OCR и ИИ настроены в разделе «Настройки», а на странице «Активность» — не приостановлена ли обработка.',
@@ -407,6 +411,10 @@ export const ru: Catalog = {
   'useDocumentList.markedReviewedOne': 'Отмечено как проверенное.',
   'useDocumentList.markedReviewedMany': 'Отмечено проверенными: {count}.',
   'useDocumentList.markReviewedFailed': 'Не удалось отметить как проверенные',
+  'useDocumentList.nothingReviewable':
+    'Ни один из них нельзя отметить как проверенный: они ещё в очереди, обрабатываются или отменены.',
+  'useDocumentList.reviewSkipped':
+    'Пропущено: {count} — в очереди, в обработке или отменены.',
   'useDocumentList.confirmDeleteOne': 'Удалить этот документ?',
   'useDocumentList.confirmDeleteMany': {
     one: 'Удалить {count} документ?',

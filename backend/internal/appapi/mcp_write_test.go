@@ -169,6 +169,24 @@ func TestMCPMarkReviewedAloneKeepsTheMetadataSource(t *testing.T) {
 	}
 }
 
+func TestMCPMarkReviewedKeepsAFailedDocumentAsItIs(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "owner@example.com")
+	failed := makeQueueDocument(t, app, owner, models.DocStatusFailed, "text")
+	pending := makeQueueDocument(t, app, owner, models.DocStatusPending, "text")
+	session := connectMCPWrites(t, app, owner, config.MCPEdit)
+
+	var got mcpDocument
+	callMCP(t, session, "update_document", map[string]any{"id": failed.Id, "mark_reviewed": true}, &got)
+	if got.ProcessingStatus != models.DocStatusCompleted {
+		t.Fatalf("failed: status = %q", got.ProcessingStatus)
+	}
+	callMCP(t, session, "update_document", map[string]any{"id": pending.Id, "mark_reviewed": true}, &got)
+	if got.ProcessingStatus != models.DocStatusPending {
+		t.Fatalf("pending: status = %q", got.ProcessingStatus)
+	}
+}
+
 func TestMCPUploadStoresAPendingDocument(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "owner@example.com")

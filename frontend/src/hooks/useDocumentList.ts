@@ -18,6 +18,7 @@ import {
 import { CORRESPONDENT_FIELD_ID, DOCUMENT_TYPE_FIELD_ID } from '../lib/api/customFields'
 import { acceptSuggestedTag, listTags } from '../lib/api/tags'
 import { getLatestJobsFor } from '../lib/api/jobs'
+import { canMarkReviewed } from '../lib/documentStatus'
 import {
   defaultDocumentQuery,
   documentQuerySearch,
@@ -27,7 +28,12 @@ import {
   type DocumentQuery,
 } from '../lib/documentQuery'
 import { onDocumentsChanged } from '../lib/documentEvents'
-import { REPROCESS_MODE_LABELS, type ProcessingJobRecord, type ReprocessMode } from '../lib/processing'
+import {
+  REPROCESS_MODE_LABELS,
+  reviewFailedConfirmation,
+  type ProcessingJobRecord,
+  type ReprocessMode,
+} from '../lib/processing'
 import { PAGE_SIZES, parsePageSize } from '../lib/pagination'
 import { useAsync } from './useAsync'
 import { useDocumentSort } from '../lib/userSettings'
@@ -416,17 +422,26 @@ export function useDocumentList({
   }
 
   /**
-   * No confirmation, unlike reprocess: this overwrites nothing. Filtered to
-   * documents still reading needs_review because a refresh can land between the
-   * tick and the click, and the Inbox holds failed and queued documents too.
+   * Overwrites nothing, so confirmed only for failed documents, which keep what
+   * processing did not produce. Filtered to documents still reviewable because
+   * a refresh can land between the tick and the click, and the Inbox holds
+   * queued documents too.
    */
   async function onMarkReviewed(ids: string[]) {
-    const waiting = documents
-      .filter(
-        (document) => ids.includes(document.id) && document.processing_status === 'needs_review',
-      )
-      .map((document) => document.id)
-    if (waiting.length === 0) return
+    const reviewable = documents.filter(
+      (document) => ids.includes(document.id) && canMarkReviewed(document),
+    )
+    const waiting = reviewable.map((document) => document.id)
+    const skipped = ids.length - waiting.length
+    if (waiting.length === 0) {
+      setMessage('')
+      setError(t('useDocumentList.nothingReviewable'))
+      return
+    }
+    const failedJobs = reviewable
+      .filter((document) => document.processing_status === 'failed')
+      .map((document) => jobs.get(document.id))
+    if (failedJobs.length > 0 && !window.confirm(reviewFailedConfirmation(failedJobs))) return
 
     try {
       setMarkingReviewed(true)
@@ -434,10 +449,12 @@ export function useDocumentList({
       setMessage('')
       await markDocumentsReviewed(waiting)
       setSelectedIds(new Set())
-      setMessage(
+      const marked =
         waiting.length === 1
           ? t('useDocumentList.markedReviewedOne')
-          : t('useDocumentList.markedReviewedMany', { count: waiting.length }),
+          : t('useDocumentList.markedReviewedMany', { count: waiting.length })
+      setMessage(
+        skipped > 0 ? `${marked} ${t('useDocumentList.reviewSkipped', { count: skipped })}` : marked,
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : t('useDocumentList.markReviewedFailed'))
