@@ -203,11 +203,10 @@ func TestMarkingADuplicateReviewedKeepsItApart(t *testing.T) {
 		}
 	}
 
-	// A reprocess that failed keeps duplicate_of; once edited by hand, the
-	// failed copy is reviewable and kept apart the same way.
-	failed := saveReviewTestDocument(t, app, userID, "Invoice, fixed by hand", original.Id)
+	// A reprocess that failed keeps duplicate_of; the failed copy is kept apart
+	// the same way.
+	failed := saveReviewTestDocument(t, app, userID, "Invoice, failed copy", original.Id)
 	failed.Set("processing_status", models.DocStatusFailed)
-	failed.Set("metadata_source", models.MetadataSourceUser)
 	if err := app.Save(failed); err != nil {
 		t.Fatal(err)
 	}

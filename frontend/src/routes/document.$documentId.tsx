@@ -42,6 +42,7 @@ import {
   jobStillRunning,
   type ProcessingJobRecord,
   type ProcessingStep,
+  reviewFailedConfirmation,
   summarizeJob,
 } from '../lib/processing'
 import { ProcessingStatus } from '../components/ProcessingStatus'
@@ -500,6 +501,9 @@ export function DocumentDetailPage() {
    */
   async function onMarkReviewed() {
     if (!document) return
+    if (document.processing_status === 'failed' && !window.confirm(reviewFailedConfirmation([job]))) {
+      return
+    }
 
     try {
       setMarkingReviewed(true)

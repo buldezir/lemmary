@@ -28,7 +28,12 @@ import {
   type DocumentQuery,
 } from '../lib/documentQuery'
 import { onDocumentsChanged } from '../lib/documentEvents'
-import { REPROCESS_MODE_LABELS, type ProcessingJobRecord, type ReprocessMode } from '../lib/processing'
+import {
+  REPROCESS_MODE_LABELS,
+  reviewFailedConfirmation,
+  type ProcessingJobRecord,
+  type ReprocessMode,
+} from '../lib/processing'
 import { PAGE_SIZES, parsePageSize } from '../lib/pagination'
 import { useAsync } from './useAsync'
 import { useStoredValue } from './useStoredFlag'
@@ -410,20 +415,26 @@ export function useDocumentList({
   }
 
   /**
-   * No confirmation, unlike reprocess: this overwrites nothing. Filtered to
-   * documents still reviewable because a refresh can land between the
-   * tick and the click, and the Inbox holds failed and queued documents too.
+   * Overwrites nothing, so confirmed only for failed documents, which keep what
+   * processing did not produce. Filtered to documents still reviewable because
+   * a refresh can land between the tick and the click, and the Inbox holds
+   * queued documents too.
    */
   async function onMarkReviewed(ids: string[]) {
-    const waiting = documents
-      .filter((document) => ids.includes(document.id) && canMarkReviewed(document))
-      .map((document) => document.id)
+    const reviewable = documents.filter(
+      (document) => ids.includes(document.id) && canMarkReviewed(document),
+    )
+    const waiting = reviewable.map((document) => document.id)
     const skipped = ids.length - waiting.length
     if (waiting.length === 0) {
       setMessage('')
       setError(t('useDocumentList.nothingReviewable'))
       return
     }
+    const failedJobs = reviewable
+      .filter((document) => document.processing_status === 'failed')
+      .map((document) => jobs.get(document.id))
+    if (failedJobs.length > 0 && !window.confirm(reviewFailedConfirmation(failedJobs))) return
 
     try {
       setMarkingReviewed(true)

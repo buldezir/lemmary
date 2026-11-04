@@ -75,16 +75,9 @@ export function reviewReason(document: {
 }
 
 /**
- * A failed document can leave the Inbox once its owner has edited it by hand:
- * their metadata stands in for what the pipeline could not produce. Mirrors
- * canMarkReviewed in backend/internal/appapi/mcp_write.go.
+ * A failed document too: its owner may keep it as it is rather than reprocess
+ * it. Mirrors mark_reviewed in backend/internal/appapi/mcp_write.go.
  */
-export function canMarkReviewed(document: {
-  processing_status: string
-  metadata_source?: string
-}): boolean {
-  return (
-    document.processing_status === 'needs_review' ||
-    (document.processing_status === 'failed' && document.metadata_source === 'user')
-  )
+export function canMarkReviewed(document: { processing_status: string }): boolean {
+  return document.processing_status === 'needs_review' || document.processing_status === 'failed'
 }

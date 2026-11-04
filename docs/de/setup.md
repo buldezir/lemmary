@@ -352,7 +352,7 @@ Zwei Wege hinaus, die beide den Status auf `completed` setzen:
 - **Korrekturen speichern** auf der Detailseite – ein falsch gelesenes `document_date` zu korrigieren und zu speichern zählt als Prüfung.
 - **Als geprüft markieren**, wenn die Metadaten bereits stimmen – auf der Detailseite, auf einer Karte in der Liste oder für eine Auswahl von Karten auf einmal aus dem Posteingang. Es schreibt nichts außer dem Status, sodass `metadata_source` weiterhin festhält, dass das Modell die Metadaten geschrieben hat.
 
-Ein **fehlgeschlagenes** Dokument bleibt beim Speichern von Korrekturen fehlgeschlagen, da die Verarbeitung nicht abgeschlossen wurde; danach erscheint **Als geprüft markieren** auch dafür und setzt es auf `completed` – Ihre Metadaten ersetzen, was die Pipeline nicht liefern konnte.
+Auch ein **fehlgeschlagenes** Dokument lässt sich als geprüft markieren, nach einer Rückfrage, die den fehlgeschlagenen Schritt nennt. Es wird so, wie es ist, auf `completed` gesetzt: Was dieser Schritt geliefert hätte (OCR-Text, Metadaten, Embeddings), fehlt weiterhin, sodass die Suche es womöglich erst nach einer erneuten Verarbeitung findet. Nur Korrekturen zu speichern lässt es fehlgeschlagen.
 
 Ist **Prüfung immer verlangen** an, bittet die Extraktion das Modell außerdem um bis zu drei **vorgeschlagene Tags**: neue Namen, die noch nicht in Ihrem Vokabular stehen. Sie erscheinen als gestrichelte `+ name`-Chips auf der Karte und der Detailseite, solange das Dokument wartet, und das Annehmen eines Vorschlags legt den Tag an und fügt ihn dem Dokument hinzu. Vorschläge werden am Verarbeitungsjob gespeichert, nie am Dokument, und verschwinden, sobald es geprüft ist. Ansonsten legt die KI nie Tags an.
 
