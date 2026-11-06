@@ -313,7 +313,8 @@ export const de: Catalog = {
   'customFieldsApi.saveFailed': 'Das eigene Feld konnte nicht gespeichert werden.',
 
   'mcp.statusFailed': 'Der MCP-Endpunkt konnte nicht geprüft werden',
-  'mcp.tokenFailed': 'Token konnte nicht erstellt werden',
+  'tokens.loadFailed': 'Tokens konnten nicht geladen werden',
+  'tokens.revokeFailed': 'Das Token konnte nicht widerrufen werden',
 
   'documents.noFile': 'Dieses Dokument hat keine Datei.',
   'documents.largeFile':
@@ -1594,10 +1595,8 @@ export const de: Catalog = {
     'Der MCP-Endpunkt ist auf dieser Instanz ausgeschaltet ({env}). Ein Administrator kann ihn wieder einschalten.',
   'account.createAnotherToken': 'Weiteres Token erstellen',
   'account.createToken': 'Token erstellen',
-  'account.tokenShown':
-    'Zehn Jahre gültig und nur einmal angezeigt. Frühere Tokens funktionieren weiter, bis Sie unten Ihr Passwort ändern.',
-  'account.tokenHint':
-    'Erstellt ein langlebiges Token für Ihr Konto und setzt es in das Snippet unten ein.',
+  'account.tokenShown': 'Wird nur einmal angezeigt, kopieren Sie es jetzt. Es meldet nirgends sonst an und gilt, bis Sie es unten widerrufen.',
+  'account.tokenHint': 'Erstellt ein Token, das nur den MCP-Endpunkt öffnet, und setzt es in das Snippet unten ein.',
   'account.agent': 'Agent',
   'account.copied': 'Kopiert',
   'account.copy': 'Kopieren',
@@ -1606,15 +1605,18 @@ export const de: Catalog = {
   'account.paperlessAppsHint':
     'Apps für Paperless-ngx wie Paperparrot oder swift-paperless können sich mit einem Token statt mit einem Passwort anmelden. Geben Sie {url} als Server ein und fügen Sie das Token ein. {link}',
   'account.paperlessLink': 'Was über diese Apps funktioniert.',
-  'account.paperlessTokenHint': 'Erstellt ein langlebiges Token für Ihr Konto.',
+  'account.paperlessTokenHint': 'Erstellt ein Token, das nur die Paperless-ngx-API öffnet.',
+  'account.activeTokens': 'Aktive Tokens',
+  'account.revoke': 'Widerrufen',
+  'account.revokeTokenConfirm': '„{name}“ widerrufen? Was es nutzt, funktioniert dann nicht mehr.',
   'account.password': 'Passwort',
   'account.passwordHint':
-    'Eine Änderung meldet Sie auf Ihren anderen Geräten ab und widerruft alle Tokens für Agenten und Paperless-ngx-Apps, auch früher erstellte. Dieser Tab bleibt angemeldet.',
+    'Eine Änderung meldet Sie auf Ihren anderen Geräten ab. Tokens für Agenten und Paperless-ngx-Apps bleiben gültig; widerrufen Sie sie unter Agenten oder Paperless-ngx-Apps. Dieser Tab bleibt angemeldet.',
   'account.currentPassword': 'Aktuelles Passwort',
   'account.newPassword': 'Neues Passwort',
   'account.confirmPassword': 'Neues Passwort wiederholen',
   'account.changePassword': 'Passwort ändern',
-  'account.passwordChanged': 'Passwort geändert. Alle früheren Tokens funktionieren nicht mehr.',
+  'account.passwordChanged': 'Passwort geändert. Ihre anderen Geräte sind abgemeldet.',
   'account.passwordMismatch': 'Die neuen Passwörter stimmen nicht überein.',
   'account.passwordWrong': 'Das aktuelle Passwort ist falsch.',
   'account.passwordRejected': 'Das neue Passwort wurde abgelehnt; verwenden Sie mindestens 8 Zeichen.',

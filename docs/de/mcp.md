@@ -18,18 +18,20 @@ Ausgeschaltet bedeutet, dass es die Route überhaupt nicht gibt. Starten Sie nac
 
 ## Ein Token erhalten {#get-a-token}
 
-Die Kontoseite hat einen Abschnitt **Agenten**: Ein Klick erzeugt ein langlebiges Token für Ihr Konto und zeigt die sofort einfügbare Konfiguration für Claude Code, Codex CLI, Gemini CLI, Cursor, VS Code, Windsurf, OpenCode und Claude Desktop (als Befehl, wo der Agent einen hat, sonst als dessen Konfigurationsdatei).
+Die Kontoseite hat einen Abschnitt **Agenten**: Ein Klick erzeugt ein Token für den gewählten Agenten und zeigt die sofort einfügbare Konfiguration für Claude Code, Codex CLI, Gemini CLI, Cursor, VS Code, Windsurf, OpenCode und Claude Desktop (als Befehl, wo der Agent einen hat, sonst als dessen Konfigurationsdatei).
 
-Jedes Lemmary-Auth-Token funktioniert ebenfalls. In einem Skript ist das langlebige Token vom Paperless-kompatiblen Endpunkt das bequemste:
+Das Token öffnet `POST /api/mcp` und sonst nichts: Die übrige API von Lemmary lehnt es ab, die Admin-Routen eingeschlossen, ebenso die Paperless-ngx-API. Umgekehrt öffnet ein Token einer Paperless-ngx-App kein MCP. In einem Skript melden Sie sich an und erstellen eines:
 
 ```bash
-TOKEN=$(curl -s -X POST https://lemmary.example.com/api/token/ \
-  -d username=you@example.com -d password=… | jq -r .token)
+SESSION=$(curl -s -X POST https://lemmary.example.com/api/collections/users/auth-with-password \
+  -d identity=you@example.com -d password=… | jq -r .token)
+TOKEN=$(curl -s -X POST https://lemmary.example.com/api/app/tokens -H "Authorization: $SESSION" \
+  -H 'Content-Type: application/json' -d '{"scope":"mcp","name":"my script"}' | jq -r .token)
 ```
 
-Jedes Token ist auf die Dokumente eines Kontos beschränkt. Das Token eines Administrators gehört zum eigenen `users`-Konto des Administrators (dem, das bei der Einrichtung zusammen mit ihm angelegt wurde), nicht zu jedem Konto auf der Instanz.
+Jedes Token ist auf die Dokumente eines Kontos beschränkt. Das Token eines Administrators gehört zum eigenen `users`-Konto des Administrators (dem, das bei der Einrichtung zusammen mit ihm angelegt wurde), nicht zu jedem Konto auf der Instanz, und trägt keine der Admin-Rechte.
 
-Ein Token bleibt zehn Jahre gültig, und ein weiteres zu erstellen macht die früheren nicht ungültig. Eine Passwortänderung unter **Konto → Passwort** widerruft alle Tokens auf einmal, auch die für Paperless-ngx-Apps; ein einzelnes lässt sich nicht widerrufen.
+Ein Token läuft nicht ab, und ein weiteres zu erstellen macht die früheren nicht ungültig. Der Abschnitt **Agenten** listet sie, nach ihrem Agenten benannt und nummeriert (`Claude Code MCP #1`, `#2`), mit Erstellungsdatum und letzter Nutzung auf, und **Widerrufen** macht eines ungültig. Eine Passwortänderung tut das nicht: Ein Token gilt, bis es widerrufen oder sein Konto gelöscht wird. Agenten-Tokens aus der Zeit vor den beschränkten Tokens funktionieren nicht mehr; erstellen Sie ein neues.
 
 ## Verbinden {#connect}
 

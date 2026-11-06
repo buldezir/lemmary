@@ -257,6 +257,10 @@ var catalog = map[string]map[string]string{
 		"de": "Die Tags konnten nicht aufgelistet werden.",
 		"ru": "Не удалось получить список тегов.",
 	},
+	"Failed to list tokens.": {
+		"de": "Die Tokens konnten nicht aufgelistet werden.",
+		"ru": "Не удалось получить список токенов.",
+	},
 	"Failed to list users.": {
 		"de": "Die Benutzer konnten nicht aufgelistet werden.",
 		"ru": "Не удалось получить список пользователей.",
@@ -332,6 +336,10 @@ var catalog = map[string]map[string]string{
 	"Failed to resolve document owner.": {
 		"de": "Der Eigentümer des Dokuments konnte nicht ermittelt werden.",
 		"ru": "Не удалось определить владельца документа.",
+	},
+	"Failed to revoke the token.": {
+		"de": "Das Token konnte nicht widerrufen werden.",
+		"ru": "Не удалось отозвать токен.",
 	},
 	"unknown custom field %q": {
 		"de": "Unbekanntes eigenes Feld %q",
@@ -829,6 +837,10 @@ var catalog = map[string]map[string]string{
 		"de": "Dieser Arbeitsbereich ist jetzt schreibgeschützt.",
 		"ru": "Это рабочее пространство теперь доступно только для чтения.",
 	},
+	"Token not found.": {
+		"de": "Token nicht gefunden.",
+		"ru": "Токен не найден.",
+	},
 	"Too many sign-in attempts are in progress. Try again in a minute.": {
 		"de": "Es laufen zu viele Anmeldeversuche. Versuchen Sie es in einer Minute erneut.",
 		"ru": "Выполняется слишком много попыток входа. Повторите через минуту.",
@@ -848,6 +860,10 @@ var catalog = map[string]map[string]string{
 	"Unknown timezone %q.": {
 		"de": "Unbekannte Zeitzone %q.",
 		"ru": "Неизвестный часовой пояс %q.",
+	},
+	"Unknown token scope.": {
+		"de": "Unbekannter Token-Bereich.",
+		"ru": "Неизвестная область действия токена.",
 	},
 	"Unlock": {
 		"de": "Entsperren",

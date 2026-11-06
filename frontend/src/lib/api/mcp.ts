@@ -16,12 +16,3 @@ export async function getMCPStatus(): Promise<MCPStatus> {
   }
   return { enabled: true, url: new URL(data.path || '/api/mcp', window.location.origin).toString() }
 }
-
-export async function createMCPToken(): Promise<string> {
-  const data = await apiFetch<{ token: string }>('/api/app/mcp/token', {
-    method: 'POST',
-    body: {},
-    fallbackError: t('mcp.tokenFailed'),
-  })
-  return data.token
-}

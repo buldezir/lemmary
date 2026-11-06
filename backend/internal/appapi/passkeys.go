@@ -10,6 +10,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/router"
 
 	"lemmary/backend/internal/passkey"
 )
@@ -203,6 +204,20 @@ func handlePostPasskeyRegisterFinish(app core.App) func(*core.RequestEvent) erro
 		}
 		return writeJSON(e, http.StatusCreated, map[string]any{"passkey": passkey.ToInfo(record)})
 	}
+}
+
+func registerPasskeyRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App) {
+	// The two login routes are public by necessity: the caller has no
+	// session yet.
+	g.POST("/passkeys/login/begin", handlePostPasskeyLoginBegin(app))
+	g.POST("/passkeys/login/finish", handlePostPasskeyLoginFinish(app)).
+		Bind(apis.BodyLimit(passkeyMaxBodyBytes))
+	g.GET("/passkeys", bindAuth(handleGetPasskeys(app)))
+	g.POST("/passkeys/register/begin", bindAuth(handlePostPasskeyRegisterBegin(app)))
+	g.POST("/passkeys/register/finish", bindAuth(handlePostPasskeyRegisterFinish(app))).
+		Bind(apis.BodyLimit(passkeyMaxBodyBytes))
+	g.PATCH("/passkeys/{id}", bindAuth(handlePatchPasskey(app)))
+	g.DELETE("/passkeys/{id}", bindAuth(handleDeletePasskey(app)))
 }
 
 func handleGetPasskeys(app core.App) func(*core.RequestEvent) error {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+	"lemmary/backend/internal/apitoken"
 )
 
 func bindAuth(handler func(*core.RequestEvent) error) func(*core.RequestEvent) error {
@@ -15,6 +16,16 @@ func bindAuth(handler func(*core.RequestEvent) error) func(*core.RequestEvent) e
 			return writeError(e, http.StatusUnauthorized, "Authentication required.")
 		}
 		return handler(e)
+	}
+}
+
+// bindAPIToken also admits an API token of scope, which no other binder does.
+func bindAPIToken(scope string, handler func(*core.RequestEvent) error) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			apitoken.Authenticate(e, scope)
+		}
+		return bindAuth(handler)(e)
 	}
 }
 

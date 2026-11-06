@@ -6,21 +6,12 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"golang.org/x/crypto/bcrypt"
+	"lemmary/backend/internal/apitoken"
 )
-
-// paperlessAPITokenTTL is how long POST /api/token/ JWTs last. Paperless-ngx
-// API tokens do not expire and clients such as swift-paperless store the
-// returned string and never refresh it, so this endpoint must not use
-// PocketBase's five-day session lifetime or those clients die until the server
-// is re-added. JWTs always carry exp, so this is long rather than forever.
-// Do not raise users.AuthToken.Duration to match: that would also stretch
-// browser sessions.
-const paperlessAPITokenTTL = 10 * 365 * 24 * time.Hour
 
 // dummyPasswordHash is compared when no user matches the identity, so response
 // timing does not reveal whether a username exists. Cost matches PocketBase's
@@ -63,7 +54,7 @@ func handleToken(e *core.RequestEvent) error {
 		return unauthorized(e, "Unable to log in with provided credentials.")
 	}
 
-	token, err := mintPaperlessAPIToken(record)
+	token, err := mintPaperlessAPIToken(e, record)
 	if err != nil {
 		return internalError(e, err)
 	}
@@ -74,22 +65,23 @@ func handleToken(e *core.RequestEvent) error {
 // handleGenerateAuthToken answers paperless-ngx's "API Auth Token" button, the
 // only way in for clients that take a token instead of a password and for
 // accounts that have no password. Paperless stores one key per user and shows it
-// again; a JWT cannot be shown again, so each call mints a new one.
+// again; ours is stored only as a hash, so each call mints a new one. A token
+// cannot mint another, or revoking it would not end its holder's access.
 func handleGenerateAuthToken(e *core.RequestEvent) error {
-	if e.Auth.Collection().Name != "users" {
+	if e.Auth.Collection().Name != "users" || apitoken.Scope(e) != "" {
 		return writeJSON(e, http.StatusForbidden, map[string]any{
 			"detail": "Sign in with a user account to create an API token.",
 		})
 	}
-	token, err := mintPaperlessAPIToken(e.Auth)
+	token, err := mintPaperlessAPIToken(e, e.Auth)
 	if err != nil {
 		return internalError(e, err)
 	}
 	return writeJSON(e, http.StatusOK, token)
 }
 
-func mintPaperlessAPIToken(record *core.Record) (string, error) {
-	return record.NewStaticAuthToken(paperlessAPITokenTTL)
+func mintPaperlessAPIToken(e *core.RequestEvent, record *core.Record) (string, error) {
+	return apitoken.Mint(e.App, record.Id, apitoken.ScopePaperless, "")
 }
 
 func handleTokenMethodNotAllowed(e *core.RequestEvent) error {
@@ -99,6 +91,13 @@ func handleTokenMethodNotAllowed(e *core.RequestEvent) error {
 func requireAuth(e *core.RequestEvent) error {
 	if e.Auth != nil {
 		return nil
+	}
+
+	if apitoken.FromHeader(e.Request.Header.Get("Authorization")) != "" {
+		if apitoken.Authenticate(e, apitoken.ScopePaperless) {
+			return nil
+		}
+		return rejectUnauthenticated(e, "Invalid token.")
 	}
 
 	header := e.Request.Header.Get("Authorization")

@@ -7,10 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/security"
+	"lemmary/backend/internal/apitoken"
 )
 
 func TestTokenGETReturns405ForSupportedAPIVersion(t *testing.T) {
@@ -96,54 +95,22 @@ func TestCollectionAuthPolicyAllowsPlainPasswordAuth(t *testing.T) {
 	}
 }
 
-// Paperless-ngx tokens do not expire and clients never refresh the one they
-// stored. NewAuthToken() follows users.AuthToken.Duration (five days), which is
-// why swift-paperless used to die until the server was re-added.
-func TestPaperlessAPITokenLastsYearsNotDays(t *testing.T) {
-	t.Parallel()
-
-	users := core.NewAuthCollection("users")
-	users.AuthToken.Duration = 432000 // five-day PocketBase session default
-	record := core.NewRecord(users)
-	record.Id = "userpaperless01"
-	record.SetTokenKey("test-token-key-for-paperless")
-
-	token, err := mintPaperlessAPIToken(record)
-	if err != nil {
-		t.Fatalf("mintPaperlessAPIToken() error: %v", err)
-	}
-
-	claims, err := security.ParseUnverifiedJWT(token)
-	if err != nil {
-		t.Fatalf("ParseUnverifiedJWT() error: %v", err)
-	}
-
-	if refreshable, _ := claims[core.TokenClaimRefreshable].(bool); refreshable {
-		t.Fatal("paperless API tokens must not be refreshable session JWTs")
-	}
-
-	exp := jwtExpUnix(claims["exp"])
-	if exp == 0 {
-		t.Fatalf("missing exp claim: %#v", claims["exp"])
-	}
-
-	now := time.Now().Unix()
-	nineYears := now + int64(9*365*24*time.Hour/time.Second)
-	elevenYears := now + int64(11*365*24*time.Hour/time.Second)
-	if exp < nineYears || exp > elevenYears {
-		t.Fatalf("exp %d is not ~10 years from now (%d); five-day session tokens are the old bug", exp, now)
-	}
-}
-
+// A Paperless app token opens this API and nothing else: it must not be a
+// PocketBase session, which every other route would accept with the account's
+// full authority.
 func TestGenerateAuthTokenMintsAPITokenForCaller(t *testing.T) {
 	t.Parallel()
 
-	record := core.NewRecord(core.NewAuthCollection("users"))
-	record.Id = "userpaperless01"
-	record.SetTokenKey("test-token-key-for-paperless")
+	app := bootSchemaTestApp(t)
+	userID := createUser(t, app, "paperless@example.com")
+	user, err := app.FindRecordById("users", userID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	e := newAuthRequestEvent(t, "")
+	e.App = app
 	e.Request.Method = http.MethodPost
-	e.Auth = record
+	e.Auth = user
 
 	if err := handleGenerateAuthToken(e); err != nil {
 		t.Fatalf("handleGenerateAuthToken() error: %v", err)
@@ -156,19 +123,66 @@ func TestGenerateAuthTokenMintsAPITokenForCaller(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &token); err != nil {
 		t.Fatalf("paperless-ngx answers a bare JSON string: %v (%s)", err, rec.Body.String())
 	}
-	claims, err := security.ParseUnverifiedJWT(token)
-	if err != nil {
-		t.Fatalf("ParseUnverifiedJWT() error: %v", err)
+
+	if _, err := app.FindAuthRecordByToken(token, core.TokenTypeAuth); err == nil {
+		t.Fatal("the paperless token is a PocketBase session token")
 	}
-	if claims[core.TokenClaimId] != record.Id {
-		t.Fatalf("token is for %v, want %s", claims[core.TokenClaimId], record.Id)
+
+	signedIn := newAuthRequestEvent(t, "Token "+token)
+	signedIn.App = app
+	if err := requireAuth(signedIn); err != nil {
+		t.Fatalf("requireAuth() error = %v", err)
 	}
-	if exp := jwtExpUnix(claims["exp"]); exp < time.Now().Add(9*365*24*time.Hour).Unix() {
-		t.Fatalf("exp %d is not years away", exp)
+	if signedIn.Auth == nil || signedIn.Auth.Id != userID {
+		t.Fatalf("signed in as %v, want %s", signedIn.Auth, userID)
 	}
 }
 
-// A superuser session must not walk away with a ten-year superuser token.
+func TestGenerateAuthTokenRefusesAPaperlessToken(t *testing.T) {
+	t.Parallel()
+
+	app := bootSchemaTestApp(t)
+	userID := createUser(t, app, "spare@example.com")
+	token, err := apitoken.Mint(app, userID, apitoken.ScopePaperless, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := newAuthRequestEvent(t, "Token "+token)
+	e.App = app
+	e.Request.Method = http.MethodPost
+	if err := requireAuth(e); err != nil {
+		t.Fatalf("requireAuth() error = %v", err)
+	}
+	if err := handleGenerateAuthToken(e); err != nil {
+		t.Fatalf("handleGenerateAuthToken() error: %v", err)
+	}
+	if rec := e.Response.(*httptest.ResponseRecorder); rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body.String())
+	}
+	tokens, err := apitoken.List(app, userID, apitoken.ScopePaperless)
+	if err != nil || len(tokens) != 1 {
+		t.Fatalf("tokens = %v (%v), want only the original", tokens, err)
+	}
+}
+
+func TestRequireAuthRefusesAnMCPToken(t *testing.T) {
+	t.Parallel()
+
+	app := bootSchemaTestApp(t)
+	userID := createUser(t, app, "agent@example.com")
+	token, err := apitoken.Mint(app, userID, apitoken.ScopeMCP, "agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := newAuthRequestEvent(t, "Token "+token)
+	e.App = app
+	if err := requireAuth(e); !errors.Is(err, errUnauthenticated) {
+		t.Fatalf("requireAuth() error = %v, want errUnauthenticated", err)
+	}
+	assertUnauthorizedDetail(t, e, "Invalid token.")
+}
+
+// A superuser has no users account for a Paperless token to belong to.
 func TestGenerateAuthTokenRefusesSuperusers(t *testing.T) {
 	t.Parallel()
 
@@ -237,19 +251,5 @@ func assertUnauthorizedDetail(t *testing.T, e *core.RequestEvent, want string) {
 	}
 	if body.Detail != want {
 		t.Fatalf("detail = %q, want %q", body.Detail, want)
-	}
-}
-
-func jwtExpUnix(v any) int64 {
-	switch n := v.(type) {
-	case float64:
-		return int64(n)
-	case int64:
-		return n
-	case json.Number:
-		i, _ := n.Int64()
-		return i
-	default:
-		return 0
 	}
 }
