@@ -65,9 +65,10 @@ func handleToken(e *core.RequestEvent) error {
 // handleGenerateAuthToken answers paperless-ngx's "API Auth Token" button, the
 // only way in for clients that take a token instead of a password and for
 // accounts that have no password. Paperless stores one key per user and shows it
-// again; ours is stored only as a hash, so each call mints a new one.
+// again; ours is stored only as a hash, so each call mints a new one. A token
+// cannot mint another, or revoking it would not end its holder's access.
 func handleGenerateAuthToken(e *core.RequestEvent) error {
-	if e.Auth.Collection().Name != "users" {
+	if e.Auth.Collection().Name != "users" || apitoken.Scope(e) != "" {
 		return writeJSON(e, http.StatusForbidden, map[string]any{
 			"detail": "Sign in with a user account to create an API token.",
 		})

@@ -138,6 +138,33 @@ func TestGenerateAuthTokenMintsAPITokenForCaller(t *testing.T) {
 	}
 }
 
+func TestGenerateAuthTokenRefusesAPaperlessToken(t *testing.T) {
+	t.Parallel()
+
+	app := bootSchemaTestApp(t)
+	userID := createUser(t, app, "spare@example.com")
+	token, err := apitoken.Mint(app, userID, apitoken.ScopePaperless, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := newAuthRequestEvent(t, "Token "+token)
+	e.App = app
+	e.Request.Method = http.MethodPost
+	if err := requireAuth(e); err != nil {
+		t.Fatalf("requireAuth() error = %v", err)
+	}
+	if err := handleGenerateAuthToken(e); err != nil {
+		t.Fatalf("handleGenerateAuthToken() error: %v", err)
+	}
+	if rec := e.Response.(*httptest.ResponseRecorder); rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body.String())
+	}
+	tokens, err := apitoken.List(app, userID, apitoken.ScopePaperless)
+	if err != nil || len(tokens) != 1 {
+		t.Fatalf("tokens = %v (%v), want only the original", tokens, err)
+	}
+}
+
 func TestRequireAuthRefusesAnMCPToken(t *testing.T) {
 	t.Parallel()
 
