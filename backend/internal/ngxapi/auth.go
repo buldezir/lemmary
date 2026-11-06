@@ -79,10 +79,8 @@ func handleGenerateAuthToken(e *core.RequestEvent) error {
 	return writeJSON(e, http.StatusOK, token)
 }
 
-// mintPaperlessAPIToken names the token after the client asking for it, the only
-// name a Paperless-ngx app can give.
 func mintPaperlessAPIToken(e *core.RequestEvent, record *core.Record) (string, error) {
-	return apitoken.Mint(e.App, record.Id, apitoken.ScopePaperless, e.Request.UserAgent())
+	return apitoken.Mint(e.App, record.Id, apitoken.ScopePaperless, "")
 }
 
 func handleTokenMethodNotAllowed(e *core.RequestEvent) error {

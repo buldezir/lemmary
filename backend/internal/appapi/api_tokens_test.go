@@ -71,7 +71,7 @@ func TestMCPTokenOpensOnlyTheMCPEndpoint(t *testing.T) {
 	}
 	mux := serveTokenRoutes(t, app)
 
-	status, body := callAs(mux, http.MethodPost, "/api/app/tokens", session, `{"scope":"mcp","name":"Claude Code"}`)
+	status, body := callAs(mux, http.MethodPost, "/api/app/tokens", session, `{"scope":"mcp","name":"Claude Code MCP"}`)
 	if status != http.StatusOK {
 		t.Fatalf("mint = %d: %s", status, body)
 	}
@@ -103,7 +103,7 @@ func TestMCPTokenOpensOnlyTheMCPEndpoint(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &listed); status != http.StatusOK || err != nil || len(listed.Tokens) != 1 {
 		t.Fatalf("list = %d %s (%v)", status, body, err)
 	}
-	if listed.Tokens[0].Name != "Claude Code" || listed.Tokens[0].LastUsed == "" {
+	if listed.Tokens[0].Name != "Claude Code MCP #1" || listed.Tokens[0].LastUsed == "" {
 		t.Fatalf("listed %+v, want the name and a last use", listed.Tokens[0])
 	}
 	if status, body := callAs(mux, http.MethodDelete, "/api/app/tokens/"+listed.Tokens[0].ID, session, ""); status != http.StatusNoContent {

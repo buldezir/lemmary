@@ -31,7 +31,7 @@ TOKEN=$(curl -s -X POST https://lemmary.example.com/api/app/tokens -H "Authoriza
 
 Every token is scoped to one account's documents. An admin's token maps to the admin's own `users` account (the one created alongside it at setup), not to every account on the instance, and carries none of the admin's rights.
 
-A token does not expire, and creating another does not retire the earlier ones. The **Agents** section lists them with when each was created and last used, and **Revoke** retires one. Changing your password does not: a token works until it is revoked or its account is deleted. Agent tokens created before tokens were scoped no longer work; create a new one.
+A token does not expire, and creating another does not retire the earlier ones. The **Agents** section lists them, named after their agent and numbered (`Claude Code MCP #1`, `#2`), with when each was created and last used, and **Revoke** retires one. Changing your password does not: a token works until it is revoked or its account is deleted. Agent tokens created before tokens were scoped no longer work; create a new one.
 
 ## Connect
 

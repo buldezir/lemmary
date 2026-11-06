@@ -283,7 +283,7 @@ function TokenList({ scope, version }: { scope: TokenScope; version: number }) {
   const [error, setError] = useState('')
 
   async function onRevoke(token: APIToken) {
-    if (!window.confirm(t('account.revokeTokenConfirm', { name: token.name || t('account.tokenUnnamed') }))) {
+    if (!window.confirm(t('account.revokeTokenConfirm', { name: token.name }))) {
       return
     }
     setBusy(true)
@@ -312,7 +312,7 @@ function TokenList({ scope, version }: { scope: TokenScope; version: number }) {
             className="flex flex-wrap items-center justify-between gap-2 rounded-xs border border-line bg-bright px-3 py-2"
           >
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-ink">{token.name || t('account.tokenUnnamed')}</p>
+              <p className="truncate text-sm font-medium text-ink">{token.name}</p>
               <p className="text-xs text-ink-soft">
                 {t('account.passkeyDates', {
                   created: passkeyDateLabel(token.created),
@@ -348,7 +348,7 @@ export function AccountAgentsPage() {
     setError('')
     setCopied(false)
     try {
-      setToken(await createToken('mcp', current?.name))
+      setToken(await createToken('mcp', current && `${current.name} MCP`))
       setMinted((n) => n + 1)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('account.tokenFailed'))

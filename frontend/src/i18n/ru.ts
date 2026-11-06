@@ -1744,7 +1744,6 @@ export const ru: Catalog = {
   'account.paperlessLink': 'Что работает через эти приложения.',
   'account.paperlessTokenHint': 'Выпускает токен, который открывает только API Paperless-ngx.',
   'account.activeTokens': 'Действующие токены',
-  'account.tokenUnnamed': 'Токен без имени',
   'account.revoke': 'Отозвать',
   'account.revokeTokenConfirm': 'Отозвать «{name}»? Всё, что его использует, перестанет работать.',
   'account.password': 'Пароль',

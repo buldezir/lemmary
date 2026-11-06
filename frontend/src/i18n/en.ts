@@ -1533,7 +1533,6 @@ export const en = {
   'account.paperlessLink': 'What works through these apps.',
   'account.paperlessTokenHint': 'Mints a token that opens only the Paperless-ngx API.',
   'account.activeTokens': 'Tokens in use',
-  'account.tokenUnnamed': 'Unnamed token',
   'account.revoke': 'Revoke',
   'account.revokeTokenConfirm': 'Revoke "{name}"? Whatever uses it stops working.',
   'account.password': 'Password',

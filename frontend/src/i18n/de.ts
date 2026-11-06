@@ -1607,7 +1607,6 @@ export const de: Catalog = {
   'account.paperlessLink': 'Was über diese Apps funktioniert.',
   'account.paperlessTokenHint': 'Erstellt ein Token, das nur die Paperless-ngx-API öffnet.',
   'account.activeTokens': 'Aktive Tokens',
-  'account.tokenUnnamed': 'Unbenanntes Token',
   'account.revoke': 'Widerrufen',
   'account.revokeTokenConfirm': '„{name}“ widerrufen? Was es nutzt, funktioniert dann nicht mehr.',
   'account.password': 'Passwort',

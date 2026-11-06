@@ -31,7 +31,7 @@ TOKEN=$(curl -s -X POST https://lemmary.example.com/api/app/tokens -H "Authoriza
 
 Jedes Token ist auf die Dokumente eines Kontos beschränkt. Das Token eines Administrators gehört zum eigenen `users`-Konto des Administrators (dem, das bei der Einrichtung zusammen mit ihm angelegt wurde), nicht zu jedem Konto auf der Instanz, und trägt keine der Admin-Rechte.
 
-Ein Token läuft nicht ab, und ein weiteres zu erstellen macht die früheren nicht ungültig. Der Abschnitt **Agenten** listet sie mit Erstellungsdatum und letzter Nutzung auf, und **Widerrufen** macht eines ungültig. Eine Passwortänderung tut das nicht: Ein Token gilt, bis es widerrufen oder sein Konto gelöscht wird. Agenten-Tokens aus der Zeit vor den beschränkten Tokens funktionieren nicht mehr; erstellen Sie ein neues.
+Ein Token läuft nicht ab, und ein weiteres zu erstellen macht die früheren nicht ungültig. Der Abschnitt **Agenten** listet sie, nach ihrem Agenten benannt und nummeriert (`Claude Code MCP #1`, `#2`), mit Erstellungsdatum und letzter Nutzung auf, und **Widerrufen** macht eines ungültig. Eine Passwortänderung tut das nicht: Ein Token gilt, bis es widerrufen oder sein Konto gelöscht wird. Agenten-Tokens aus der Zeit vor den beschränkten Tokens funktionieren nicht mehr; erstellen Sie ein neues.
 
 ## Verbinden {#connect}
 

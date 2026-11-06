@@ -9,6 +9,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,13 +25,15 @@ const (
 	ScopeMCP       = "mcp"
 	ScopePaperless = "paperless"
 
-	prefix     = "lmy_"
-	maxNameLen = 100
-	touchEvery = time.Hour
-	scopeKey   = "apiTokenScope"
+	prefix         = "lmy_"
+	maxBaseNameLen = 90
+	touchEvery     = time.Hour
+	scopeKey       = "apiTokenScope"
 )
 
 var ErrNotFound = errors.New("api token not found")
+
+var defaultNames = map[string]string{ScopeMCP: "MCP token", ScopePaperless: "ngx API token"}
 
 type Info struct {
 	ID       string `json:"id"`
@@ -43,16 +47,18 @@ func ValidScope(scope string) bool {
 }
 
 // Mint returns the token itself, which is never stored and cannot be shown again.
-func Mint(app core.App, userID, scope, name string) (string, error) {
+// The token is named base #N, N one past the highest the account's tokens of
+// that scope and base already carry.
+func Mint(app core.App, userID, scope, base string) (string, error) {
 	collection, err := app.FindCollectionByNameOrId(CollectionName)
 	if err != nil {
 		return "", err
 	}
-	token := prefix + rand.Text()
-	name = strings.TrimSpace(name)
-	if runes := []rune(name); len(runes) > maxNameLen {
-		name = string(runes[:maxNameLen])
+	name, err := numberedName(app, userID, scope, base)
+	if err != nil {
+		return "", err
 	}
+	token := prefix + rand.Text()
 	record := core.NewRecord(collection)
 	record.Set("user", userID)
 	record.Set("scope", scope)
@@ -127,6 +133,28 @@ func Revoke(app core.App, userID, id string) error {
 		return ErrNotFound
 	}
 	return app.Delete(record)
+}
+
+func numberedName(app core.App, userID, scope, base string) (string, error) {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = defaultNames[scope]
+	}
+	if runes := []rune(base); len(runes) > maxBaseNameLen {
+		base = string(runes[:maxBaseNameLen])
+	}
+	existing, err := List(app, userID, scope)
+	if err != nil {
+		return "", err
+	}
+	next := 1
+	for _, token := range existing {
+		rest, ok := strings.CutPrefix(token.Name, base+" #")
+		if n, err := strconv.Atoi(rest); ok && err == nil && n >= next {
+			next = n + 1
+		}
+	}
+	return fmt.Sprintf("%s #%d", base, next), nil
 }
 
 func hash(token string) string {
