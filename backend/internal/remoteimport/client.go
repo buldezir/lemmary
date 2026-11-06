@@ -19,6 +19,7 @@ const (
 	defaultPageSize   = 100
 	documentPageSize  = 25
 	maxDownloadBytes  = models.MaxFileBytes
+	maxJSONBytes      = models.MaxFileBytes
 	maxJSONErrorBytes = 8 << 20
 	listTimeout       = 60 * time.Second
 	downloadTimeout   = 5 * time.Minute
@@ -232,7 +233,14 @@ func (c *Client) getJSON(relOrPath string, dest any) error {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxJSONErrorBytes))
 		return fmt.Errorf("GET %s: status %d", relOrPath, resp.StatusCode)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJSONBytes+1))
+	if err != nil {
+		return fmt.Errorf("read %s: %w", relOrPath, err)
+	}
+	if int64(len(body)) > maxJSONBytes {
+		return fmt.Errorf("GET %s: response exceeds the %d-byte limit", relOrPath, maxJSONBytes)
+	}
+	if err := json.Unmarshal(body, dest); err != nil {
 		return fmt.Errorf("decode %s: %w", relOrPath, err)
 	}
 	return nil

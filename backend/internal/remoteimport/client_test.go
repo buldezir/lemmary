@@ -171,6 +171,26 @@ func TestDownloadRejectsOversized(t *testing.T) {
 	}
 }
 
+func TestListRejectsOversizedJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"count":0,"next":null,"results":[],"padding":"`))
+		_, _ = w.Write([]byte(strings.Repeat("A", int(maxJSONBytes))))
+		_, _ = w.Write([]byte(`"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	client, err := NewClient(srv.URL, "k", srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.ListTags()
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected exceeds error, got %v", err)
+	}
+}
+
 func TestForEachDocumentsPages(t *testing.T) {
 	t.Parallel()
 
