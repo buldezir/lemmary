@@ -300,7 +300,8 @@ export const en = {
   'customFieldsApi.saveFailed': 'The custom field could not be saved.',
 
   'mcp.statusFailed': 'Failed to check the MCP endpoint',
-  'mcp.tokenFailed': 'Failed to create a token',
+  'tokens.loadFailed': 'Failed to load tokens',
+  'tokens.revokeFailed': 'Failed to revoke the token',
 
   'documents.noFile': 'This document has no file.',
   'documents.largeFile': 'Over {size}. Large files may fail OCR or take much longer to process.',
@@ -1520,9 +1521,8 @@ export const en = {
     'The MCP endpoint is switched off on this instance ({env}). An admin can turn it back on.',
   'account.createAnotherToken': 'Create another token',
   'account.createToken': 'Create token',
-  'account.tokenShown': 'Valid for ten years and shown once. Earlier tokens keep working until you change your password below.',
-  'account.tokenHint':
-    'Mints a long-lived token for your account and fills it into the snippet below.',
+  'account.tokenShown': 'Shown once, so copy it now. It signs in nowhere else and works until you revoke it below.',
+  'account.tokenHint': 'Mints a token that opens only the MCP endpoint and fills it into the snippet below.',
   'account.agent': 'Agent',
   'account.copied': 'Copied',
   'account.copy': 'Copy',
@@ -1531,7 +1531,11 @@ export const en = {
   'account.paperlessAppsHint':
     'Apps made for Paperless-ngx, such as Paperparrot or swift-paperless, can sign in with a token instead of a password. Enter {url} as the server and paste the token. {link}',
   'account.paperlessLink': 'What works through these apps.',
-  'account.paperlessTokenHint': 'Mints a long-lived token for your account.',
+  'account.paperlessTokenHint': 'Mints a token that opens only the Paperless-ngx API.',
+  'account.activeTokens': 'Tokens in use',
+  'account.tokenUnnamed': 'Unnamed token',
+  'account.revoke': 'Revoke',
+  'account.revokeTokenConfirm': 'Revoke "{name}"? Whatever uses it stops working.',
   'account.password': 'Password',
   'account.passwordHint':
     'Changing it signs you out on your other devices and revokes every agent and Paperless-ngx app token, including ones created earlier. This tab stays signed in.',

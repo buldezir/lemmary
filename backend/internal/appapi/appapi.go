@@ -55,17 +55,8 @@ func Register(
 			g.GET("/setup/status", handleGetSetupStatus(app, rt))
 			g.POST("/setup/admin", handlePostSetupAdmin(app))
 			g.POST("/ensure-user", handlePostEnsureUser(app))
-			// The two login routes are public by necessity: the caller has no
-			// session yet.
-			g.POST("/passkeys/login/begin", handlePostPasskeyLoginBegin(app))
-			g.POST("/passkeys/login/finish", handlePostPasskeyLoginFinish(app)).
-				Bind(apis.BodyLimit(passkeyMaxBodyBytes))
-			g.GET("/passkeys", bindAuth(handleGetPasskeys(app)))
-			g.POST("/passkeys/register/begin", bindAuth(handlePostPasskeyRegisterBegin(app)))
-			g.POST("/passkeys/register/finish", bindAuth(handlePostPasskeyRegisterFinish(app))).
-				Bind(apis.BodyLimit(passkeyMaxBodyBytes))
-			g.PATCH("/passkeys/{id}", bindAuth(handlePatchPasskey(app)))
-			g.DELETE("/passkeys/{id}", bindAuth(handleDeletePasskey(app)))
+			registerPasskeyRoutes(g, app)
+			registerAPITokenRoutes(g, app)
 			g.POST("/documents/{documentId}/chat", bindAuth(handleDocumentChat(app, rt))).
 				Bind(apis.BodyLimit(chatMaxBodyBytes))
 			g.POST("/documents/{documentId}/translation", bindAuth(handleDocumentTranslation(app, rt.Snapshot)))

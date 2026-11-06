@@ -10,8 +10,8 @@ import {
   type Passkey,
 } from '../lib/api/passkeys'
 import { defaultPasskeyName, passkeysSupported, passkeyUnavailableHint } from '../lib/webauthn'
-import { createMCPToken, getMCPStatus } from '../lib/api/mcp'
-import { createPaperlessToken } from '../lib/api/users'
+import { getMCPStatus } from '../lib/api/mcp'
+import { createToken, listTokens, revokeToken, type APIToken, type TokenScope } from '../lib/api/tokens'
 import { pbUrl } from '../lib/pb'
 import { mcpSnippets } from '../lib/mcpSnippets'
 import { useAsync } from '../hooks/useAsync'
@@ -277,9 +277,63 @@ export function AccountPasskeysPage() {
 
 const tokenPlaceholder = '<token>'
 
+function TokenList({ scope, version }: { scope: TokenScope; version: number }) {
+  const { data: tokens, error: loadError, reload } = useAsync(() => listTokens(scope), [scope, version])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function onRevoke(token: APIToken) {
+    if (!window.confirm(t('account.revokeTokenConfirm', { name: token.name || t('account.tokenUnnamed') }))) {
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await revokeToken(token.id)
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('tokens.revokeFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!loadError && !tokens?.length) {
+    return null
+  }
+  return (
+    <div>
+      <h3 className="mb-2 text-sm font-medium text-ink">{t('account.activeTokens')}</h3>
+      {(loadError || error) && <p className="mb-2 text-sm text-madder">{loadError || error}</p>}
+      <ul className="flex flex-col gap-2" data-testid={`tokens-${scope}`}>
+        {tokens?.map((token) => (
+          <li
+            key={token.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-xs border border-line bg-bright px-3 py-2"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-ink">{token.name || t('account.tokenUnnamed')}</p>
+              <p className="text-xs text-ink-soft">
+                {t('account.passkeyDates', {
+                  created: passkeyDateLabel(token.created),
+                  used: passkeyDateLabel(token.last_used),
+                })}
+              </p>
+            </div>
+            <Button size="xs" variant="secondary" disabled={busy} onClick={() => onRevoke(token)}>
+              {t('account.revoke')}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export function AccountAgentsPage() {
   const { data: status, error: loadError } = useAsync(getMCPStatus, [])
   const [token, setToken] = useState('')
+  const [minted, setMinted] = useState(0)
   const [agent, setAgent] = useState('claude-code')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -294,7 +348,8 @@ export function AccountAgentsPage() {
     setError('')
     setCopied(false)
     try {
-      setToken(await createMCPToken())
+      setToken(await createToken('mcp', current?.name))
+      setMinted((n) => n + 1)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('account.tokenFailed'))
     } finally {
@@ -380,6 +435,7 @@ export function AccountAgentsPage() {
               </p>
             )}
           </div>
+          <TokenList scope="mcp" version={minted} />
         </div>
       )}
     </section>
@@ -388,6 +444,7 @@ export function AccountAgentsPage() {
 
 export function AccountPaperlessPage() {
   const [token, setToken] = useState('')
+  const [minted, setMinted] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
@@ -397,7 +454,8 @@ export function AccountPaperlessPage() {
     setError('')
     setCopied(false)
     try {
-      setToken(await createPaperlessToken())
+      setToken(await createToken('paperless'))
+      setMinted((n) => n + 1)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('account.tokenFailed'))
     } finally {
@@ -448,6 +506,7 @@ export function AccountPaperlessPage() {
             </pre>
           </div>
         )}
+        <TokenList scope="paperless" version={minted} />
       </div>
     </section>
   )

@@ -18,18 +18,20 @@ Off means there is no route at all. Restart after changing it; the flag is read 
 
 ## Get a token
 
-The Account page has an **Agents** section: one click mints a long-lived token for your account and shows the ready-to-paste configuration for Claude Code, Codex CLI, Gemini CLI, Cursor, VS Code, Windsurf, OpenCode and Claude Desktop (as a command where the agent has one, else its config file).
+The Account page has an **Agents** section: one click mints a token for the agent you picked and shows the ready-to-paste configuration for Claude Code, Codex CLI, Gemini CLI, Cursor, VS Code, Windsurf, OpenCode and Claude Desktop (as a command where the agent has one, else its config file).
 
-Any Lemmary auth token works too. From a script, the long-lived token from the paperless-compatible endpoint is the convenient one:
+The token opens `POST /api/mcp` and nothing else: the rest of Lemmary's API refuses it, the admin routes included, and so does the Paperless-ngx API. A Paperless-ngx app token does not open MCP either. From a script, sign in and create one:
 
 ```bash
-TOKEN=$(curl -s -X POST https://lemmary.example.com/api/token/ \
-  -d username=you@example.com -d password=… | jq -r .token)
+SESSION=$(curl -s -X POST https://lemmary.example.com/api/collections/users/auth-with-password \
+  -d identity=you@example.com -d password=… | jq -r .token)
+TOKEN=$(curl -s -X POST https://lemmary.example.com/api/app/tokens -H "Authorization: $SESSION" \
+  -H 'Content-Type: application/json' -d '{"scope":"mcp","name":"my script"}' | jq -r .token)
 ```
 
-Every token is scoped to one account's documents. An admin's token maps to the admin's own `users` account (the one created alongside it at setup), not to every account on the instance.
+Every token is scoped to one account's documents. An admin's token maps to the admin's own `users` account (the one created alongside it at setup), not to every account on the instance, and carries none of the admin's rights.
 
-A token stays valid for ten years, and creating another does not retire the earlier ones. Changing your password under **Account → Password** revokes every token at once, Paperless-ngx app tokens included; there is no way to revoke one alone.
+A token does not expire, and creating another does not retire the earlier ones. The **Agents** section lists them with when each was created and last used, and **Revoke** retires one. Changing your password does not: a token works until it is revoked or its account is deleted. Agent tokens created before tokens were scoped no longer work; create a new one.
 
 ## Connect
 

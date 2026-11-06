@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/apitoken"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/requrl"
@@ -32,10 +32,6 @@ const (
 	// breaks and the envelope.
 	mcpMaxUploadBytes = 32 << 20
 	mcpMaxBodyBytes   = 47 << 20
-	// mcpTokenTTL is how long a token minted for an agent lasts. Ten years,
-	// like the paperless one: an agent config is written once and never
-	// refreshes. Changing the password invalidates it, as with any token.
-	mcpTokenTTL = 10 * 365 * 24 * time.Hour
 	// mcpMaxReadIDs bounds one read_documents call. The in-app agent is held
 	// to a handful by its model; an outside agent is held to it here.
 	mcpMaxReadIDs = 10
@@ -61,9 +57,8 @@ func RegisterMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 			if !enabled {
 				return e.Next()
 			}
-			e.Router.POST("/api/mcp", bindAuth(handleMCP(app, rt, idx))).
+			e.Router.POST("/api/mcp", bindAPIToken(apitoken.ScopeMCP, handleMCP(app, rt, idx))).
 				Bind(apis.BodyLimit(mcpMaxBodyBytes))
-			e.Router.POST("/api/app/mcp/token", bindAuth(handleMCPToken(app)))
 			return e.Next()
 		},
 	})
@@ -85,29 +80,6 @@ func mcpEnabledFromEnv(log *slog.Logger) bool {
 	log.Error("MCP endpoint disabled: not a boolean; use 1/true/yes/on or 0/false/no/off",
 		"env", EnvMCPEnabled, "value", raw)
 	return false
-}
-
-// handleMCPToken mints a long-lived token for the caller's own users account,
-// the thing an agent config needs and a browser session cannot give it.
-func handleMCPToken(app core.App) func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		userID, err := resolveOwnerUserID(app, e)
-		if err != nil {
-			return writeOwnerError(e, err)
-		}
-		user, err := app.FindRecordById("users", userID)
-		if err != nil {
-			return writeError(e, http.StatusInternalServerError, "Failed to load the account.")
-		}
-		token, err := user.NewStaticAuthToken(mcpTokenTTL)
-		if err != nil {
-			return writeError(e, http.StatusInternalServerError, "Failed to create the token.")
-		}
-		return writeJSON(e, http.StatusOK, map[string]any{
-			"token":   token,
-			"expires": time.Now().Add(mcpTokenTTL).UTC().Format(time.RFC3339),
-		})
-	}
 }
 
 func handleMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {

@@ -351,7 +351,8 @@ export const ru: Catalog = {
   'customFieldsApi.saveFailed': 'Не удалось сохранить пользовательское поле.',
 
   'mcp.statusFailed': 'Не удалось проверить конечную точку MCP',
-  'mcp.tokenFailed': 'Не удалось создать токен',
+  'tokens.loadFailed': 'Не удалось загрузить токены',
+  'tokens.revokeFailed': 'Не удалось отозвать токен',
 
   'documents.noFile': 'У этого документа нет файла.',
   'documents.largeFile':
@@ -1731,9 +1732,8 @@ export const ru: Catalog = {
     'Точка доступа MCP на этом сервере выключена ({env}). Администратор может включить её снова.',
   'account.createAnotherToken': 'Создать ещё один токен',
   'account.createToken': 'Создать токен',
-  'account.tokenShown': 'Действует десять лет и показывается один раз. Прежние токены работают, пока вы не смените пароль ниже.',
-  'account.tokenHint':
-    'Выпускает долгоживущий токен для вашей учётной записи и подставляет его в фрагмент ниже.',
+  'account.tokenShown': 'Показывается один раз — скопируйте его сейчас. Больше нигде не даёт входа и действует, пока вы не отзовёте его ниже.',
+  'account.tokenHint': 'Выпускает токен, который открывает только MCP-эндпоинт, и подставляет его в фрагмент ниже.',
   'account.agent': 'Агент',
   'account.copied': 'Скопировано',
   'account.copy': 'Копировать',
@@ -1742,7 +1742,11 @@ export const ru: Catalog = {
   'account.paperlessAppsHint':
     'Приложения для Paperless-ngx, например Paperparrot или swift-paperless, могут входить по токену вместо пароля. Укажите {url} как сервер и вставьте токен. {link}',
   'account.paperlessLink': 'Что работает через эти приложения.',
-  'account.paperlessTokenHint': 'Создаёт долгоживущий токен для вашей учётной записи.',
+  'account.paperlessTokenHint': 'Выпускает токен, который открывает только API Paperless-ngx.',
+  'account.activeTokens': 'Действующие токены',
+  'account.tokenUnnamed': 'Токен без имени',
+  'account.revoke': 'Отозвать',
+  'account.revokeTokenConfirm': 'Отозвать «{name}»? Всё, что его использует, перестанет работать.',
   'account.password': 'Пароль',
   'account.passwordHint':
     'Смена пароля завершает сеансы на других ваших устройствах и отзывает все токены агентов и приложений Paperless-ngx, включая созданные раньше. Эта вкладка останется в системе.',

@@ -50,9 +50,9 @@ Results are ranked by relevance when a text filter is present and the `ordering`
 ## Connecting external clients
 
 1. Point the client at your Lemmary server URL (scheme + host + port, no `/api` suffix — clients add that themselves). Some clients, Paperparrot among them, check the server with `GET /api/remote_version/` before signing in; it answers without credentials, as on Paperless-ngx.
-2. Sign in with a PocketBase user account. The `/api/token/` endpoint accepts the same username and password as the web UI and returns a long-lived JWT (ten years). Paperless-ngx clients store that token and do not refresh it; this is not the five-day web UI session. Changing the account password invalidates it.
-3. Clients that send `Authorization: Token <jwt>` (paperless-ngx style) are supported alongside standard Bearer tokens.
-4. Clients that ask for a token instead of a password, such as Paperparrot, take one from **Account → Paperless-ngx apps** in the web UI. It is the same ten-year token, and the way in for an account that signs in with a passkey or OAuth and whose user does not know its password. Clients can mint one themselves with `POST /api/profile/generate_auth_token/`, as on paperless-ngx; unlike paperless-ngx, each call returns a new token and the earlier ones stay valid. Changing the password under **Account → Password** revokes every token at once, agent tokens included; there is no way to revoke one alone.
+2. Sign in with a Lemmary user account. The `/api/token/` endpoint accepts the same username and password as the web UI and returns a token that does not expire: Paperless-ngx clients store it and never refresh it. It opens the Paperless-ngx API and nothing else of Lemmary's.
+3. Clients that send `Authorization: Token <token>` (paperless-ngx style) are supported alongside standard Bearer tokens.
+4. Clients that ask for a token instead of a password, such as Paperparrot, take one from **Account → Paperless-ngx apps** in the web UI, the way in for an account that signs in with a passkey or OAuth and whose user does not know its password. Clients can mint one themselves with `POST /api/profile/generate_auth_token/`, as on paperless-ngx; unlike paperless-ngx, each call returns a new token and the earlier ones stay valid. The same page lists every token, named after the app that asked for it, with when it was last used, and **Revoke** retires one. Changing the password does not.
 
 API versions 9 and 10 are accepted via the `Accept` header (`application/json; version=10`), the same pair Paperless-ngx 3 serves. As there, a request that names no version is answered as version 10, and every response carries `X-Api-Version: 10` and `X-Version: 3.0.0`, the release whose API this follows, so clients that gate features on the server version treat Lemmary as Paperless-ngx 3.0.
 
@@ -87,4 +87,4 @@ Import fetches only the caller-supplied URL. Link-local and cloud-metadata desti
 
 Opening the document list fetches 250 documents and then a thumbnail for every one of them, each as its own `GET /api/documents/{id}/thumb` — paperless-ngx has no batch thumbnail endpoint, and swift-paperless prefetches the whole page rather than the visible rows. That burst is expected, and it is a cold-cache cost: thumbnails are served with a 30-day `Cache-Control` and the app keeps its own on-disk cache keyed on the URL.
 
-If the app starts returning 401 after working at add-server time, delete and re-add the server once so it can fetch a new token. Tokens issued before long-lived `/api/token/` JWTs expire after five days and cannot be extended in place.
+If the app starts returning 401, its token was revoked or dates from before tokens were scoped: delete and re-add the server once so it fetches a new one.
