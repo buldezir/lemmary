@@ -12,6 +12,7 @@ import {
   saveDocumentMetadata,
   translateOcrText,
   DOCUMENT_EXPAND,
+  listOptions,
   type DocumentRecord,
   type JobOverrides,
 } from '../lib/api/documents'
@@ -89,6 +90,8 @@ export function DocumentDetailPage() {
   // ones this document carries.
   const { data: vocabulary, error: vocabularyError } = useAsync(listTags, [])
   const { data: customFields } = useAsync(listCustomFields, [])
+  const { data: documentTypes } = useAsync(() => listOptions(DOCUMENT_TYPE_FIELD_ID), [documentId])
+  const { data: correspondents } = useAsync(() => listOptions(CORRESPONDENT_FIELD_ID), [documentId])
   const [documentTypeInput, setDocumentTypeInput] = useState('')
   const [correspondentInput, setCorrespondentInput] = useState('')
   // Only the fields edited since the document loaded; the rest read from it.
@@ -948,25 +951,23 @@ export function DocumentDetailPage() {
               />
             </label>
 
-            <label className={labelClass}>
-              {t('documentPage.fieldType')}
-              <input
-                className={fieldClass(editing)}
-                readOnly={!editing}
-                value={documentTypeInput}
-                onChange={(event) => setDocumentTypeInput(event.target.value)}
-              />
-            </label>
+            <OptionField
+              id="document-type"
+              label={t('documentPage.fieldType')}
+              editing={editing}
+              value={documentTypeInput}
+              names={documentTypes?.map((option) => option.name) ?? []}
+              onChange={setDocumentTypeInput}
+            />
 
-            <label className={labelClass}>
-              {t('documentPage.fieldCorrespondent')}
-              <input
-                className={fieldClass(editing)}
-                readOnly={!editing}
-                value={correspondentInput}
-                onChange={(event) => setCorrespondentInput(event.target.value)}
-              />
-            </label>
+            <OptionField
+              id="document-correspondent"
+              label={t('documentPage.fieldCorrespondent')}
+              editing={editing}
+              value={correspondentInput}
+              names={correspondents?.map((option) => option.name) ?? []}
+              onChange={setCorrespondentInput}
+            />
 
             {customFields?.map((field) =>
               field.type === 'choice' && editing ? (
@@ -1346,6 +1347,51 @@ function TagField({
             />
           )
         ))}
+    </div>
+  )
+}
+
+function OptionField({
+  id,
+  label,
+  editing,
+  value,
+  names,
+  onChange,
+}: {
+  id: string
+  label: string
+  editing: boolean
+  value: string
+  names: string[]
+  onChange: (value: string) => void
+}) {
+  if (!editing) {
+    return (
+      <label className={labelClass}>
+        {label}
+        <input className={fieldClass(false)} readOnly value={value} />
+      </label>
+    )
+  }
+  return (
+    <div className={labelClass}>
+      <label htmlFor={id}>{label}</label>
+      <Combobox
+        id={id}
+        value={value}
+        options={[
+          { value: '', label: '—' },
+          ...[...new Set([...names, ...(value ? [value] : [])])].map((name) => ({
+            value: name,
+            label: name,
+          })),
+        ]}
+        onChange={onChange}
+        onCreate={onChange}
+        bgClassName="bg-surface"
+        className="font-normal"
+      />
     </div>
   )
 }
