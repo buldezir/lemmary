@@ -12,6 +12,7 @@ import {
   saveDocumentMetadata,
   translateOcrText,
   DOCUMENT_EXPAND,
+  listOptions,
   type DocumentRecord,
   type JobOverrides,
 } from '../lib/api/documents'
@@ -24,7 +25,7 @@ import {
   listCustomFields,
   optionName,
 } from '../lib/api/customFields'
-import { pendingTagSuggestions } from '../lib/tagSuggestions'
+import { pendingTagSuggestions, tagKey } from '../lib/tagSuggestions'
 import { SuggestedTags } from '../components/SuggestedTags'
 import { StepBindingOverride } from '../components/BindingOverride'
 import { Combobox } from '../components/Combobox'
@@ -89,6 +90,11 @@ export function DocumentDetailPage() {
   // ones this document carries.
   const { data: vocabulary, error: vocabularyError } = useAsync(listTags, [])
   const { data: customFields } = useAsync(listCustomFields, [])
+  const options = useAsync(
+    () => Promise.all([listOptions(DOCUMENT_TYPE_FIELD_ID), listOptions(CORRESPONDENT_FIELD_ID)]),
+    [documentId],
+  )
+  const [documentTypes, correspondents] = options.data ?? [[], []]
   const [documentTypeInput, setDocumentTypeInput] = useState('')
   const [correspondentInput, setCorrespondentInput] = useState('')
   // Only the fields edited since the document loaded; the rest read from it.
@@ -604,6 +610,7 @@ export function DocumentDetailPage() {
         requestKey: null,
       })
       applyLoadedDocument(refreshed)
+      void options.reload()
       setMessage(t('documentPage.saved'))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('documentPage.saveError'))
@@ -948,25 +955,27 @@ export function DocumentDetailPage() {
               />
             </label>
 
-            <label className={labelClass}>
-              {t('documentPage.fieldType')}
-              <input
-                className={fieldClass(editing)}
-                readOnly={!editing}
-                value={documentTypeInput}
-                onChange={(event) => setDocumentTypeInput(event.target.value)}
-              />
-            </label>
+            <OptionField
+              id="document-type"
+              label={t('documentPage.fieldType')}
+              editing={editing}
+              value={documentTypeInput}
+              names={documentTypes.map((option) => option.name)}
+              loading={options.loading}
+              error={options.error}
+              onChange={setDocumentTypeInput}
+            />
 
-            <label className={labelClass}>
-              {t('documentPage.fieldCorrespondent')}
-              <input
-                className={fieldClass(editing)}
-                readOnly={!editing}
-                value={correspondentInput}
-                onChange={(event) => setCorrespondentInput(event.target.value)}
-              />
-            </label>
+            <OptionField
+              id="document-correspondent"
+              label={t('documentPage.fieldCorrespondent')}
+              editing={editing}
+              value={correspondentInput}
+              names={correspondents.map((option) => option.name)}
+              loading={options.loading}
+              error={options.error}
+              onChange={setCorrespondentInput}
+            />
 
             {customFields?.map((field) =>
               field.type === 'choice' && editing ? (
@@ -1346,6 +1355,62 @@ function TagField({
             />
           )
         ))}
+    </div>
+  )
+}
+
+function OptionField({
+  id,
+  label,
+  editing,
+  value,
+  names,
+  loading,
+  error,
+  onChange,
+}: {
+  id: string
+  label: string
+  editing: boolean
+  value: string
+  names: string[]
+  loading: boolean
+  error: string
+  onChange: (value: string) => void
+}) {
+  const existing = (text: string) => names.find((name) => tagKey(name) === tagKey(text))
+  const commit = (text: string) => onChange(text && (existing(text) ?? text))
+
+  if (!editing) {
+    return (
+      <label className={labelClass}>
+        {label}
+        <input className={fieldClass(false)} readOnly value={value} />
+      </label>
+    )
+  }
+  return (
+    <div className={labelClass}>
+      <label htmlFor={id}>{label}</label>
+      <Combobox
+        id={id}
+        value={value}
+        options={[
+          { value: '', label: '—' },
+          ...[...new Set([...names, ...(value ? [value] : [])])].map((name) => ({
+            value: name,
+            label: name,
+          })),
+        ]}
+        loading={loading}
+        onChange={onChange}
+        onCreate={commit}
+        onLeave={commit}
+        canCreate={(text) => !existing(text)}
+        bgClassName="bg-surface"
+        className="font-normal"
+      />
+      {error && <p className="text-sm font-normal text-madder">{error}</p>}
     </div>
   )
 }
