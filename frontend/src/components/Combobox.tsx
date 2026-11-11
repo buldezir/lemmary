@@ -39,6 +39,11 @@ type Props = {
   canCreate?: (text: string) => boolean
   /** For options fetched per query, which then still filter locally. */
   onQueryChange?: (query: string) => void
+  /**
+   * Gets the typed text, trimmed, when focus leaves by a click outside or Tab
+   * before an option was picked. Without it that text is dropped.
+   */
+  onLeave?: (text: string) => void
 }
 
 const CREATE_VALUE = '\u0000create'
@@ -87,6 +92,7 @@ export function Combobox({
   onCreate,
   canCreate,
   onQueryChange,
+  onLeave,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const highlightedRef = useRef<HTMLLIElement>(null)
@@ -147,6 +153,11 @@ export function Combobox({
     setHighlightedIndex(options.findIndex((option) => option.value === value))
   }
 
+  function leave() {
+    if (query !== null) onLeave?.(query.trim())
+    close()
+  }
+
   function selectOption(nextValue: string) {
     if (nextValue === CREATE_VALUE) {
       onCreate?.(query!.trim())
@@ -166,13 +177,13 @@ export function Combobox({
 
     function onPointerDown(event: MouseEvent) {
       if (!rootRef.current?.contains(event.target as Node)) {
-        close()
+        leave()
       }
     }
 
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
-  }, [open])
+  }, [open, query, onLeave])
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Escape') {
@@ -211,7 +222,7 @@ export function Combobox({
     }
 
     if (event.key === 'Tab' && open) {
-      close()
+      leave()
     }
   }
 
