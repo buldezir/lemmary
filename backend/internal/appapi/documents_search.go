@@ -246,7 +246,18 @@ func handleSearchReindex(app core.App, idx *fulltext.Index) func(*core.RequestEv
 type documentLookup interface {
 	FindRecordById(collectionNameOrId any, recordId string, optFilters ...func(*dbx.SelectQuery) error) (*core.Record, error)
 	FindFirstRecordByFilter(collectionModelOrIdentifier any, filter string, params ...dbx.Params) (*core.Record, error)
+	FindRecordsByIds(collectionModelOrIdentifier any, recordIds []string, optFilters ...func(q *dbx.SelectQuery) error) ([]*core.Record, error)
 	ExpandRecord(record *core.Record, expands []string, optFetchFunc core.ExpandFetchFunc) map[string]error
+}
+
+func readableExpand(app documentLookup, userID string) core.ExpandFetchFunc {
+	return func(collection *core.Collection, ids []string) ([]*core.Record, error) {
+		records, err := app.FindRecordsByIds(collection.Id, ids)
+		if err != nil || collection.Name != "documents" {
+			return records, err
+		}
+		return slices.DeleteFunc(records, func(r *core.Record) bool { return !CanReadDocument(app, r, userID) }), nil
+	}
 }
 
 func hydrateDocumentExports(app documentLookup, hits []fulltext.Hit, userID string) []map[string]any {
@@ -259,7 +270,7 @@ func hydrateDocumentExports(app documentLookup, hits []fulltext.Hit, userID stri
 		if !CanReadDocument(app, rec, userID) {
 			continue
 		}
-		_ = app.ExpandRecord(rec, []string{"tags", fieldValuesExpand, "duplicate_of"}, nil)
+		_ = app.ExpandRecord(rec, []string{"tags", fieldValuesExpand, "duplicate_of"}, readableExpand(app, userID))
 		items = append(items, rec.PublicExport())
 	}
 	if items == nil {

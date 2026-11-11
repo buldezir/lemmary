@@ -73,6 +73,16 @@ func (s stubDocuments) FindFirstRecordByFilter(_ any, _ string, params ...dbx.Pa
 	return nil, fmt.Errorf("not found")
 }
 
+func (s stubDocuments) FindRecordsByIds(_ any, ids []string, _ ...func(*dbx.SelectQuery) error) ([]*core.Record, error) {
+	var records []*core.Record
+	for _, id := range ids {
+		if rec, ok := s.recs[id]; ok {
+			records = append(records, rec)
+		}
+	}
+	return records, nil
+}
+
 func (s stubDocuments) ExpandRecord(*core.Record, []string, core.ExpandFetchFunc) map[string]error {
 	return nil
 }
@@ -108,5 +118,33 @@ func TestHydrateDocumentExportsRejectsStaleOwner(t *testing.T) {
 	asSuper := hydrateDocumentExports(app, hits, "")
 	if len(asSuper) != 1 {
 		t.Fatalf("superuser should receive the record, got %#v", asSuper)
+	}
+}
+
+func TestReadableExpandDropsDocumentsTheCallerCannotRead(t *testing.T) {
+	shared := testDocumentRecord("shared", "owner", "Shared lease")
+	original := testDocumentRecord("original", "owner", "Unshared original")
+	own := testDocumentRecord("own", "reader", "Own original")
+	app := stubDocuments{
+		recs:   map[string]*core.Record{"shared": shared, "original": original, "own": own},
+		shares: map[string]bool{"shared/reader": true},
+	}
+
+	got, err := readableExpand(app, "reader")(shared.Collection(), []string{"shared", "original", "own"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, rec := range got {
+		ids = append(ids, rec.Id)
+	}
+	if fmt.Sprint(ids) != "[shared own]" {
+		t.Fatalf("expanded %v, want the shared and own documents only", ids)
+	}
+
+	tags := core.NewBaseCollection("tags")
+	got, _ = readableExpand(app, "reader")(tags, []string{"original"})
+	if len(got) != 1 {
+		t.Fatalf("other collections should pass through, got %v", got)
 	}
 }

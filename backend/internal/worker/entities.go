@@ -346,6 +346,11 @@ func validateDocumentRelationOwnership(app core.App, record *core.Record) error 
 			return err
 		}
 	}
+	for _, documentID := range append(record.GetStringSlice("not_duplicate_of"), record.GetString("duplicate_of")) {
+		if err := requireOwnedRelation(app, "documents", "duplicate document", documentID, userID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

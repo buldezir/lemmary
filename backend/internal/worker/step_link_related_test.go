@@ -77,6 +77,19 @@ func TestDocumentRelationsMustBeOwnedAndNotSelf(t *testing.T) {
 			t.Errorf("%s: err = %v, want ok = %v", tc.name, err, tc.ok)
 		}
 	}
+	doc.Set("related", nil)
+
+	for _, field := range []string{"duplicate_of", "not_duplicate_of"} {
+		doc.Set(field, mine.Id)
+		if err := validateDocumentRelationOwnership(app, doc); err != nil {
+			t.Errorf("%s own document: %v", field, err)
+		}
+		doc.Set(field, theirs.Id)
+		if err := validateDocumentRelationOwnership(app, doc); err == nil {
+			t.Errorf("%s another user's document: accepted", field)
+		}
+		doc.Set(field, nil)
+	}
 }
 
 func TestLinkRelatedLinksTheOwnersDocumentsSharingAReference(t *testing.T) {
