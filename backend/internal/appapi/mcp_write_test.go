@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -56,12 +57,13 @@ func mcpToolNames(t *testing.T, session *mcp.ClientSession) []string {
 func TestMCPWriteToolsFollowCapabilities(t *testing.T) {
 	writeTools := map[string][]string{
 		config.MCPEdit:      {"update_document"},
+		config.MCPOCR:       {"edit_document_text"},
 		config.MCPReprocess: {"reprocess_documents"},
 		config.MCPUpload:    {"upload_document"},
 		config.MCPDelete:    {"delete_documents"},
 		config.MCPTags:      {"create_tag", "rename_tag", "delete_tag"},
 	}
-	all := []string{"update_document", "reprocess_documents", "upload_document", "delete_documents", "create_tag", "rename_tag", "delete_tag"}
+	all := []string{"update_document", "edit_document_text", "reprocess_documents", "upload_document", "delete_documents", "create_tag", "rename_tag", "delete_tag"}
 
 	names := mcpToolNames(t, connectMCPWrites(t, nil, ""))
 	for _, name := range all {
@@ -142,6 +144,160 @@ func TestMCPUpdateDocumentChangesOnlyOwnDocuments(t *testing.T) {
 	}
 	if stored, _ := app.FindRecordById("documents", foreign.Id); stored.GetString("title") != "Queue test" {
 		t.Fatalf("shared document changed: %q", stored.GetString("title"))
+	}
+}
+
+func TestMCPReadsAndEditsCustomFieldsByName(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "owner@example.com")
+	document := makeQueueDocument(t, app, owner, models.DocStatusNeedsReview, "text")
+	fields, err := app.FindCollectionByNameOrId(models.CustomFieldsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]string{}
+	for name, kind := range map[string]string{"Amount": models.CustomFieldNumber, "Status": models.CustomFieldChoice, "Invoice number": models.CustomFieldText} {
+		field := core.NewRecord(fields)
+		field.Set("name", name)
+		field.Set("type", kind)
+		if err := app.Save(field); err != nil {
+			t.Fatal(err)
+		}
+		ids[name] = field.Id
+	}
+	choices, err := app.FindCollectionByNameOrId(models.CustomFieldChoicesCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paid := core.NewRecord(choices)
+	paid.Set("field", ids["Status"])
+	paid.Set("name", "Paid")
+	if err := app.Save(paid); err != nil {
+		t.Fatal(err)
+	}
+	session := connectMCPWrites(t, app, owner, config.MCPEdit)
+
+	var tax mcpTaxonomyResult
+	callMCP(t, session, "list_taxonomy", nil, &tax)
+	i := slices.IndexFunc(tax.Fields, func(f mcpTaxonomyField) bool { return f.Name == "Status" })
+	if len(tax.Fields) != 3 || i < 0 || tax.Fields[i].Type != models.CustomFieldChoice || !slices.Equal(tax.Fields[i].Choices, []string{"Paid"}) {
+		t.Fatalf("taxonomy fields = %#v", tax.Fields)
+	}
+
+	var got mcpDocument
+	res := callMCP(t, session, "update_document", map[string]any{
+		"id":            document.Id,
+		"fields":        map[string]any{"amount": "12.50", "Status": "paid", "Invoice number": "INV-7"},
+		"document_type": "Invoice",
+	}, &got)
+	if res.IsError {
+		t.Fatalf("update: %#v", res.Content)
+	}
+	want := map[string]any{"Amount": 12.5, "Status": "Paid", "Invoice number": "INV-7"}
+	if !maps.Equal(got.Fields, want) || got.DocumentType != "Invoice" {
+		t.Fatalf("fields = %#v, type = %q", got.Fields, got.DocumentType)
+	}
+	if stored, _ := app.FindRecordById("documents", document.Id); stored.GetString("metadata_source") != models.MetadataSourceUser {
+		t.Fatalf("metadata_source = %q", stored.GetString("metadata_source"))
+	}
+	var read mcpGetResult
+	callMCP(t, session, "get_document", map[string]any{"id": document.Id}, &read)
+	if !maps.Equal(read.Fields, want) {
+		t.Fatalf("get_document fields = %#v", read.Fields)
+	}
+
+	for name, value := range map[string]map[string]any{
+		"an unknown field":        {"Due": "2024-01-01"},
+		"an unlisted choice":      {"Status": "Overdue"},
+		"a word for a number":     {"Amount": "twelve"},
+		"an option field by name": {"Correspondent": "Acme"},
+		"one field named twice":   {"Amount": "1", "amount": "2"},
+	} {
+		if res := callMCP(t, session, "update_document", map[string]any{"id": document.Id, "fields": value}, nil); !res.IsError {
+			t.Fatalf("%s: expected IsError", name)
+		}
+	}
+
+	var cleared mcpDocument
+	callMCP(t, session, "update_document", map[string]any{"id": document.Id, "fields": map[string]any{"Amount": nil}}, &cleared)
+	if _, ok := cleared.Fields["Amount"]; ok || cleared.Fields["Status"] != "Paid" {
+		t.Fatalf("after clearing Amount: %#v", cleared.Fields)
+	}
+}
+
+func TestMCPEditDocumentTextAppliesAllEditsOrNone(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "owner@example.com")
+	other := makeQueueUser(t, app, "other@example.com")
+	document := makeQueueDocument(t, app, owner, models.DocStatusCompleted, "Tota1 due: 12O EUR")
+	foreign := makeQueueDocument(t, app, other, models.DocStatusCompleted, "not yours")
+	session := connectMCPWrites(t, app, owner, config.MCPOCR)
+	text := func(id string) string {
+		t.Helper()
+		record, err := app.FindRecordById("documents", id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return record.GetString("ocr_text")
+	}
+
+	var got mcpTextResult
+	res := callMCP(t, session, "edit_document_text", map[string]any{"id": document.Id, "edits": []map[string]any{
+		{"old_text": "Tota1", "new_text": "Total"},
+		{"old_text": "12O", "new_text": "120"},
+	}}, &got)
+	if res.IsError || text(document.Id) != "Total due: 120 EUR" || got.TextChars != 18 {
+		t.Fatalf("edits: %q, %#v, %#v", text(document.Id), got, res.Content)
+	}
+
+	for name, args := range map[string]map[string]any{
+		"a missing passage":   {"id": document.Id, "edits": []map[string]any{{"old_text": "Total", "new_text": "Sum"}, {"old_text": "nowhere", "new_text": "x"}}},
+		"a repeated passage":  {"id": document.Id, "edits": []map[string]any{{"old_text": " ", "new_text": "_"}}},
+		"text and edits":      {"id": document.Id, "text": "x", "edits": []map[string]any{{"old_text": "Total", "new_text": "Sum"}}},
+		"neither":             {"id": document.Id},
+		"another user's text": {"id": foreign.Id, "text": "mine now"},
+	} {
+		if res := callMCP(t, session, "edit_document_text", args, nil); !res.IsError {
+			t.Fatalf("%s: expected IsError", name)
+		}
+	}
+	if text(document.Id) != "Total due: 120 EUR" || text(foreign.Id) != "not yours" {
+		t.Fatalf("a refused edit changed the text: %q, %q", text(document.Id), text(foreign.Id))
+	}
+
+	callMCP(t, session, "edit_document_text", map[string]any{"id": document.Id, "text": "Rewritten"}, nil)
+	if text(document.Id) != "Rewritten" {
+		t.Fatalf("whole text: %q", text(document.Id))
+	}
+
+	long := makeQueueDocument(t, app, owner, models.DocStatusCompleted, strings.Repeat("x", mcpMaxTextChars)+" tail")
+	if res := callMCP(t, session, "edit_document_text", map[string]any{"id": long.Id, "text": "first page only"}, nil); !res.IsError {
+		t.Fatal("a whole-text write over a document longer than one page was accepted")
+	}
+	callMCP(t, session, "edit_document_text", map[string]any{"id": long.Id, "edits": []map[string]any{{"old_text": " tail", "new_text": " end"}}}, nil)
+	if got := text(long.Id); len(got) != mcpMaxTextChars+4 || !strings.HasSuffix(got, " end") {
+		t.Fatalf("edit of a long document: %d chars", len(got))
+	}
+
+	pending := makeQueueDocument(t, app, owner, models.DocStatusPending, "in the queue")
+	if res := callMCP(t, session, "edit_document_text", map[string]any{"id": pending.Id, "text": "too early"}, nil); !res.IsError || text(pending.Id) != "in the queue" {
+		t.Fatal("a pending document's text was edited")
+	}
+}
+
+// The database tells apart names differing only in non-ASCII case; a name
+// that folds onto two of them is refused rather than guessed.
+func TestMCPFieldNamesPreferTheExactName(t *testing.T) {
+	fields := []models.CustomField{{ID: "upper", Name: "Ölstand"}, {ID: "lower", Name: "ölstand"}, {ID: "amount", Name: "Amount"}}
+	for name, want := range map[string]string{"ölstand": "lower", "Ölstand": "upper", " amount ": "amount"} {
+		if got, err := mcpFieldNamed(fields, name); err != nil || got.ID != want {
+			t.Fatalf("%q: %q, %v", name, got.ID, err)
+		}
+	}
+	for _, name := range []string{"ÖLSTAND", "Due"} {
+		if _, err := mcpFieldNamed(fields, name); err == nil {
+			t.Fatalf("%q was matched", name)
+		}
 	}
 }
 

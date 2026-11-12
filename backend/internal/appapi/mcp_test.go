@@ -166,7 +166,7 @@ func TestMCPTaxonomyNeverReturnsNull(t *testing.T) {
 	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !slices.Equal(out.Tags, []string{"invoice"}) || out.DocumentTypes == nil || out.Correspondents == nil {
+	if !slices.Equal(out.Tags, []string{"invoice"}) || out.DocumentTypes == nil || out.Correspondents == nil || out.Fields == nil {
 		t.Fatalf("taxonomy = %s", raw)
 	}
 }

@@ -69,7 +69,7 @@ Zwei Arten: Suche über den Index und einfacher Zugriff auf die Datensätze. Die
 | `list_documents` | Einfache Auflistung nach Metadaten: Datumsbereich, Dokumenttyp, Korrespondent, Tags, Verarbeitungsstatus (`unfinished` bedeutet alles außer abgeschlossen); sortiert nach Datum oder nach dem Zeitpunkt des Hinzufügens; seitenweise mit `limit` und `offset`. Gibt Metadaten und die Gesamtzahl zurück, keinen Text. |
 | `get_document` | Die Metadaten eines Dokuments und sein extrahierter Text, ungewichtet und ungekürzt. Ein Aufruf liefert bis zu 200.000 Zeichen; blättern Sie durch ein längeres Dokument mit `offset` und `max_chars`, und `truncated` zeigt an, wenn noch mehr folgt. `file_url` und `preview_url` öffnen die Originaldatei und das Bild der ersten Seite; sie enthalten ein Datei-Token, das nach 15 Minuten abläuft. |
 | `count_documents` | Zählt Dokumente, die den Filtern entsprechen, optional gruppiert nach `document_type`, `correspondent`, `year`, `month` oder `tag`. |
-| `list_taxonomy` | Die Namen der Tags, Dokumenttypen und Korrespondenten im Archiv, für die oben genannten Filter. Jede Liste endet bei 5.000 Namen und meldet dies mit `truncated`. |
+| `list_taxonomy` | Die Namen der Tags, Dokumenttypen und Korrespondenten im Archiv, für die oben genannten Filter, und die benutzerdefinierten Felder, die ein Admin angelegt hat (Name, Typ und bei einem Auswahlfeld seine Auswahlwerte). Jede Namensliste endet bei 5.000 Namen und meldet dies mit `truncated`. Die Dokument-Tools liefern die Werte der benutzerdefinierten Felder eines Dokuments nach Feldname unter `fields`. |
 
 ## Schreibwerkzeuge {#write-tools}
 
@@ -77,7 +77,8 @@ Zwei Arten: Suche über den Index und einfacher Zugriff auf die Datensätze. Die
 
 | Schalter | Werkzeuge | Was es tut |
 | --- | --- | --- |
-| Metadaten bearbeiten | `update_document` | Setzt Titel, Zusammenfassung, Datum, Dokumenttyp, Korrespondent (beide bei Bedarf per Name angelegt) und Tags (vorhandene Namen, die ganze Liste) eines Dokuments und schließt die Prüfung ab. Eine Änderung gilt als von Hand gemacht; nur als geprüft zu markieren nicht. |
+| Metadaten bearbeiten | `update_document` | Setzt Titel, Zusammenfassung, Datum, Dokumenttyp, Korrespondent (beide bei Bedarf per Name angelegt), Tags (vorhandene Namen, die ganze Liste) und benutzerdefinierte Felder (`fields`, nach Name; null oder leer leert eines, ein Auswahlfeld nimmt den Namen eines Auswahlwerts) eines Dokuments und schließt die Prüfung ab. Eine Änderung gilt als von Hand gemacht; nur als geprüft zu markieren nicht. |
+| OCR bearbeiten | `edit_document_text` | Korrigiert den OCR-Text eines Dokuments: den ganzen `text` oder `edits`, die je eine genau einmal vorkommende Passage ersetzen; alle oder keine werden angewendet. Ein ganzer `text` ersetzt alles und wird daher bei einem Dokument abgelehnt, das länger als eine `get_document`-Seite ist; ein Dokument, das noch wartet oder verarbeitet wird, ebenfalls. Suche und Duplikaterkennung folgen dem neuen Text; Titel und Metadaten werden nicht neu extrahiert. |
 | Dokumente erneut verarbeiten | `reprocess_documents` | Stellt bis zu 50 Dokumente erneut in die Warteschlange für OCR und Extraktion (`auto`, `full` oder `extraction`). Verursacht KI-Kosten, und die Extraktion überschreibt die Metadaten, auch manuelle Änderungen. |
 | Dokumente hochladen | `upload_document` | Fügt eine Datei hinzu, base64-kodiert, bis 32 MB; es gelten dieselben Typen, Kontingente und dieselbe Duplikatprüfung wie auf der Upload-Seite, und die Datei wird wie jede andere verarbeitet. |
 | Dokumente löschen | `delete_documents` | Löscht bis zu 50 Dokumente samt Dateien. Endgültig: Es gibt keinen Papierkorb. |

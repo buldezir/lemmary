@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pocketbase/pocketbase/core"
@@ -23,14 +24,31 @@ import (
 const mcpMaxBatchIDs = 50
 
 type mcpUpdateArgs struct {
-	ID            string    `json:"id" jsonschema:"Document id."`
-	Title         *string   `json:"title,omitempty" jsonschema:"New title. Left out keeps the current one."`
-	Summary       *string   `json:"summary,omitempty" jsonschema:"New summary. Left out keeps the current one."`
-	DocumentDate  *string   `json:"document_date,omitempty" jsonschema:"YYYY-MM-DD; empty clears it."`
-	DocumentType  *string   `json:"document_type,omitempty" jsonschema:"Document type name, created if new; empty clears it."`
-	Correspondent *string   `json:"correspondent,omitempty" jsonschema:"Correspondent name, created if new; empty clears it."`
-	Tags          *[]string `json:"tags,omitempty" jsonschema:"The whole tag list as exact names of existing tags. Replaces the current tags; an empty list removes them all."`
-	MarkReviewed  bool      `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review or failed document to completed; a failed one is kept as it is, without reprocessing. A possible duplicate is kept as a document of its own and processed again."`
+	ID            string         `json:"id" jsonschema:"Document id."`
+	Title         *string        `json:"title,omitempty" jsonschema:"New title. Left out keeps the current one."`
+	Summary       *string        `json:"summary,omitempty" jsonschema:"New summary. Left out keeps the current one."`
+	DocumentDate  *string        `json:"document_date,omitempty" jsonschema:"YYYY-MM-DD; empty clears it."`
+	DocumentType  *string        `json:"document_type,omitempty" jsonschema:"Document type name, created if new; empty clears it."`
+	Correspondent *string        `json:"correspondent,omitempty" jsonschema:"Correspondent name, created if new; empty clears it."`
+	Tags          *[]string      `json:"tags,omitempty" jsonschema:"The whole tag list as exact names of existing tags. Replaces the current tags; an empty list removes them all."`
+	Fields        map[string]any `json:"fields,omitempty" jsonschema:"Custom field values by field name from list_taxonomy: a number, a YYYY-MM-DD date, a choice's name or text. Null or empty clears one; fields left out keep their value."`
+	MarkReviewed  bool           `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review or failed document to completed; a failed one is kept as it is, without reprocessing. A possible duplicate is kept as a document of its own and processed again."`
+}
+
+type mcpTextArgs struct {
+	ID    string        `json:"id" jsonschema:"Document id."`
+	Text  *string       `json:"text,omitempty" jsonschema:"The whole new OCR text, replacing all of it: not just the page get_document returned. Refused for a text longer than one get_document page; use edits there. Give this or edits, not both."`
+	Edits []mcpTextEdit `json:"edits,omitempty" jsonschema:"Replacements applied in order; each old_text must occur exactly once in the text as the previous edits left it."`
+}
+
+type mcpTextEdit struct {
+	OldText string `json:"old_text" jsonschema:"Text to replace, exactly as get_document returns it."`
+	NewText string `json:"new_text" jsonschema:"Its replacement; empty deletes it."`
+}
+
+type mcpTextResult struct {
+	ID        string `json:"id"`
+	TextChars int    `json:"text_chars"`
 }
 
 type mcpIDsArgs struct {
@@ -73,9 +91,15 @@ type mcpTagResult struct {
 func addMCPWriteTools(server *mcp.Server, app core.App, userID string, capabilities []string) {
 	if slices.Contains(capabilities, config.MCPEdit) {
 		addMCPTool(server, "update_document",
-			"Change one document's title, summary, date, document type, correspondent or tags, or mark it reviewed. "+
+			"Change one document's title, summary, date, document type, correspondent, tags or custom fields, or mark it reviewed. "+
 				"Fields left out keep their value; the change is recorded as made by hand.",
 			func(args mcpUpdateArgs) (mcpDocument, error) { return updateMCPDocument(app, userID, args) })
+	}
+	if slices.Contains(capabilities, config.MCPOCR) {
+		addMCPTool(server, "edit_document_text",
+			"Correct one document's OCR text, as a whole or by exact replacements: all edits apply or none. "+
+				"Search follows the new text; title and metadata are not extracted again.",
+			func(args mcpTextArgs) (mcpTextResult, error) { return editMCPDocumentText(app, userID, args) })
 	}
 	if slices.Contains(capabilities, config.MCPReprocess) {
 		addMCPTool(server, "reprocess_documents",
@@ -158,7 +182,10 @@ func updateMCPDocument(app core.App, userID string, args mcpUpdateArgs) (mcpDocu
 	if err := applyMCPUpdate(app, userID, record, args); err != nil {
 		return mcpDocument{}, err
 	}
-	fields := map[string]any{}
+	fields, err := mcpFieldsByID(app, args.Fields)
+	if err != nil {
+		return mcpDocument{}, err
+	}
 	if args.DocumentType != nil {
 		fields[models.DocumentTypeFieldID] = *args.DocumentType
 	}
@@ -188,7 +215,54 @@ func updateMCPDocument(app core.App, userID string, args mcpUpdateArgs) (mcpDocu
 // Marking reviewed alone writes nothing the model wrote, as on the detail page.
 func (a mcpUpdateArgs) editsMetadata() bool {
 	return a.Title != nil || a.Summary != nil || a.DocumentDate != nil ||
-		a.DocumentType != nil || a.Correspondent != nil || a.Tags != nil
+		a.DocumentType != nil || a.Correspondent != nil || a.Tags != nil || len(a.Fields) > 0
+}
+
+// mcpFieldsByID turns the names an agent sees into the field ids the REST
+// fields body takes. Only admin-defined fields: the option fields have
+// arguments of their own.
+func mcpFieldsByID(app core.App, byName map[string]any) (map[string]any, error) {
+	byID := map[string]any{}
+	if len(byName) == 0 {
+		return byID, nil
+	}
+	fields, err := models.LoadCustomFields(app)
+	if err != nil {
+		return nil, err
+	}
+	for name, value := range byName {
+		field, err := mcpFieldNamed(fields, name)
+		if err != nil {
+			return nil, err
+		}
+		if _, twice := byID[field.ID]; twice {
+			return nil, fmt.Errorf("%s is named twice in fields", field.Name)
+		}
+		byID[field.ID] = value
+	}
+	return byID, nil
+}
+
+// mcpFieldNamed prefers the exact name: the database tells names apart that
+// differ only in non-ASCII case, which EqualFold does not.
+func mcpFieldNamed(fields []models.CustomField, name string) (models.CustomField, error) {
+	name = strings.TrimSpace(name)
+	var folded []models.CustomField
+	for _, field := range fields {
+		if field.Name == name {
+			return field, nil
+		}
+		if strings.EqualFold(field.Name, name) {
+			folded = append(folded, field)
+		}
+	}
+	switch len(folded) {
+	case 0:
+		return models.CustomField{}, fmt.Errorf("no custom field named %q; list_taxonomy has the names", name)
+	case 1:
+		return folded[0], nil
+	}
+	return models.CustomField{}, fmt.Errorf("%q matches more than one custom field; use the exact name from list_taxonomy", name)
 }
 
 // applyMCPUpdate sets the document's own columns; the option fields are
@@ -223,6 +297,37 @@ func applyMCPUpdate(app core.App, userID string, record *core.Record, args mcpUp
 		record.Set("processing_status", models.DocStatusCompleted)
 	}
 	return nil
+}
+
+func editMCPDocumentText(app core.App, userID string, args mcpTextArgs) (mcpTextResult, error) {
+	if (args.Text == nil) == (len(args.Edits) == 0) {
+		return mcpTextResult{}, fmt.Errorf("give text or edits")
+	}
+	record, err := findOwnedMCPDocument(app, userID, args.ID)
+	if err != nil {
+		return mcpTextResult{}, err
+	}
+	if status := record.GetString("processing_status"); status == models.DocStatusPending || status == models.DocStatusProcessing {
+		return mcpTextResult{}, fmt.Errorf("the document is %s; its processing would overwrite the edit", status)
+	}
+	text := record.GetString("ocr_text")
+	if n := utf8.RuneCountInString(text); args.Text != nil && n > mcpMaxTextChars {
+		return mcpTextResult{}, fmt.Errorf("the text is %d characters, more than one get_document page; use edits", n)
+	}
+	if args.Text != nil {
+		text = *args.Text
+	}
+	for i, edit := range args.Edits {
+		if n := strings.Count(text, edit.OldText); edit.OldText == "" || n != 1 {
+			return mcpTextResult{}, fmt.Errorf("edit %d: old_text occurs %d times; it must occur exactly once", i+1, n)
+		}
+		text = strings.Replace(text, edit.OldText, edit.NewText, 1)
+	}
+	record.Set("ocr_text", text)
+	if err := app.Save(record); err != nil {
+		return mcpTextResult{}, err
+	}
+	return mcpTextResult{ID: record.Id, TextChars: utf8.RuneCountInString(text)}, nil
 }
 
 func reprocessMCPDocuments(app core.App, userID string, args mcpReprocessArgs) (reprocess.Result, error) {

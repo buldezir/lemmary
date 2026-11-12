@@ -19,7 +19,7 @@ func TestMCPCapabilitiesReachConfig(t *testing.T) {
 	settings := core.NewRecord(collection)
 	settings.Id = "appsettings0001"
 	settings.MarkAsNew()
-	settings.Set("mcp_capabilities", []string{"edit", "tags"})
+	settings.Set("mcp_capabilities", []string{"edit", "ocr", "tags"})
 	if err := app.Save(settings); err != nil {
 		t.Fatalf("save app_settings: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestMCPCapabilitiesReachConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if !slices.Equal(cfg.MCPCapabilities, []string{"edit", "tags"}) {
+	if !slices.Equal(cfg.MCPCapabilities, []string{"edit", "ocr", "tags"}) {
 		t.Fatalf("Config.MCPCapabilities = %v", cfg.MCPCapabilities)
 	}
 }

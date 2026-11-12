@@ -5,7 +5,7 @@ import { invalidateAppMeta } from './meta'
 
 export type ImapFileType = 'pdf' | 'office' | 'image' | 'text'
 
-export const mcpCapabilities = ['edit', 'reprocess', 'upload', 'delete', 'tags'] as const
+export const mcpCapabilities = ['edit', 'ocr', 'reprocess', 'upload', 'delete', 'tags'] as const
 export type MCPCapability = (typeof mcpCapabilities)[number]
 
 export type AppSettings = {

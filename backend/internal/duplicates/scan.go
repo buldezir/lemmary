@@ -259,6 +259,16 @@ func laterRecord(a, b *core.Record) *core.Record {
 	return a
 }
 
+// RefreshFingerprint keeps text_fingerprint the simhash of ocr_text whoever
+// changes the text: the pipeline, a hand correction or an agent. Bind it to
+// OnRecordUpdate("documents").
+func RefreshFingerprint(e *core.RecordEvent) error {
+	if text := e.Record.GetString("ocr_text"); text != e.Record.Original().GetString("ocr_text") {
+		e.Record.Set("text_fingerprint", FingerprintHex(strings.TrimSpace(text)))
+	}
+	return e.Next()
+}
+
 func backfillFingerprint(app core.App, record *core.Record, result *ScanResult) error {
 	if strings.TrimSpace(record.GetString("text_fingerprint")) != "" {
 		return nil

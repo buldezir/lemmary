@@ -9,6 +9,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/router"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/duplicates"
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/imapimport"
 	"lemmary/backend/internal/limits"
@@ -36,6 +37,7 @@ func Register(
 ) {
 	RegisterAppName(app)
 	app.OnRecordUpdate("documents").BindFunc(clearStaleTranslation)
+	app.OnRecordUpdate("documents").BindFunc(duplicates.RefreshFingerprint)
 	app.OnRecordUpdateRequest("documents").BindFunc(saveFieldsWithDocument)
 	app.OnRecordCreateRequest(models.CustomFieldsCollection).BindFunc(saveChoicesWithField)
 	app.OnRecordUpdateRequest(models.CustomFieldsCollection).BindFunc(saveChoicesWithField)

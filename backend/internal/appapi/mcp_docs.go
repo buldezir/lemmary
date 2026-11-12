@@ -31,18 +31,19 @@ const (
 // mcpDocument is the metadata an agent gets for one document, with or
 // without its text.
 type mcpDocument struct {
-	ID               string   `json:"id"`
-	Title            string   `json:"title"`
-	DocumentDate     string   `json:"document_date,omitempty"`
-	DocumentType     string   `json:"document_type,omitempty"`
-	Correspondent    string   `json:"correspondent,omitempty"`
-	Tags             []string `json:"tags"`
-	Summary          string   `json:"summary,omitempty"`
-	ProcessingStatus string   `json:"processing_status"`
-	PageCount        int      `json:"page_count,omitempty"`
-	SizeBytes        int      `json:"size_bytes,omitempty"`
-	Created          string   `json:"created"`
-	Updated          string   `json:"updated"`
+	ID               string         `json:"id"`
+	Title            string         `json:"title"`
+	DocumentDate     string         `json:"document_date,omitempty"`
+	DocumentType     string         `json:"document_type,omitempty"`
+	Correspondent    string         `json:"correspondent,omitempty"`
+	Tags             []string       `json:"tags"`
+	Fields           map[string]any `json:"fields,omitempty"`
+	Summary          string         `json:"summary,omitempty"`
+	ProcessingStatus string         `json:"processing_status"`
+	PageCount        int            `json:"page_count,omitempty"`
+	SizeBytes        int            `json:"size_bytes,omitempty"`
+	Created          string         `json:"created"`
+	Updated          string         `json:"updated"`
 }
 
 type mcpListArgs struct {
@@ -88,8 +89,17 @@ type mcpTaxonomyResult struct {
 	Tags           []string `json:"tags"`
 	DocumentTypes  []string `json:"document_types"`
 	Correspondents []string `json:"correspondents"`
+	// Fields are the custom fields a document can hold beyond the above.
+	Fields []mcpTaxonomyField `json:"fields"`
 	// Truncated marks a list cut at the per-collection cap.
 	Truncated bool `json:"truncated,omitempty"`
+}
+
+type mcpTaxonomyField struct {
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Description string   `json:"description,omitempty"`
+	Choices     []string `json:"choices,omitempty"`
 }
 
 // mcpDocs is plain access to the archive: no ranking, no excerpting, just the
@@ -126,6 +136,17 @@ func newMCPDocs(app core.App, userID, baseURL string) mcpDocs {
 				}
 				*part.into = names
 				out.Truncated = out.Truncated || truncated
+			}
+			fields, err := models.LoadCustomFields(app)
+			if err != nil {
+				return out, err
+			}
+			out.Fields = make([]mcpTaxonomyField, len(fields))
+			for i, field := range fields {
+				out.Fields[i] = mcpTaxonomyField{Name: field.Name, Type: field.Type, Description: field.Description}
+				for _, choice := range field.Choices {
+					out.Fields[i].Choices = append(out.Fields[i].Choices, choice.Name)
+				}
 			}
 			return out, nil
 		},
@@ -325,7 +346,7 @@ func runePage(text string, offset, count int) (string, bool) {
 }
 
 func expandMCPDocuments(app core.App, records []*core.Record) {
-	_ = app.ExpandRecords(records, []string{"tags", fieldValuesExpand}, nil)
+	_ = app.ExpandRecords(records, []string{"tags", fieldValuesExpand, fieldValuesVia + ".field", fieldValuesVia + ".choice"}, nil)
 }
 
 // mcpDocumentOf reads an expanded record; relations that failed to expand
@@ -345,6 +366,7 @@ func mcpDocumentOf(record *core.Record) mcpDocument {
 		DocumentType:     expandedOptionName(record, models.DocumentTypeFieldID),
 		Correspondent:    expandedOptionName(record, models.CorrespondentFieldID),
 		Tags:             tags,
+		Fields:           expandedFieldValues(record),
 		Summary:          record.GetString("summary"),
 		ProcessingStatus: record.GetString("processing_status"),
 		PageCount:        record.GetInt("page_count"),
@@ -356,12 +378,15 @@ func mcpDocumentOf(record *core.Record) mcpDocument {
 
 // fieldValuesExpand is the expand that carries a document's field values and,
 // for option fields, the option behind each.
-const fieldValuesExpand = models.CustomFieldValuesCollection + "_via_document.option"
+const (
+	fieldValuesVia    = models.CustomFieldValuesCollection + "_via_document"
+	fieldValuesExpand = fieldValuesVia + ".option"
+)
 
 // expandedOptionName reads an option field's name off a record expanded with
 // fieldValuesExpand.
 func expandedOptionName(record *core.Record, fieldID string) string {
-	for _, value := range record.ExpandedAll(models.CustomFieldValuesCollection + "_via_document") {
+	for _, value := range record.ExpandedAll(fieldValuesVia) {
 		if value.GetString("field") != fieldID {
 			continue
 		}
@@ -370,4 +395,30 @@ func expandedOptionName(record *core.Record, fieldID string) string {
 		}
 	}
 	return ""
+}
+
+// expandedFieldValues reads the admin-defined fields' values, by field name,
+// off a record expanded by expandMCPDocuments. The option fields are left out:
+// document_type and correspondent carry them.
+func expandedFieldValues(record *core.Record) map[string]any {
+	out := map[string]any{}
+	for _, value := range record.ExpandedAll(fieldValuesVia) {
+		field := value.ExpandedOne("field")
+		if field == nil || field.GetString("type") == models.CustomFieldOption {
+			continue
+		}
+		stored := models.FieldValue{
+			Type:   field.GetString("type"),
+			Text:   value.GetString("text"),
+			Number: value.GetFloat("number"),
+			Date:   truncateDate(value.GetString("date")),
+		}
+		if choice := value.ExpandedOne("choice"); choice != nil {
+			stored.ChoiceName = choice.GetString("name")
+		}
+		if name := strings.TrimSpace(field.GetString("name")); name != "" {
+			out[name] = stored.Value()
+		}
+	}
+	return out
 }

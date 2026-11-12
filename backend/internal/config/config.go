@@ -104,13 +104,14 @@ const DefaultNearDuplicateThreshold = 0.92
 // The MCP write capabilities an admin can switch on, each a group of tools.
 const (
 	MCPEdit      = "edit"
+	MCPOCR       = "ocr"
 	MCPReprocess = "reprocess"
 	MCPUpload    = "upload"
 	MCPDelete    = "delete"
 	MCPTags      = "tags"
 )
 
-var MCPCapabilities = []string{MCPEdit, MCPReprocess, MCPUpload, MCPDelete, MCPTags}
+var MCPCapabilities = []string{MCPEdit, MCPOCR, MCPReprocess, MCPUpload, MCPDelete, MCPTags}
 
 const (
 	DefaultIngestDirIntervalMin = 5

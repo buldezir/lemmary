@@ -255,8 +255,9 @@ func addMCPDocsTools(server *mcp.Server, docs mcpDocs) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "list_taxonomy",
-		Description: "The tag, document type and correspondent names in the archive, for the filters of the other tools. " +
-			"Each list is cut at 5000 names, and truncated says when that happened.",
+		Description: "The tag, document type and correspondent names in the archive, for the filters of the other tools, " +
+			"and the custom fields documents hold (name, type, and for a choice field its choices). " +
+			"Each name list is cut at 5000 names, and truncated says when that happened.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpTaxonomyResult, error) {
 		result, err := docs.taxonomy(ctx)
 		if err != nil {
@@ -266,6 +267,9 @@ func addMCPDocsTools(server *mcp.Server, docs mcpDocs) {
 			if *names == nil {
 				*names = []string{}
 			}
+		}
+		if result.Fields == nil {
+			result.Fields = []mcpTaxonomyField{}
 		}
 		return nil, result, nil
 	})
