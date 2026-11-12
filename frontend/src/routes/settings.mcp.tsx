@@ -20,6 +20,7 @@ import { docsUrl, t, tNode } from '../i18n'
 
 const capabilityText = {
   edit: ['settingsMcp.edit', 'settingsMcp.editHint'],
+  ocr: ['settingsMcp.ocr', 'settingsMcp.ocrHint'],
   reprocess: ['settingsMcp.reprocess', 'settingsMcp.reprocessHint'],
   upload: ['settingsMcp.upload', 'settingsMcp.uploadHint'],
   delete: ['settingsMcp.delete', 'settingsMcp.deleteHint'],

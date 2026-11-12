@@ -57,12 +57,13 @@ func mcpToolNames(t *testing.T, session *mcp.ClientSession) []string {
 func TestMCPWriteToolsFollowCapabilities(t *testing.T) {
 	writeTools := map[string][]string{
 		config.MCPEdit:      {"update_document"},
+		config.MCPOCR:       {"edit_document_text"},
 		config.MCPReprocess: {"reprocess_documents"},
 		config.MCPUpload:    {"upload_document"},
 		config.MCPDelete:    {"delete_documents"},
 		config.MCPTags:      {"create_tag", "rename_tag", "delete_tag"},
 	}
-	all := []string{"update_document", "reprocess_documents", "upload_document", "delete_documents", "create_tag", "rename_tag", "delete_tag"}
+	all := []string{"update_document", "edit_document_text", "reprocess_documents", "upload_document", "delete_documents", "create_tag", "rename_tag", "delete_tag"}
 
 	names := mcpToolNames(t, connectMCPWrites(t, nil, ""))
 	for _, name := range all {
@@ -220,6 +221,52 @@ func TestMCPReadsAndEditsCustomFieldsByName(t *testing.T) {
 	callMCP(t, session, "update_document", map[string]any{"id": document.Id, "fields": map[string]any{"Amount": nil}}, &cleared)
 	if _, ok := cleared.Fields["Amount"]; ok || cleared.Fields["Status"] != "Paid" {
 		t.Fatalf("after clearing Amount: %#v", cleared.Fields)
+	}
+}
+
+func TestMCPEditDocumentTextAppliesAllEditsOrNone(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "owner@example.com")
+	other := makeQueueUser(t, app, "other@example.com")
+	document := makeQueueDocument(t, app, owner, models.DocStatusCompleted, "Tota1 due: 12O EUR")
+	foreign := makeQueueDocument(t, app, other, models.DocStatusCompleted, "not yours")
+	session := connectMCPWrites(t, app, owner, config.MCPOCR)
+	text := func(id string) string {
+		t.Helper()
+		record, err := app.FindRecordById("documents", id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return record.GetString("ocr_text")
+	}
+
+	var got mcpTextResult
+	res := callMCP(t, session, "edit_document_text", map[string]any{"id": document.Id, "edits": []map[string]any{
+		{"old_text": "Tota1", "new_text": "Total"},
+		{"old_text": "12O", "new_text": "120"},
+	}}, &got)
+	if res.IsError || text(document.Id) != "Total due: 120 EUR" || got.TextChars != 18 {
+		t.Fatalf("edits: %q, %#v, %#v", text(document.Id), got, res.Content)
+	}
+
+	for name, args := range map[string]map[string]any{
+		"a missing passage":   {"id": document.Id, "edits": []map[string]any{{"old_text": "Total", "new_text": "Sum"}, {"old_text": "nowhere", "new_text": "x"}}},
+		"a repeated passage":  {"id": document.Id, "edits": []map[string]any{{"old_text": " ", "new_text": "_"}}},
+		"text and edits":      {"id": document.Id, "text": "x", "edits": []map[string]any{{"old_text": "Total", "new_text": "Sum"}}},
+		"neither":             {"id": document.Id},
+		"another user's text": {"id": foreign.Id, "text": "mine now"},
+	} {
+		if res := callMCP(t, session, "edit_document_text", args, nil); !res.IsError {
+			t.Fatalf("%s: expected IsError", name)
+		}
+	}
+	if text(document.Id) != "Total due: 120 EUR" || text(foreign.Id) != "not yours" {
+		t.Fatalf("a refused edit changed the text: %q, %q", text(document.Id), text(foreign.Id))
+	}
+
+	callMCP(t, session, "edit_document_text", map[string]any{"id": document.Id, "text": "Rewritten"}, nil)
+	if text(document.Id) != "Rewritten" {
+		t.Fatalf("whole text: %q", text(document.Id))
 	}
 }
 

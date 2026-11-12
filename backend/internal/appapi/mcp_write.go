@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pocketbase/pocketbase/core"
@@ -32,6 +33,22 @@ type mcpUpdateArgs struct {
 	Tags          *[]string      `json:"tags,omitempty" jsonschema:"The whole tag list as exact names of existing tags. Replaces the current tags; an empty list removes them all."`
 	Fields        map[string]any `json:"fields,omitempty" jsonschema:"Custom field values by field name from list_taxonomy: a number, a YYYY-MM-DD date, a choice's name or text. Null or empty clears one; fields left out keep their value."`
 	MarkReviewed  bool           `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review or failed document to completed; a failed one is kept as it is, without reprocessing. A possible duplicate is kept as a document of its own and processed again."`
+}
+
+type mcpTextArgs struct {
+	ID    string        `json:"id" jsonschema:"Document id."`
+	Text  *string       `json:"text,omitempty" jsonschema:"The whole new OCR text. Give this or edits, not both."`
+	Edits []mcpTextEdit `json:"edits,omitempty" jsonschema:"Replacements applied in order; each old_text must occur exactly once in the text as the previous edits left it."`
+}
+
+type mcpTextEdit struct {
+	OldText string `json:"old_text" jsonschema:"Text to replace, exactly as get_document returns it."`
+	NewText string `json:"new_text" jsonschema:"Its replacement; empty deletes it."`
+}
+
+type mcpTextResult struct {
+	ID        string `json:"id"`
+	TextChars int    `json:"text_chars"`
 }
 
 type mcpIDsArgs struct {
@@ -77,6 +94,12 @@ func addMCPWriteTools(server *mcp.Server, app core.App, userID string, capabilit
 			"Change one document's title, summary, date, document type, correspondent, tags or custom fields, or mark it reviewed. "+
 				"Fields left out keep their value; the change is recorded as made by hand.",
 			func(args mcpUpdateArgs) (mcpDocument, error) { return updateMCPDocument(app, userID, args) })
+	}
+	if slices.Contains(capabilities, config.MCPOCR) {
+		addMCPTool(server, "edit_document_text",
+			"Correct one document's OCR text, as a whole or by exact replacements: all edits apply or none. "+
+				"Search follows the new text; title and metadata are not extracted again.",
+			func(args mcpTextArgs) (mcpTextResult, error) { return editMCPDocumentText(app, userID, args) })
 	}
 	if slices.Contains(capabilities, config.MCPReprocess) {
 		addMCPTool(server, "reprocess_documents",
@@ -249,6 +272,31 @@ func applyMCPUpdate(app core.App, userID string, record *core.Record, args mcpUp
 		record.Set("processing_status", models.DocStatusCompleted)
 	}
 	return nil
+}
+
+func editMCPDocumentText(app core.App, userID string, args mcpTextArgs) (mcpTextResult, error) {
+	if (args.Text == nil) == (len(args.Edits) == 0) {
+		return mcpTextResult{}, fmt.Errorf("give text or edits")
+	}
+	record, err := findOwnedMCPDocument(app, userID, args.ID)
+	if err != nil {
+		return mcpTextResult{}, err
+	}
+	text := record.GetString("ocr_text")
+	if args.Text != nil {
+		text = *args.Text
+	}
+	for i, edit := range args.Edits {
+		if n := strings.Count(text, edit.OldText); edit.OldText == "" || n != 1 {
+			return mcpTextResult{}, fmt.Errorf("edit %d: old_text occurs %d times; it must occur exactly once", i+1, n)
+		}
+		text = strings.Replace(text, edit.OldText, edit.NewText, 1)
+	}
+	record.Set("ocr_text", text)
+	if err := app.Save(record); err != nil {
+		return mcpTextResult{}, err
+	}
+	return mcpTextResult{ID: record.Id, TextChars: utf8.RuneCountInString(text)}, nil
 }
 
 func reprocessMCPDocuments(app core.App, userID string, args mcpReprocessArgs) (reprocess.Result, error) {

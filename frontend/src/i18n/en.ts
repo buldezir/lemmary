@@ -1158,6 +1158,9 @@ export const en = {
   'settingsMcp.edit': 'Edit metadata',
   'settingsMcp.editHint':
     'Title, summary, date, document type, correspondent, tags and custom fields, and marking documents reviewed.',
+  'settingsMcp.ocr': 'Edit OCR',
+  'settingsMcp.ocrHint':
+    'Correct a document’s OCR text, whole or by replacing passages. Search follows; metadata is not extracted again.',
   'settingsMcp.reprocess': 'Reprocess documents',
   'settingsMcp.reprocessHint':
     'Runs OCR and extraction again. Costs AI usage and overwrites metadata, hand edits included.',

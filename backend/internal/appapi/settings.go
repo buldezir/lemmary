@@ -366,7 +366,7 @@ func applyMCPPatch(record *core.Record, capabilities *[]string) error {
 	}
 	for _, c := range *capabilities {
 		if !slices.Contains(config.MCPCapabilities, c) {
-			return errInvalid("mcp_capabilities must be edit, reprocess, upload, delete or tags")
+			return errInvalid("mcp_capabilities must be edit, ocr, reprocess, upload, delete or tags")
 		}
 	}
 	record.Set("mcp_capabilities", *capabilities)

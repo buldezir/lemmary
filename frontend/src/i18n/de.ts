@@ -1222,6 +1222,9 @@ export const de: Catalog = {
   'settingsMcp.edit': 'Metadaten bearbeiten',
   'settingsMcp.editHint':
     'Titel, Zusammenfassung, Datum, Dokumenttyp, Korrespondent, Tags und benutzerdefinierte Felder sowie Dokumente als geprüft markieren.',
+  'settingsMcp.ocr': 'OCR bearbeiten',
+  'settingsMcp.ocrHint':
+    'Den OCR-Text eines Dokuments korrigieren, ganz oder durch Ersetzen von Passagen. Die Suche folgt; Metadaten werden nicht neu extrahiert.',
   'settingsMcp.reprocess': 'Dokumente erneut verarbeiten',
   'settingsMcp.reprocessHint':
     'Führt OCR und Extraktion erneut aus. Verursacht KI-Kosten und überschreibt Metadaten, auch manuelle Änderungen.',
