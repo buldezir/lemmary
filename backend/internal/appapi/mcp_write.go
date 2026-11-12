@@ -23,14 +23,15 @@ import (
 const mcpMaxBatchIDs = 50
 
 type mcpUpdateArgs struct {
-	ID            string    `json:"id" jsonschema:"Document id."`
-	Title         *string   `json:"title,omitempty" jsonschema:"New title. Left out keeps the current one."`
-	Summary       *string   `json:"summary,omitempty" jsonschema:"New summary. Left out keeps the current one."`
-	DocumentDate  *string   `json:"document_date,omitempty" jsonschema:"YYYY-MM-DD; empty clears it."`
-	DocumentType  *string   `json:"document_type,omitempty" jsonschema:"Document type name, created if new; empty clears it."`
-	Correspondent *string   `json:"correspondent,omitempty" jsonschema:"Correspondent name, created if new; empty clears it."`
-	Tags          *[]string `json:"tags,omitempty" jsonschema:"The whole tag list as exact names of existing tags. Replaces the current tags; an empty list removes them all."`
-	MarkReviewed  bool      `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review or failed document to completed; a failed one is kept as it is, without reprocessing. A possible duplicate is kept as a document of its own and processed again."`
+	ID            string         `json:"id" jsonschema:"Document id."`
+	Title         *string        `json:"title,omitempty" jsonschema:"New title. Left out keeps the current one."`
+	Summary       *string        `json:"summary,omitempty" jsonschema:"New summary. Left out keeps the current one."`
+	DocumentDate  *string        `json:"document_date,omitempty" jsonschema:"YYYY-MM-DD; empty clears it."`
+	DocumentType  *string        `json:"document_type,omitempty" jsonschema:"Document type name, created if new; empty clears it."`
+	Correspondent *string        `json:"correspondent,omitempty" jsonschema:"Correspondent name, created if new; empty clears it."`
+	Tags          *[]string      `json:"tags,omitempty" jsonschema:"The whole tag list as exact names of existing tags. Replaces the current tags; an empty list removes them all."`
+	Fields        map[string]any `json:"fields,omitempty" jsonschema:"Custom field values by field name from list_taxonomy: a number, a YYYY-MM-DD date, a choice's name or text. Null or empty clears one; fields left out keep their value."`
+	MarkReviewed  bool           `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review or failed document to completed; a failed one is kept as it is, without reprocessing. A possible duplicate is kept as a document of its own and processed again."`
 }
 
 type mcpIDsArgs struct {
@@ -73,7 +74,7 @@ type mcpTagResult struct {
 func addMCPWriteTools(server *mcp.Server, app core.App, userID string, capabilities []string) {
 	if slices.Contains(capabilities, config.MCPEdit) {
 		addMCPTool(server, "update_document",
-			"Change one document's title, summary, date, document type, correspondent or tags, or mark it reviewed. "+
+			"Change one document's title, summary, date, document type, correspondent, tags or custom fields, or mark it reviewed. "+
 				"Fields left out keep their value; the change is recorded as made by hand.",
 			func(args mcpUpdateArgs) (mcpDocument, error) { return updateMCPDocument(app, userID, args) })
 	}
@@ -158,7 +159,10 @@ func updateMCPDocument(app core.App, userID string, args mcpUpdateArgs) (mcpDocu
 	if err := applyMCPUpdate(app, userID, record, args); err != nil {
 		return mcpDocument{}, err
 	}
-	fields := map[string]any{}
+	fields, err := mcpFieldsByID(app, args.Fields)
+	if err != nil {
+		return mcpDocument{}, err
+	}
 	if args.DocumentType != nil {
 		fields[models.DocumentTypeFieldID] = *args.DocumentType
 	}
@@ -188,7 +192,29 @@ func updateMCPDocument(app core.App, userID string, args mcpUpdateArgs) (mcpDocu
 // Marking reviewed alone writes nothing the model wrote, as on the detail page.
 func (a mcpUpdateArgs) editsMetadata() bool {
 	return a.Title != nil || a.Summary != nil || a.DocumentDate != nil ||
-		a.DocumentType != nil || a.Correspondent != nil || a.Tags != nil
+		a.DocumentType != nil || a.Correspondent != nil || a.Tags != nil || len(a.Fields) > 0
+}
+
+// mcpFieldsByID turns the names an agent sees into the field ids the REST
+// fields body takes. Only admin-defined fields: the option fields have
+// arguments of their own.
+func mcpFieldsByID(app core.App, byName map[string]any) (map[string]any, error) {
+	byID := map[string]any{}
+	if len(byName) == 0 {
+		return byID, nil
+	}
+	fields, err := models.LoadCustomFields(app)
+	if err != nil {
+		return nil, err
+	}
+	for name, value := range byName {
+		i := slices.IndexFunc(fields, func(f models.CustomField) bool { return strings.EqualFold(f.Name, strings.TrimSpace(name)) })
+		if i < 0 {
+			return nil, fmt.Errorf("no custom field named %q; list_taxonomy has the names", name)
+		}
+		byID[fields[i].ID] = value
+	}
+	return byID, nil
 }
 
 // applyMCPUpdate sets the document's own columns; the option fields are

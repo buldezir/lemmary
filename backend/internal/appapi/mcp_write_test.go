@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -142,6 +143,83 @@ func TestMCPUpdateDocumentChangesOnlyOwnDocuments(t *testing.T) {
 	}
 	if stored, _ := app.FindRecordById("documents", foreign.Id); stored.GetString("title") != "Queue test" {
 		t.Fatalf("shared document changed: %q", stored.GetString("title"))
+	}
+}
+
+func TestMCPReadsAndEditsCustomFieldsByName(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "owner@example.com")
+	document := makeQueueDocument(t, app, owner, models.DocStatusNeedsReview, "text")
+	fields, err := app.FindCollectionByNameOrId(models.CustomFieldsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]string{}
+	for name, kind := range map[string]string{"Amount": models.CustomFieldNumber, "Status": models.CustomFieldChoice, "Invoice number": models.CustomFieldText} {
+		field := core.NewRecord(fields)
+		field.Set("name", name)
+		field.Set("type", kind)
+		if err := app.Save(field); err != nil {
+			t.Fatal(err)
+		}
+		ids[name] = field.Id
+	}
+	choices, err := app.FindCollectionByNameOrId(models.CustomFieldChoicesCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paid := core.NewRecord(choices)
+	paid.Set("field", ids["Status"])
+	paid.Set("name", "Paid")
+	if err := app.Save(paid); err != nil {
+		t.Fatal(err)
+	}
+	session := connectMCPWrites(t, app, owner, config.MCPEdit)
+
+	var tax mcpTaxonomyResult
+	callMCP(t, session, "list_taxonomy", nil, &tax)
+	i := slices.IndexFunc(tax.Fields, func(f mcpTaxonomyField) bool { return f.Name == "Status" })
+	if len(tax.Fields) != 3 || i < 0 || tax.Fields[i].Type != models.CustomFieldChoice || !slices.Equal(tax.Fields[i].Choices, []string{"Paid"}) {
+		t.Fatalf("taxonomy fields = %#v", tax.Fields)
+	}
+
+	var got mcpDocument
+	res := callMCP(t, session, "update_document", map[string]any{
+		"id":            document.Id,
+		"fields":        map[string]any{"amount": "12.50", "Status": "paid", "Invoice number": "INV-7"},
+		"document_type": "Invoice",
+	}, &got)
+	if res.IsError {
+		t.Fatalf("update: %#v", res.Content)
+	}
+	want := map[string]any{"Amount": 12.5, "Status": "Paid", "Invoice number": "INV-7"}
+	if !maps.Equal(got.Fields, want) || got.DocumentType != "Invoice" {
+		t.Fatalf("fields = %#v, type = %q", got.Fields, got.DocumentType)
+	}
+	if stored, _ := app.FindRecordById("documents", document.Id); stored.GetString("metadata_source") != models.MetadataSourceUser {
+		t.Fatalf("metadata_source = %q", stored.GetString("metadata_source"))
+	}
+	var read mcpGetResult
+	callMCP(t, session, "get_document", map[string]any{"id": document.Id}, &read)
+	if !maps.Equal(read.Fields, want) {
+		t.Fatalf("get_document fields = %#v", read.Fields)
+	}
+
+	for name, value := range map[string]map[string]any{
+		"an unknown field":        {"Due": "2024-01-01"},
+		"an unlisted choice":      {"Status": "Overdue"},
+		"a word for a number":     {"Amount": "twelve"},
+		"an option field by name": {"Correspondent": "Acme"},
+	} {
+		if res := callMCP(t, session, "update_document", map[string]any{"id": document.Id, "fields": value}, nil); !res.IsError {
+			t.Fatalf("%s: expected IsError", name)
+		}
+	}
+
+	var cleared mcpDocument
+	callMCP(t, session, "update_document", map[string]any{"id": document.Id, "fields": map[string]any{"Amount": nil}}, &cleared)
+	if _, ok := cleared.Fields["Amount"]; ok || cleared.Fields["Status"] != "Paid" {
+		t.Fatalf("after clearing Amount: %#v", cleared.Fields)
 	}
 }
 

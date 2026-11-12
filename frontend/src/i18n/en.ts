@@ -1157,7 +1157,7 @@ export const en = {
   'settingsMcp.accountLink': 'Account → Agents',
   'settingsMcp.edit': 'Edit metadata',
   'settingsMcp.editHint':
-    'Title, summary, date, document type, correspondent and tags, and marking documents reviewed.',
+    'Title, summary, date, document type, correspondent, tags and custom fields, and marking documents reviewed.',
   'settingsMcp.reprocess': 'Reprocess documents',
   'settingsMcp.reprocessHint':
     'Runs OCR and extraction again. Costs AI usage and overwrites metadata, hand edits included.',
