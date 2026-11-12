@@ -37,7 +37,7 @@ type mcpUpdateArgs struct {
 
 type mcpTextArgs struct {
 	ID    string        `json:"id" jsonschema:"Document id."`
-	Text  *string       `json:"text,omitempty" jsonschema:"The whole new OCR text. Give this or edits, not both."`
+	Text  *string       `json:"text,omitempty" jsonschema:"The whole new OCR text, replacing all of it: not just the page get_document returned. Refused for a text longer than one get_document page; use edits there. Give this or edits, not both."`
 	Edits []mcpTextEdit `json:"edits,omitempty" jsonschema:"Replacements applied in order; each old_text must occur exactly once in the text as the previous edits left it."`
 }
 
@@ -231,13 +231,38 @@ func mcpFieldsByID(app core.App, byName map[string]any) (map[string]any, error) 
 		return nil, err
 	}
 	for name, value := range byName {
-		i := slices.IndexFunc(fields, func(f models.CustomField) bool { return strings.EqualFold(f.Name, strings.TrimSpace(name)) })
-		if i < 0 {
-			return nil, fmt.Errorf("no custom field named %q; list_taxonomy has the names", name)
+		field, err := mcpFieldNamed(fields, name)
+		if err != nil {
+			return nil, err
 		}
-		byID[fields[i].ID] = value
+		if _, twice := byID[field.ID]; twice {
+			return nil, fmt.Errorf("%s is named twice in fields", field.Name)
+		}
+		byID[field.ID] = value
 	}
 	return byID, nil
+}
+
+// mcpFieldNamed prefers the exact name: the database tells names apart that
+// differ only in non-ASCII case, which EqualFold does not.
+func mcpFieldNamed(fields []models.CustomField, name string) (models.CustomField, error) {
+	name = strings.TrimSpace(name)
+	var folded []models.CustomField
+	for _, field := range fields {
+		if field.Name == name {
+			return field, nil
+		}
+		if strings.EqualFold(field.Name, name) {
+			folded = append(folded, field)
+		}
+	}
+	switch len(folded) {
+	case 0:
+		return models.CustomField{}, fmt.Errorf("no custom field named %q; list_taxonomy has the names", name)
+	case 1:
+		return folded[0], nil
+	}
+	return models.CustomField{}, fmt.Errorf("%q matches more than one custom field; use the exact name from list_taxonomy", name)
 }
 
 // applyMCPUpdate sets the document's own columns; the option fields are
@@ -282,7 +307,13 @@ func editMCPDocumentText(app core.App, userID string, args mcpTextArgs) (mcpText
 	if err != nil {
 		return mcpTextResult{}, err
 	}
+	if status := record.GetString("processing_status"); status == models.DocStatusPending || status == models.DocStatusProcessing {
+		return mcpTextResult{}, fmt.Errorf("the document is %s; its processing would overwrite the edit", status)
+	}
 	text := record.GetString("ocr_text")
+	if n := utf8.RuneCountInString(text); args.Text != nil && n > mcpMaxTextChars {
+		return mcpTextResult{}, fmt.Errorf("the text is %d characters, more than one get_document page; use edits", n)
+	}
 	if args.Text != nil {
 		text = *args.Text
 	}

@@ -256,3 +256,34 @@ func TestFindNearDuplicateSkipsAKeptApartOriginal(t *testing.T) {
 		t.Fatalf("after keeping apart: match=%v err=%v, want none", match, err)
 	}
 }
+
+func TestRefreshFingerprintFollowsTheText(t *testing.T) {
+	app := testpb.Open(t)
+	app.OnRecordUpdate("documents").BindFunc(RefreshFingerprint)
+	document := saveScanTestDocument(t, app, saveScanTestUser(t, app), "", "2026-01-02 10:00:00.000Z")
+	fingerprint := func() string {
+		t.Helper()
+		stored, err := app.FindRecordById("documents", document.Id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return stored.GetString("text_fingerprint")
+	}
+
+	corrected := "Invoice 2026-002 from Example Ltd for translation services rendered in September"
+	document.Set("ocr_text", corrected)
+	if err := app.Save(document); err != nil {
+		t.Fatal(err)
+	}
+	if got := fingerprint(); got == "" || got != FingerprintHex(corrected) {
+		t.Fatalf("fingerprint = %q", got)
+	}
+
+	document.Set("ocr_text", "too short")
+	if err := app.Save(document); err != nil {
+		t.Fatal(err)
+	}
+	if got := fingerprint(); got != "" {
+		t.Fatalf("a text too short to fingerprint kept %q", got)
+	}
+}

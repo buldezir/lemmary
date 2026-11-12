@@ -211,6 +211,7 @@ func TestMCPReadsAndEditsCustomFieldsByName(t *testing.T) {
 		"an unlisted choice":      {"Status": "Overdue"},
 		"a word for a number":     {"Amount": "twelve"},
 		"an option field by name": {"Correspondent": "Acme"},
+		"one field named twice":   {"Amount": "1", "amount": "2"},
 	} {
 		if res := callMCP(t, session, "update_document", map[string]any{"id": document.Id, "fields": value}, nil); !res.IsError {
 			t.Fatalf("%s: expected IsError", name)
@@ -267,6 +268,36 @@ func TestMCPEditDocumentTextAppliesAllEditsOrNone(t *testing.T) {
 	callMCP(t, session, "edit_document_text", map[string]any{"id": document.Id, "text": "Rewritten"}, nil)
 	if text(document.Id) != "Rewritten" {
 		t.Fatalf("whole text: %q", text(document.Id))
+	}
+
+	long := makeQueueDocument(t, app, owner, models.DocStatusCompleted, strings.Repeat("x", mcpMaxTextChars)+" tail")
+	if res := callMCP(t, session, "edit_document_text", map[string]any{"id": long.Id, "text": "first page only"}, nil); !res.IsError {
+		t.Fatal("a whole-text write over a document longer than one page was accepted")
+	}
+	callMCP(t, session, "edit_document_text", map[string]any{"id": long.Id, "edits": []map[string]any{{"old_text": " tail", "new_text": " end"}}}, nil)
+	if got := text(long.Id); len(got) != mcpMaxTextChars+4 || !strings.HasSuffix(got, " end") {
+		t.Fatalf("edit of a long document: %d chars", len(got))
+	}
+
+	pending := makeQueueDocument(t, app, owner, models.DocStatusPending, "in the queue")
+	if res := callMCP(t, session, "edit_document_text", map[string]any{"id": pending.Id, "text": "too early"}, nil); !res.IsError || text(pending.Id) != "in the queue" {
+		t.Fatal("a pending document's text was edited")
+	}
+}
+
+// The database tells apart names differing only in non-ASCII case; a name
+// that folds onto two of them is refused rather than guessed.
+func TestMCPFieldNamesPreferTheExactName(t *testing.T) {
+	fields := []models.CustomField{{ID: "upper", Name: "Ölstand"}, {ID: "lower", Name: "ölstand"}, {ID: "amount", Name: "Amount"}}
+	for name, want := range map[string]string{"ölstand": "lower", "Ölstand": "upper", " amount ": "amount"} {
+		if got, err := mcpFieldNamed(fields, name); err != nil || got.ID != want {
+			t.Fatalf("%q: %q, %v", name, got.ID, err)
+		}
+	}
+	for _, name := range []string{"ÖLSTAND", "Due"} {
+		if _, err := mcpFieldNamed(fields, name); err == nil {
+			t.Fatalf("%q was matched", name)
+		}
 	}
 }
 

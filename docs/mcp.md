@@ -78,7 +78,7 @@ Changing the archive is off by default. An admin switches each kind of change on
 | Switch | Tools | What it does |
 | --- | --- | --- |
 | Edit metadata | `update_document` | Sets a document's title, summary, date, document type, correspondent (both created by name if new), tags (existing names, the whole list) and custom fields (`fields`, by name; null or empty clears one, a choice field takes a choice's name), and moves it from review to completed. An edit counts as made by hand; marking it reviewed alone does not. |
-| Edit OCR | `edit_document_text` | Corrects a document's OCR text: the whole `text`, or `edits` that each replace one passage occurring exactly once; all apply or none. Search follows the new text; the title and metadata are not extracted again. |
+| Edit OCR | `edit_document_text` | Corrects a document's OCR text: the whole `text`, or `edits` that each replace one passage occurring exactly once; all apply or none. A whole `text` replaces all of it, so it is refused for a document longer than one `get_document` page; a document still pending or processing is refused too. Search and duplicate detection follow the new text; the title and metadata are not extracted again. |
 | Reprocess documents | `reprocess_documents` | Queues up to 50 documents for OCR and extraction again (`auto`, `full` or `extraction`). Costs AI usage, and extraction overwrites the metadata, hand edits included. |
 | Upload documents | `upload_document` | Adds one file, base64-encoded, up to 32 MB; the same types, allowances and duplicate check as the upload page apply, and the file is processed like any other. |
 | Delete documents | `delete_documents` | Deletes up to 50 documents with their files. Permanent: there is no trash. |

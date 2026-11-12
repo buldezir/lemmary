@@ -10,6 +10,16 @@ func init() {
 	m.Register(func(app core.App) error {
 		return setMCPCapabilityValues(app, []string{"edit", "ocr", "reprocess", "upload", "delete", "tags"})
 	}, func(app core.App) error {
+		records, err := app.FindAllRecords("app_settings")
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
+			record.Set("mcp_capabilities-", "ocr")
+			if err := app.Save(record); err != nil {
+				return err
+			}
+		}
 		return setMCPCapabilityValues(app, []string{"edit", "reprocess", "upload", "delete", "tags"})
 	})
 }
