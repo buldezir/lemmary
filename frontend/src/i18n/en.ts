@@ -638,6 +638,7 @@ export const en = {
   'rootLayout.releaseAvailable': 'Version {version} is available',
   'rootLayout.updateCheckFailed': 'Failed to check for updates',
   'rootLayout.mainNav': 'Main',
+  'rootLayout.skipToContent': 'Skip to content',
   'rootLayout.statusFailed': 'Failed to load setup status',
   'rootLayout.loading': 'Loading...',
 
@@ -1592,6 +1593,7 @@ export const en = {
   'managementUsers.password': 'Password',
   'managementUsers.newPassword': 'New password',
   'managementUsers.keepPassword': 'Leave the password empty to keep the current one.',
+  'managementUsers.passwordHint': 'At least 8 characters.',
   'managementUsers.admin': 'Admin',
   'managementUsers.failed': 'Something went wrong',
   'managementUsers.added': 'Added {email}.',

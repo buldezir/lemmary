@@ -26,7 +26,13 @@ import {
 import { ResultNotice } from '../components/settings/SettingsFeedback'
 import { Combobox } from '../components/Combobox'
 import { REPROCESS_MODE_LABELS, REPROCESS_MODE_OPTIONS, type ReprocessMode } from '../lib/processing'
-import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
+import {
+  Button,
+  fieldHintClassName,
+  labelTextClassName,
+  sectionClassName,
+  sectionTitleClassName,
+} from '../components/ui'
 import { lang, t, tNode } from '../i18n'
 
 const dateInputClassName =
@@ -374,7 +380,7 @@ export function MaintenancePage() {
       <div className="flex flex-col gap-5">
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.failedTitle')}</h2>
-          <p className="text-xs text-ink-soft">
+          <p className={fieldHintClassName}>
             {t('maintenance.failedHint')}
           </p>
           <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -434,7 +440,7 @@ export function MaintenancePage() {
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.duplicatesTitle')}</h2>
-          <p className="text-xs text-ink-soft">
+          <p className={fieldHintClassName}>
             {t('maintenance.duplicatesHint')}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -456,7 +462,7 @@ export function MaintenancePage() {
         {ingestImap && (
           <section className={sectionClassName}>
             <h2 className={sectionTitleClassName}>{t('maintenance.mailboxTitle')}</h2>
-            <p className="text-xs text-ink-soft">
+            <p className={fieldHintClassName}>
               {t('maintenance.mailboxHint')}
             </p>
             <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -499,7 +505,7 @@ export function MaintenancePage() {
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.staleTitle')}</h2>
-          <p className="text-xs text-ink-soft">
+          <p className={fieldHintClassName}>
             {t('maintenance.staleHint')}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -521,7 +527,7 @@ export function MaintenancePage() {
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.searchTitle')}</h2>
-          <p className="text-xs text-ink-soft">
+          <p className={fieldHintClassName}>
             {t('maintenance.searchHint')}
           </p>
           <div className="mt-4">
@@ -534,7 +540,7 @@ export function MaintenancePage() {
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.embeddingsTitle')}</h2>
-          <p className="text-xs text-ink-soft">
+          <p className={fieldHintClassName}>
             {t('maintenance.embeddingsHint')}
           </p>
           {!embeddingLoaded ? (

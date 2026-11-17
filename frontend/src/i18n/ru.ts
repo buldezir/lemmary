@@ -749,6 +749,7 @@ export const ru: Catalog = {
   'rootLayout.releaseAvailable': 'Доступна версия {version}',
   'rootLayout.updateCheckFailed': 'Не удалось проверить обновления',
   'rootLayout.mainNav': 'Основная навигация',
+  'rootLayout.skipToContent': 'Перейти к содержимому',
   'rootLayout.statusFailed': 'Не удалось загрузить статус настройки',
   'rootLayout.loading': 'Загрузка...',
 
@@ -1805,6 +1806,7 @@ export const ru: Catalog = {
   'managementUsers.password': 'Пароль',
   'managementUsers.newPassword': 'Новый пароль',
   'managementUsers.keepPassword': 'Оставьте пароль пустым, чтобы сохранить текущий.',
+  'managementUsers.passwordHint': 'Не менее 8 символов.',
   'managementUsers.admin': 'Админ',
   'managementUsers.failed': 'Что-то пошло не так',
   'managementUsers.added': '{email} добавлен.',

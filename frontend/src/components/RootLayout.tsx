@@ -676,6 +676,12 @@ export function RootLayout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-paper text-ink">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-30 focus:bg-ink focus:px-3 focus:py-2 focus:text-sm focus:text-paper"
+      >
+        {t('rootLayout.skipToContent')}
+      </a>
       <AppHeader
         appName={appName}
         accent={accent}
@@ -686,7 +692,11 @@ export function RootLayout() {
         writableUntil={writableUntil}
         onFeedback={openFeedback}
       />
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
+      <main
+        id="main"
+        tabIndex={-1}
+        className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 outline-none sm:px-6 sm:py-6"
+      >
         <Outlet />
       </main>
       <AppFooter showLanguage={false} onFeedback={openFeedback} />

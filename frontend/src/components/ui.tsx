@@ -6,13 +6,13 @@ export const listboxClassName =
 export const listOptionClassName = 'cursor-pointer truncate px-3 py-1.5 text-sm'
 
 export const inputClassName =
-  'w-full rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood'
+  'w-full rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50'
 export const dateInputClassName =
   'rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 export const labelClassName = 'flex flex-col gap-1'
 export const labelTextClassName =
   'text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft'
-export const fieldHintClassName = 'text-xs text-ink-soft'
+export const fieldHintClassName = 'max-w-[80ch] text-xs text-ink-soft'
 
 /**
  * Link into the bundled docs site. Opens in a new tab: these appear mid-form,

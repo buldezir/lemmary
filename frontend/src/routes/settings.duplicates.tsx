@@ -9,6 +9,7 @@ import {
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
 import {
+  fieldHintClassName,
   inputClassName,
   labelClassName,
   labelTextClassName,
@@ -52,9 +53,10 @@ export function SettingsDuplicatesPage() {
       <section className={sectionClassName}>
         <h2 className={sectionTitleClassName}>{t('settingsDuplicates.title')}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex items-center gap-2 text-sm text-ink-muted sm:col-span-2">
+          <label className="flex items-center gap-2.5 text-sm font-medium text-ink sm:col-span-2">
             <input
               type="checkbox"
+              className="h-4 w-4 accent-oxblood"
               checked={form.near_duplicate_detection_enabled}
               onChange={(e) => updateField('near_duplicate_detection_enabled', e.target.checked)}
             />
@@ -68,12 +70,13 @@ export function SettingsDuplicatesPage() {
               max={1}
               step={0.01}
               className={inputClassName}
+              disabled={!form.near_duplicate_detection_enabled}
               value={form.near_duplicate_threshold}
               onChange={(e) => updateField('near_duplicate_threshold', e.target.value)}
             />
           </label>
         </div>
-        <p className="mt-3 text-xs text-ink-soft">
+        <p className={`${fieldHintClassName} mt-3`}>
           {tNode('settingsDuplicates.hint', {
             link: (
               <Link to="/maintenance" className="underline hover:text-oxblood">

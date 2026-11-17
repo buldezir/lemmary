@@ -43,12 +43,12 @@ export function SettingsMCPPage() {
     <form onSubmit={onSubmit}>
       <section className={sectionClassName}>
         <h2 className={sectionTitleClassName}>{t('settingsMcp.title')}</h2>
-        <p className="mb-4 text-sm text-ink-soft">
+        <p className={`${fieldHintClassName} mb-4`}>
           {tNode('settingsMcp.intro', {
             link: <DocsLink href={docsUrl('mcp.html')}>{t('account.mcpLink')}</DocsLink>,
           })}
         </p>
-        <p className="mb-4 text-sm text-ink-soft">
+        <p className={`${fieldHintClassName} mb-4`}>
           {tNode('settingsMcp.connect', {
             link: (
               <Link to="/account/agents" className="underline hover:text-oxblood">
@@ -58,7 +58,7 @@ export function SettingsMCPPage() {
           })}
         </p>
         {status?.enabled === false && (
-          <p className="mb-4 text-sm text-ink-soft">
+          <p className={`${fieldHintClassName} mb-4`}>
             {tNode('account.mcpOff', { env: <code>MCP_ENABLED=0</code> })}
           </p>
         )}

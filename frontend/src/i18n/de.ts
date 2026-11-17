@@ -670,6 +670,7 @@ export const de: Catalog = {
   'rootLayout.releaseAvailable': 'Version {version} ist verfügbar',
   'rootLayout.updateCheckFailed': 'Suche nach Updates fehlgeschlagen',
   'rootLayout.mainNav': 'Hauptnavigation',
+  'rootLayout.skipToContent': 'Zum Inhalt springen',
   'rootLayout.statusFailed': 'Einrichtungsstatus konnte nicht geladen werden',
   'rootLayout.loading': 'Wird geladen...',
 
@@ -1667,6 +1668,7 @@ export const de: Catalog = {
   'managementUsers.password': 'Passwort',
   'managementUsers.newPassword': 'Neues Passwort',
   'managementUsers.keepPassword': 'Lassen Sie das Passwort leer, um das aktuelle zu behalten.',
+  'managementUsers.passwordHint': 'Mindestens 8 Zeichen.',
   'managementUsers.admin': 'Admin',
   'managementUsers.failed': 'Etwas ist schiefgelaufen',
   'managementUsers.added': '{email} hinzugefügt.',

@@ -8,6 +8,7 @@ import {
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
 import {
+  fieldHintClassName,
   inputClassName,
   labelClassName,
   labelTextClassName,
@@ -73,7 +74,7 @@ export function SettingsWorkerPage() {
             />
           </label>
         </div>
-        <p className="mt-3 text-xs text-ink-soft">
+        <p className={`${fieldHintClassName} mt-3`}>
           {tNode('settingsWorker.cronHint', {
             env: <code className="font-mono">WORKER_CRON_EXPR</code>,
             file: <code className="font-mono">.env</code>,
