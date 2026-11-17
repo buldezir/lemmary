@@ -385,7 +385,9 @@ export const ru: Catalog = {
 
   'useAsync.loadFailed': 'Не удалось загрузить',
 
-  'useSettingsForm.saved': 'Настройки сохранены. Среда выполнения перезагружена.',
+  'useSettingsForm.saved': 'Настройки сохранены.',
+  'useSettingsForm.leaveConfirm':
+    'Уйти без сохранения? Изменения на этой вкладке будут потеряны.',
 
   'useChatSession.runEndedWithoutAnswer': 'Этот запуск завершился без ответа.',
   'useChatSession.followFailed': 'Не удалось отследить выполняющийся чат',
@@ -438,6 +440,7 @@ export const ru: Catalog = {
 
   'settingsFeedback.saving': 'Сохранение...',
   'settingsFeedback.save': 'Сохранить настройки',
+  'settingsFeedback.unsaved': 'Есть несохранённые изменения',
   'settingsFeedback.loading': 'Загрузка настроек...',
   'settingsFeedback.managedByHost':
     'Этим управляет ваш хостинг-провайдер, здесь это недоступно.',
@@ -746,6 +749,7 @@ export const ru: Catalog = {
   'rootLayout.releaseAvailable': 'Доступна версия {version}',
   'rootLayout.updateCheckFailed': 'Не удалось проверить обновления',
   'rootLayout.mainNav': 'Основная навигация',
+  'rootLayout.skipToContent': 'Перейти к содержимому',
   'rootLayout.statusFailed': 'Не удалось загрузить статус настройки',
   'rootLayout.loading': 'Загрузка...',
 
@@ -771,6 +775,8 @@ export const ru: Catalog = {
   'providersBlock.saveFailed': 'Не удалось сохранить провайдера',
   'providersBlock.deleted': 'Провайдер удалён.',
   'providersBlock.deleteFailed': 'Не удалось удалить провайдера',
+  'providersBlock.deleteConfirm':
+    'Удалить провайдера «{name}»? Его API-ключ будет удалён вместе с ним.',
   'providersBlock.title': 'Провайдеры',
   'providersBlock.intro':
     'Аккаунт или эндпоинт, на котором работают модели ниже. Какой провайдер для какой задачи подходит и сколько стоит, описано в разделе {providersLink}; {guidedLink} поможет бесплатно запустить один из них.',
@@ -1421,7 +1427,7 @@ export const ru: Catalog = {
 
   'admin.title': 'Админ-панель',
   'admin.intro':
-    'Настройки всего сервера, учётные записи и обслуживание библиотеки. Изменения применяются сразу.',
+    'Настройки всего сервера, учётные записи и обслуживание библиотеки. Сохранённые изменения действуют без перезапуска.',
   'admin.sectionsLabel': 'Разделы админ-панели',
   'admin.settings': 'Настройки',
   'admin.management': 'Управление',
@@ -1800,6 +1806,7 @@ export const ru: Catalog = {
   'managementUsers.password': 'Пароль',
   'managementUsers.newPassword': 'Новый пароль',
   'managementUsers.keepPassword': 'Оставьте пароль пустым, чтобы сохранить текущий.',
+  'managementUsers.passwordHint': 'Не менее 8 символов.',
   'managementUsers.admin': 'Админ',
   'managementUsers.failed': 'Что-то пошло не так',
   'managementUsers.added': '{email} добавлен.',
@@ -2336,6 +2343,8 @@ export const ru: Catalog = {
     'Удаляет корреспондентов и типы документов, на которые больше не ссылается ни один документ, — остатки удалённых документов, переименований или прерванного импорта. Документы не затрагиваются, как и теги: их вы создаёте вручную, так что неиспользуемый тег — это просто тег, который вы ещё не назначили. Недоступно, пока идёт обработка документов, чтобы не удалить то, что задание вот-вот назначит.',
   'maintenance.clearing': 'Очистка...',
   'maintenance.clearStale': 'Очистить устаревшие данные',
+  'maintenance.clearStaleConfirm':
+    'Удалить всех корреспондентов и все типы документов, которые не использует ни один документ? Это действие нельзя отменить.',
   'maintenance.waiting': 'Ожидание, пока очередь опустеет: {jobs}.',
   'account.limitsTitle': 'Лимиты сервера',
   'account.limitsHint':

@@ -6,7 +6,6 @@ import { useSettingsForm } from '../hooks/useSettingsForm'
 import { getMCPStatus } from '../lib/api/mcp'
 import { mcpCapabilities } from '../lib/api/settings'
 import {
-  ResultDialog,
   SaveSettingsButton,
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
@@ -29,7 +28,7 @@ const capabilityText = {
 
 export function SettingsMCPPage() {
   const { data: status } = useAsync(getMCPStatus, [])
-  const { form, loading, error, success, saving, updateField, save, closeResult } =
+  const { form, loading, error, status: saveStatus, updateField, save } =
     useSettingsForm((settings) => ({ mcp_capabilities: settings.mcp_capabilities ?? [] }))
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
@@ -44,12 +43,12 @@ export function SettingsMCPPage() {
     <form onSubmit={onSubmit}>
       <section className={sectionClassName}>
         <h2 className={sectionTitleClassName}>{t('settingsMcp.title')}</h2>
-        <p className="mb-4 text-sm text-ink-soft">
+        <p className={`${fieldHintClassName} mb-4`}>
           {tNode('settingsMcp.intro', {
             link: <DocsLink href={docsUrl('mcp.html')}>{t('account.mcpLink')}</DocsLink>,
           })}
         </p>
-        <p className="mb-4 text-sm text-ink-soft">
+        <p className={`${fieldHintClassName} mb-4`}>
           {tNode('settingsMcp.connect', {
             link: (
               <Link to="/account/agents" className="underline hover:text-oxblood">
@@ -59,7 +58,7 @@ export function SettingsMCPPage() {
           })}
         </p>
         {status?.enabled === false && (
-          <p className="mb-4 text-sm text-ink-soft">
+          <p className={`${fieldHintClassName} mb-4`}>
             {tNode('account.mcpOff', { env: <code>MCP_ENABLED=0</code> })}
           </p>
         )}
@@ -87,11 +86,9 @@ export function SettingsMCPPage() {
           ))}
         </div>
         <div className="mt-4">
-          <SaveSettingsButton saving={saving} />
+          <SaveSettingsButton {...saveStatus} />
         </div>
       </section>
-
-      <ResultDialog error={error} success={success} onClose={closeResult} />
     </form>
   )
 }

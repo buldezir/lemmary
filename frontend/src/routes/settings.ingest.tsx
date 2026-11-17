@@ -6,7 +6,6 @@ import { useAsync } from '../hooks/useAsync'
 import { listUsers } from '../lib/api/users'
 import type { AppSettings, AppSettingsPatch, ImapFileType } from '../lib/api/settings'
 import {
-  ResultDialog,
   SaveSettingsButton,
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
@@ -60,7 +59,7 @@ const imapFileTypes: [ImapFileType, string][] = [
 /** The consume folder and the IMAP mailbox. Reachable when INGEST_DIR or INGEST_IMAP_ENABLED is set. */
 export function SettingsIngestPage() {
   const { ingestDir, ingestImap } = useAppMeta()
-  const { form, loading, error, success, saving, updateField, updateFields, save, closeResult } =
+  const { form, loading, error, status, updateField, updateFields, save } =
     useSettingsForm((settings) => ({
       ingest_dir_owner: settings.ingest_dir_owner,
       ingest_dir_interval_min: String(settings.ingest_dir_interval_min),
@@ -294,11 +293,9 @@ export function SettingsIngestPage() {
         )}
 
         <div className="mt-4">
-          <SaveSettingsButton saving={saving} />
+          <SaveSettingsButton {...status} />
         </div>
       </section>
-
-      <ResultDialog error={error} success={success} onClose={closeResult} />
     </form>
   )
 }

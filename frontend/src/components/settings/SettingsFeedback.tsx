@@ -1,57 +1,58 @@
-import { useEffect, useRef } from 'react'
-
 import { t } from '../../i18n'
 import { Button, sectionClassName } from '../ui'
 
-export function SaveSettingsButton({ saving }: { saving: boolean }) {
+/**
+ * The save button and, beside it, what the last save did. aria-disabled rather
+ * than disabled while saving: a disabled button drops keyboard focus to <body>.
+ */
+export function SaveSettingsButton({
+  saving,
+  dirty,
+  error,
+  success,
+}: {
+  saving: boolean
+  dirty: boolean
+  error: string
+  success: string
+}) {
   return (
-    <div>
-      <Button type="submit" disabled={saving}>
+    <div className="flex flex-wrap items-center gap-3">
+      <Button
+        type="submit"
+        aria-disabled={saving}
+        className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+      >
         {saving ? t('settingsFeedback.saving') : t('settingsFeedback.save')}
       </Button>
+      <ResultNotice
+        error={error}
+        success={success || (dirty && !saving ? t('settingsFeedback.unsaved') : '')}
+        muted={!success}
+      />
     </div>
   )
 }
 
-/** Success clears itself, an error waits to be dismissed. */
-export function ResultDialog({
+/** Always in the tree, so a screen reader hears the text arrive. */
+export function ResultNotice({
   error,
   success,
-  onClose,
+  muted = false,
+  className = '',
 }: {
   error: string
   success: string
-  onClose: () => void
+  muted?: boolean
+  className?: string
 }) {
-  const ref = useRef<HTMLDialogElement>(null)
-  const open = Boolean(error || success)
-
-  useEffect(() => {
-    const dialog = ref.current
-    if (!dialog) return
-    if (!open) {
-      dialog.close()
-      return
-    }
-    dialog.showModal()
-    if (error) return
-    const timer = setTimeout(onClose, 1500)
-    return () => clearTimeout(timer)
-  }, [open, error, onClose])
-
   return (
-    <dialog
-      ref={ref}
-      onClose={onClose}
-      className="m-auto max-w-sm border border-line bg-surface p-5 text-ink backdrop:bg-ink/40"
+    <p
+      role="status"
+      className={`text-sm ${error ? 'text-madder' : muted ? 'text-ink-soft' : 'text-forest'} ${className}`}
     >
-      <p className={`text-sm ${error ? 'text-madder' : 'text-forest'}`}>{error || success}</p>
-      {error && (
-        <div className="mt-4 flex justify-end">
-          <Button onClick={onClose}>{t('common.close')}</Button>
-        </div>
-      )}
-    </dialog>
+      {error || success}
+    </p>
   )
 }
 

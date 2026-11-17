@@ -333,7 +333,8 @@ export const en = {
 
   'useAsync.loadFailed': 'Failed to load',
 
-  'useSettingsForm.saved': 'Settings saved. Runtime reloaded.',
+  'useSettingsForm.saved': 'Settings saved.',
+  'useSettingsForm.leaveConfirm': 'Leave without saving? The changes on this tab will be lost.',
 
   'useChatSession.runEndedWithoutAnswer': 'That run ended without an answer.',
   'useChatSession.followFailed': 'Failed to follow the running chat',
@@ -377,6 +378,7 @@ export const en = {
 
   'settingsFeedback.saving': 'Saving...',
   'settingsFeedback.save': 'Save settings',
+  'settingsFeedback.unsaved': 'Unsaved changes',
   'settingsFeedback.loading': 'Loading settings...',
   'settingsFeedback.managedByHost':
     'This is managed by your hosting provider and is not available here.',
@@ -636,6 +638,7 @@ export const en = {
   'rootLayout.releaseAvailable': 'Version {version} is available',
   'rootLayout.updateCheckFailed': 'Failed to check for updates',
   'rootLayout.mainNav': 'Main',
+  'rootLayout.skipToContent': 'Skip to content',
   'rootLayout.statusFailed': 'Failed to load setup status',
   'rootLayout.loading': 'Loading...',
 
@@ -661,6 +664,7 @@ export const en = {
   'providersBlock.saveFailed': 'Failed to save provider',
   'providersBlock.deleted': 'Provider deleted.',
   'providersBlock.deleteFailed': 'Failed to delete provider',
+  'providersBlock.deleteConfirm': 'Delete the provider "{name}"? Its API key is deleted with it.',
   'providersBlock.title': 'Providers',
   'providersBlock.intro':
     'An account or endpoint the models below run on. Which provider can do which job, and what each costs, is in {providersLink}; the {guidedLink} gets one working for free.',
@@ -1232,7 +1236,7 @@ export const en = {
 
   'admin.title': 'Admin',
   'admin.intro':
-    'Configuration for the whole instance, its accounts and library maintenance. Changes apply immediately.',
+    'Configuration for the whole instance, its accounts and library maintenance. Saved changes take effect without a restart.',
   'admin.sectionsLabel': 'Admin sections',
   'admin.settings': 'Settings',
   'admin.management': 'Management',
@@ -1589,6 +1593,7 @@ export const en = {
   'managementUsers.password': 'Password',
   'managementUsers.newPassword': 'New password',
   'managementUsers.keepPassword': 'Leave the password empty to keep the current one.',
+  'managementUsers.passwordHint': 'At least 8 characters.',
   'managementUsers.admin': 'Admin',
   'managementUsers.failed': 'Something went wrong',
   'managementUsers.added': 'Added {email}.',
@@ -2018,6 +2023,8 @@ export const en = {
     'Deletes correspondents and document types that no document points at any more — left behind by deleted documents, renames, or an aborted import. Documents are never touched, and neither are tags: you create those by hand, so an unused one is simply one you have not applied yet. Blocked while documents are processing, so entities a job is about to attach are not swept up.',
   'maintenance.clearing': 'Clearing...',
   'maintenance.clearStale': 'Clear stale data',
+  'maintenance.clearStaleConfirm':
+    'Delete every correspondent and document type that no document uses? This cannot be undone.',
   'maintenance.waiting': 'Waiting for the queue to drain: {jobs}.',
   'account.limitsTitle': 'Instance limits',
   'account.limitsHint':

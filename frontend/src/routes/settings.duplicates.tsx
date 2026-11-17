@@ -5,11 +5,11 @@ import { useAppMeta } from '../hooks/useAppMeta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
 import {
   ManagedByHostNotice,
-  ResultDialog,
   SaveSettingsButton,
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
 import {
+  fieldHintClassName,
   inputClassName,
   labelClassName,
   labelTextClassName,
@@ -21,7 +21,7 @@ import { t, tNode } from '../i18n'
 export function SettingsDuplicatesPage() {
   // unknown/failed meta counts as managed; see AppMeta.managed
   const { managed, metaLoaded } = useAppMeta()
-  const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
+  const { form, loading, error, status, updateField, save, setError } =
     useSettingsForm((settings) => ({
       near_duplicate_detection_enabled: settings.near_duplicate_detection_enabled,
       near_duplicate_threshold: String(settings.near_duplicate_threshold ?? 0.92),
@@ -31,16 +31,18 @@ export function SettingsDuplicatesPage() {
     event.preventDefault()
     if (!form) return
 
+    if (!form.near_duplicate_detection_enabled) {
+      await save({ near_duplicate_detection_enabled: false })
+      return
+    }
+
     const threshold = Number(form.near_duplicate_threshold)
     if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 1) {
       setError(t('settingsDuplicates.thresholdInvalid'))
       return
     }
 
-    await save({
-      near_duplicate_detection_enabled: form.near_duplicate_detection_enabled,
-      near_duplicate_threshold: threshold,
-    })
+    await save({ near_duplicate_detection_enabled: true, near_duplicate_threshold: threshold })
   }
 
   // See the AI tab: in-flight meta is not a licence to name an owner.
@@ -53,9 +55,10 @@ export function SettingsDuplicatesPage() {
       <section className={sectionClassName}>
         <h2 className={sectionTitleClassName}>{t('settingsDuplicates.title')}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex items-center gap-2 text-sm text-ink-muted sm:col-span-2">
+          <label className="flex items-center gap-2.5 text-sm font-medium text-ink sm:col-span-2">
             <input
               type="checkbox"
+              className="h-4 w-4 accent-oxblood"
               checked={form.near_duplicate_detection_enabled}
               onChange={(e) => updateField('near_duplicate_detection_enabled', e.target.checked)}
             />
@@ -69,12 +72,13 @@ export function SettingsDuplicatesPage() {
               max={1}
               step={0.01}
               className={inputClassName}
+              disabled={!form.near_duplicate_detection_enabled}
               value={form.near_duplicate_threshold}
               onChange={(e) => updateField('near_duplicate_threshold', e.target.value)}
             />
           </label>
         </div>
-        <p className="mt-3 text-xs text-ink-soft">
+        <p className={`${fieldHintClassName} mt-3`}>
           {tNode('settingsDuplicates.hint', {
             link: (
               <Link to="/maintenance" className="underline hover:text-oxblood">
@@ -84,11 +88,9 @@ export function SettingsDuplicatesPage() {
           })}
         </p>
         <div className="mt-4">
-          <SaveSettingsButton saving={saving} />
+          <SaveSettingsButton {...status} />
         </div>
       </section>
-
-      <ResultDialog error={error} success={success} onClose={closeResult} />
     </form>
   )
 }

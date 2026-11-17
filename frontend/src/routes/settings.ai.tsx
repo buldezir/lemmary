@@ -6,7 +6,6 @@ import { ProviderModelFields } from '../components/ProviderModelFields'
 import { ProvidersBlock } from '../components/settings/ProvidersBlock'
 import {
   ManagedByHostNotice,
-  ResultDialog,
   SaveSettingsButton,
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
@@ -57,13 +56,9 @@ export function SettingsAIPage() {
     form,
     loading,
     error,
-    success,
-    saving,
+    status,
     updateField,
     save,
-    setError,
-    setSuccess,
-    closeResult,
   } = useSettingsForm<Bindings>((settings) => ({
     ocr_provider_id: settings.ocr_provider_id,
     ocr_model: settings.ocr_model,
@@ -95,8 +90,6 @@ export function SettingsAIPage() {
       <ProvidersBlock
         providers={providers ?? []}
         onChanged={reloadProviders}
-        onError={setError}
-        onSuccess={setSuccess}
       />
 
       <form onSubmit={onSubmit}>
@@ -209,12 +202,10 @@ export function SettingsAIPage() {
             />
           </div>
           <div className="mt-4">
-            <SaveSettingsButton saving={saving} />
+            <SaveSettingsButton {...status} />
           </div>
         </section>
       </form>
-
-      <ResultDialog error={error} success={success} onClose={closeResult} />
     </>
   )
 }

@@ -19,6 +19,7 @@ import {
 } from '../../lib/api/providers'
 import { docsUrl, t, tNode } from '../../i18n'
 import { ChatGPTSignIn } from '../ChatGPTSignIn'
+import { ResultNotice } from './SettingsFeedback'
 import { Combobox } from '../Combobox'
 import {
   Button,
@@ -44,8 +45,8 @@ function emptyDraft(sdk: ProviderSDK = 'openai'): ProviderDraft {
 }
 
 /**
- * The add/edit drawer is a form of its own, saved against the providers API
- * rather than the settings record, so it reports back to the tab's dialog.
+ * The add/edit form is a form of its own, saved against the providers API
+ * rather than the settings record, so it reports its own result.
  */
 const catalogOptions = [
   { value: '', label: t('providersBlock.noCatalog') },
@@ -55,15 +56,13 @@ const catalogOptions = [
 export function ProvidersBlock({
   providers,
   onChanged,
-  onError,
-  onSuccess,
 }: {
   providers: AIProvider[]
   /** Re-reads the list after a create, update, delete or sign-in. */
   onChanged: () => void | Promise<unknown>
-  onError: (message: string) => void
-  onSuccess: (message: string) => void
 }) {
+  const [error, onError] = useState('')
+  const [success, onSuccess] = useState('')
   const [draft, setDraft] = useState<ProviderDraft>(emptyDraft())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -106,17 +105,125 @@ export function ProvidersBlock({
     }
   }
 
-  async function onDeleteProvider(id: string) {
+  async function onDeleteProvider(item: AIProvider) {
+    if (!window.confirm(t('providersBlock.deleteConfirm', { name: item.alias }))) return
     try {
       onError('')
       onSuccess('')
-      await deleteAIProvider(id)
+      await deleteAIProvider(item.id)
       await onChanged()
       onSuccess(t('providersBlock.deleted'))
     } catch (err) {
       onError(err instanceof Error ? err.message : t('providersBlock.deleteFailed'))
     }
   }
+
+  const form = (
+    <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSaveProvider}>
+      <div className={labelClassName}>
+        <label htmlFor={sdkId} className={labelTextClassName}>
+          SDK
+        </label>
+        <Combobox
+          id={sdkId}
+          value={draft.sdk}
+          options={SDK_OPTIONS}
+          onChange={(next) => {
+            const sdk = next as ProviderSDK
+            setDraft((current) => ({
+              ...current,
+              sdk,
+              base_url:
+                current.base_url === SDK_DEFAULT_BASE[current.sdk]
+                  ? SDK_DEFAULT_BASE[sdk]
+                  : current.base_url,
+              catalog:
+                current.catalog === defaultCatalog(current.sdk)
+                  ? defaultCatalog(sdk)
+                  : current.catalog,
+              // The key field is about to disappear; a value typed before
+              // the switch would otherwise be posted invisibly.
+              api_key: requiresAPIKey(sdk) ? current.api_key : '',
+            }))
+          }}
+        />
+      </div>
+      <label className={labelClassName}>
+        <span className={labelTextClassName}>{t('providersBlock.alias')}</span>
+        <input
+          className={inputClassName}
+          autoFocus
+          value={draft.alias}
+          placeholder={sdkAliasDefault(draft.sdk)}
+          onChange={(event) => setDraft((current) => ({ ...current, alias: event.target.value }))}
+        />
+      </label>
+      <div className={labelClassName}>
+        <label htmlFor={catalogId} className={labelTextClassName}>
+          {t('providersBlock.catalog')}
+        </label>
+        <Combobox
+          id={catalogId}
+          value={draft.catalog}
+          options={catalogOptions}
+          onChange={(next) => setDraft((current) => ({ ...current, catalog: next }))}
+        />
+      </div>
+      {draft.sdk !== 'google_vision' && (
+        <label className={`${labelClassName} sm:col-span-2`}>
+          <span className={labelTextClassName}>{t('providersBlock.baseUrl')}</span>
+          <input
+            className={inputClassName}
+            value={draft.base_url}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, base_url: event.target.value }))
+            }
+          />
+        </label>
+      )}
+      {requiresAPIKey(draft.sdk) ? (
+        <label className={`${labelClassName} sm:col-span-2`}>
+          <span className={labelTextClassName}>
+            {editingId ? t('providersBlock.apiKeyKeep') : t('providersBlock.apiKey')}
+          </span>
+          <input
+            type="password"
+            autoComplete="off"
+            className={inputClassName}
+            value={draft.api_key}
+            required={!editingId}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, api_key: event.target.value }))
+            }
+          />
+          <span className={fieldHintClassName}>{docsLink}</span>
+        </label>
+      ) : requiresSignIn(draft.sdk) ? (
+        <p className={`${fieldHintClassName} sm:col-span-2`}>
+          {tNode('providersBlock.signInHint', { link: docsLink })}
+        </p>
+      ) : (
+        <p className={`${fieldHintClassName} sm:col-span-2`}>
+          {keylessProviderHint(draft.sdk)} {docsLink}
+        </p>
+      )}
+      <div className="flex gap-2 sm:col-span-2">
+        <Button type="submit" size="sm">
+          {editingId ? t('providersBlock.update') : t('providersBlock.save')}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setShowAdd(false)
+            setEditingId(null)
+          }}
+        >
+          {t('common.cancel')}
+        </Button>
+      </div>
+    </form>
+  )
 
   return (
     <section className={`${sectionClassName} mb-5`}>
@@ -139,62 +246,67 @@ export function ProvidersBlock({
         {providers.length === 0 && (
           <li className="text-sm text-ink-soft">{t('providersBlock.empty')}</li>
         )}
-        {providers.map((item) => (
-          <li
-            key={item.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-xs border border-line bg-bright px-3 py-2"
-          >
-            <div>
-              <p className="text-sm font-medium text-ink">{item.alias}</p>
-              <p className="text-xs text-ink-soft">
-                {sdkLabel(item.sdk)}
-                {item.base_url ? ` · ${item.base_url}` : ''}
-                {' · '}
-                {requiresSignIn(item.sdk)
-                  ? item.signed_in
-                    ? t('providersBlock.signedIn')
-                    : t('providersBlock.notSignedIn')
-                  : requiresAPIKey(item.sdk)
-                    ? item.api_key_set
-                      ? t('providersBlock.keySet')
-                      : t('providersBlock.missingKey')
-                    : t('providersBlock.noKeyNeeded')}
-              </p>
-              {/* On the saved row rather than in the add form: the flow needs a
-                  provider id to store the token against. */}
-              {requiresSignIn(item.sdk) && <ChatGPTSignIn provider={item} onChange={onChanged} />}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                size="xs"
-                onClick={() => {
-                  setEditingId(item.id)
-                  setShowAdd(true)
-                  setDraft({
-                    sdk: item.sdk,
-                    alias: item.alias,
-                    base_url: item.base_url,
-                    api_key: '',
-                    catalog: item.catalog ?? defaultCatalog(item.sdk),
-                  })
-                }}
-              >
-                {t('common.edit')}
-              </Button>
-              <Button
-                variant="secondary"
-                size="xs"
-                className="text-madder hover:bg-madder/10"
-                onClick={() => void onDeleteProvider(item.id)}
-              >
-                {t('common.delete')}
-              </Button>
-            </div>
-          </li>
-        ))}
+        {providers.map((item) =>
+          showAdd && editingId === item.id ? (
+            <li key={item.id} className="rounded-xs border border-line-strong bg-bright p-3">
+              {form}
+            </li>
+          ) : (
+            <li
+              key={item.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xs border border-line bg-bright px-3 py-2"
+            >
+              <div>
+                <p className="text-sm font-medium text-ink">{item.alias}</p>
+                <p className="text-xs text-ink-soft">
+                  {sdkLabel(item.sdk)}
+                  {item.base_url ? ` · ${item.base_url}` : ''}
+                  {' · '}
+                  {requiresSignIn(item.sdk)
+                    ? item.signed_in
+                      ? t('providersBlock.signedIn')
+                      : t('providersBlock.notSignedIn')
+                    : requiresAPIKey(item.sdk)
+                      ? item.api_key_set
+                        ? t('providersBlock.keySet')
+                        : t('providersBlock.missingKey')
+                      : t('providersBlock.noKeyNeeded')}
+                </p>
+                {/* On the saved row rather than in the add form: the flow needs a
+                    provider id to store the token against. */}
+                {requiresSignIn(item.sdk) && <ChatGPTSignIn provider={item} onChange={onChanged} />}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  onClick={() => {
+                    setEditingId(item.id)
+                    setShowAdd(true)
+                    setDraft({
+                      sdk: item.sdk,
+                      alias: item.alias,
+                      base_url: item.base_url,
+                      api_key: '',
+                      catalog: item.catalog ?? defaultCatalog(item.sdk),
+                    })
+                  }}
+                >
+                  {t('common.edit')}
+                </Button>
+                <Button
+                  variant="danger"
+                  size="xs"
+                  onClick={() => void onDeleteProvider(item)}
+                >
+                  {t('common.delete')}
+                </Button>
+              </div>
+            </li>
+          ),
+        )}
       </ul>
-      {!showAdd ? (
+      {!showAdd || editingId ? (
         <Button
           variant="secondary"
           size="sm"
@@ -207,110 +319,9 @@ export function ProvidersBlock({
           {t('providersBlock.add')}
         </Button>
       ) : (
-        <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSaveProvider}>
-          <div className={labelClassName}>
-            <label htmlFor={sdkId} className={labelTextClassName}>
-              SDK
-            </label>
-            <Combobox
-              id={sdkId}
-              value={draft.sdk}
-              options={SDK_OPTIONS}
-              onChange={(next) => {
-                const sdk = next as ProviderSDK
-                setDraft((current) => ({
-                  ...current,
-                  sdk,
-                  base_url:
-                    current.base_url === SDK_DEFAULT_BASE[current.sdk]
-                      ? SDK_DEFAULT_BASE[sdk]
-                      : current.base_url,
-                  catalog:
-                    current.catalog === defaultCatalog(current.sdk)
-                      ? defaultCatalog(sdk)
-                      : current.catalog,
-                  // The key field is about to disappear; a value typed before
-                  // the switch would otherwise be posted invisibly.
-                  api_key: requiresAPIKey(sdk) ? current.api_key : '',
-                }))
-              }}
-            />
-          </div>
-          <label className={labelClassName}>
-            <span className={labelTextClassName}>{t('providersBlock.alias')}</span>
-            <input
-              className={inputClassName}
-              value={draft.alias}
-              placeholder={sdkAliasDefault(draft.sdk)}
-              onChange={(event) => setDraft((current) => ({ ...current, alias: event.target.value }))}
-            />
-          </label>
-          <div className={labelClassName}>
-            <label htmlFor={catalogId} className={labelTextClassName}>
-              {t('providersBlock.catalog')}
-            </label>
-            <Combobox
-              id={catalogId}
-              value={draft.catalog}
-              options={catalogOptions}
-              onChange={(next) => setDraft((current) => ({ ...current, catalog: next }))}
-            />
-          </div>
-          {draft.sdk !== 'google_vision' && (
-            <label className={`${labelClassName} sm:col-span-2`}>
-              <span className={labelTextClassName}>{t('providersBlock.baseUrl')}</span>
-              <input
-                className={inputClassName}
-                value={draft.base_url}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, base_url: event.target.value }))
-                }
-              />
-            </label>
-          )}
-          {requiresAPIKey(draft.sdk) ? (
-            <label className={`${labelClassName} sm:col-span-2`}>
-              <span className={labelTextClassName}>
-                {editingId ? t('providersBlock.apiKeyKeep') : t('providersBlock.apiKey')}
-              </span>
-              <input
-                type="password"
-                autoComplete="off"
-                className={inputClassName}
-                value={draft.api_key}
-                required={!editingId}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, api_key: event.target.value }))
-                }
-              />
-              <span className={fieldHintClassName}>{docsLink}</span>
-            </label>
-          ) : requiresSignIn(draft.sdk) ? (
-            <p className={`${fieldHintClassName} sm:col-span-2`}>
-              {tNode('providersBlock.signInHint', { link: docsLink })}
-            </p>
-          ) : (
-            <p className={`${fieldHintClassName} sm:col-span-2`}>
-              {keylessProviderHint(draft.sdk)} {docsLink}
-            </p>
-          )}
-          <div className="flex gap-2 sm:col-span-2">
-            <Button type="submit" size="sm">
-              {editingId ? t('providersBlock.update') : t('providersBlock.save')}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setShowAdd(false)
-                setEditingId(null)
-              }}
-            >
-              {t('common.cancel')}
-            </Button>
-          </div>
-        </form>
+        form
       )}
+      <ResultNotice className="mt-3 empty:mt-0" error={error} success={success} />
     </section>
   )
 }

@@ -4,11 +4,11 @@ import { useAppMeta } from '../hooks/useAppMeta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
 import {
   ManagedByHostNotice,
-  ResultDialog,
   SaveSettingsButton,
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
 import {
+  fieldHintClassName,
   inputClassName,
   labelClassName,
   labelTextClassName,
@@ -20,7 +20,7 @@ import { t, tNode } from '../i18n'
 export function SettingsWorkerPage() {
   // unknown/failed meta counts as managed; see AppMeta.managed
   const { managed, metaLoaded } = useAppMeta()
-  const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
+  const { form, loading, error, status, updateField, save, setError } =
     useSettingsForm((settings) => ({
       worker_timeout_sec: String(settings.worker_timeout_sec),
       worker_max_retries: String(settings.worker_max_retries),
@@ -74,18 +74,16 @@ export function SettingsWorkerPage() {
             />
           </label>
         </div>
-        <p className="mt-3 text-xs text-ink-soft">
+        <p className={`${fieldHintClassName} mt-3`}>
           {tNode('settingsWorker.cronHint', {
             env: <code className="font-mono">WORKER_CRON_EXPR</code>,
             file: <code className="font-mono">.env</code>,
           })}
         </p>
         <div className="mt-4">
-          <SaveSettingsButton saving={saving} />
+          <SaveSettingsButton {...status} />
         </div>
       </section>
-
-      <ResultDialog error={error} success={success} onClose={closeResult} />
     </form>
   )
 }

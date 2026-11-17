@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useAppMeta } from '../hooks/useAppMeta'
 import {
@@ -23,10 +23,16 @@ import {
   type IMAPBackfillState,
   type TaxonomyPruneResult,
 } from '../lib/api/maintenance'
-import { ResultDialog } from '../components/settings/SettingsFeedback'
+import { ResultNotice } from '../components/settings/SettingsFeedback'
 import { Combobox } from '../components/Combobox'
 import { REPROCESS_MODE_LABELS, REPROCESS_MODE_OPTIONS, type ReprocessMode } from '../lib/processing'
-import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
+import {
+  Button,
+  fieldHintClassName,
+  labelTextClassName,
+  sectionClassName,
+  sectionTitleClassName,
+} from '../components/ui'
 import { lang, t, tNode } from '../i18n'
 
 const dateInputClassName =
@@ -61,6 +67,8 @@ function pruneSummary(result: TaxonomyPruneResult) {
   })
 }
 
+type Section = 'failed' | 'duplicates' | 'mail' | 'stale' | 'search' | 'embeddings'
+
 // Admin access is enforced by the route's beforeLoad guard.
 export function MaintenancePage() {
   const [scanning, setScanning] = useState(false)
@@ -84,12 +92,17 @@ export function MaintenancePage() {
   const [mailTo, setMailTo] = useState('')
   const [mailStarting, setMailStarting] = useState(false)
   const [mailBackfill, setMailBackfill] = useState<IMAPBackfillState | null>(null)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const closeResult = useCallback(() => {
-    setError('')
-    setSuccess('')
-  }, [])
+  const [results, setResults] = useState<Partial<Record<Section, { error: string; success: string }>>>({})
+  function report(section: Section, error: string, success = '') {
+    setResults((current) => ({ ...current, [section]: { error, success } }))
+  }
+  const notice = (section: Section) => (
+    <ResultNotice
+      className="mt-3 empty:mt-0"
+      error={results[section]?.error ?? ''}
+      success={results[section]?.success ?? ''}
+    />
+  )
 
   // Declared above the effect that polls on it: a sweep runs in the background
   // on the server, so this flag is what turns the poll on and off.
@@ -163,8 +176,7 @@ export function MaintenancePage() {
 
     try {
       setReprocessing(true)
-      setError('')
-      setSuccess('')
+      report('failed', '')
       const result = await reprocessFailedDocuments({
         limit: reprocessBatch,
         mode: reprocessMode,
@@ -172,13 +184,15 @@ export function MaintenancePage() {
       })
       setFailedCount(result.remaining)
       const queued = t('maintenance.queued', { count: result.queued })
-      setSuccess(
+      report(
+        'failed',
+        '',
         result.remaining > 0
           ? `${queued} ${t('maintenance.stillFailed', { count: result.remaining })}`
           : `${queued} ${t('maintenance.noneLeft')}`,
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.reprocessFailed'))
+      report('failed', err instanceof Error ? err.message : t('maintenance.reprocessFailed'))
       // The batch may have queued part of the set before failing.
       setFailedCount(await countFailedDocuments().catch(() => null))
     } finally {
@@ -226,18 +240,19 @@ export function MaintenancePage() {
 
     try {
       setEmbeddingStarting(true)
-      setError('')
-      setSuccess('')
+      report('embeddings', '')
       const next = await startEmbeddingBackfill()
       setEmbedding(next)
       setEmbeddingLoaded(true)
-      setSuccess(
+      report(
+        'embeddings',
+        '',
         next.started
           ? t('maintenance.embeddingStarted', { count: missing })
           : t('maintenance.sweepRunning'),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.embeddingFailed'))
+      report('embeddings', err instanceof Error ? err.message : t('maintenance.embeddingFailed'))
     } finally {
       setEmbeddingStarting(false)
     }
@@ -246,12 +261,13 @@ export function MaintenancePage() {
   async function onScanDuplicates() {
     try {
       setScanning(true)
-      setError('')
-      setSuccess('')
+      report('duplicates', '')
       setScanResult(null)
       const result = await scanDuplicates()
       setScanResult(result)
-      setSuccess(
+      report(
+        'duplicates',
+        '',
         t('maintenance.scanFinished', {
           scanned: result.scanned,
           exact: result.exact_marked,
@@ -259,7 +275,7 @@ export function MaintenancePage() {
         }),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.duplicateScanFailed'))
+      report('duplicates', err instanceof Error ? err.message : t('maintenance.duplicateScanFailed'))
     } finally {
       setScanning(false)
     }
@@ -295,8 +311,12 @@ export function MaintenancePage() {
             skipped: next.skipped,
             failed: next.failed,
           })
-          if (next.error) setError(t('maintenance.mailStopped', { error: next.error, counts }))
-          else setSuccess(t('maintenance.mailFinished', { counts }))
+          setResults((current) => ({
+            ...current,
+            mail: next.error
+              ? { error: t('maintenance.mailStopped', { error: next.error, counts }), success: '' }
+              : { error: '', success: t('maintenance.mailFinished', { counts }) },
+          }))
         })
         .catch(() => {})
     }, embeddingPollMs)
@@ -309,11 +329,10 @@ export function MaintenancePage() {
   async function onScanMailbox() {
     try {
       setMailStarting(true)
-      setError('')
-      setSuccess('')
+      report('mail', '')
       setMailBackfill(await startIMAPBackfill(mailFrom, mailTo))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.mailFailed'))
+      report('mail', err instanceof Error ? err.message : t('maintenance.mailFailed'))
     } finally {
       setMailStarting(false)
     }
@@ -322,36 +341,36 @@ export function MaintenancePage() {
   async function onReindexSearch() {
     try {
       setReindexing(true)
-      setError('')
-      setSuccess('')
+      report('search', '')
       const result = await reindexSearch()
-      setSuccess(t('maintenance.reindexed', { count: result.indexed }))
+      report('search', '', t('maintenance.reindexed', { count: result.indexed }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.reindexFailed'))
+      report('search', err instanceof Error ? err.message : t('maintenance.reindexFailed'))
     } finally {
       setReindexing(false)
     }
   }
 
   async function onPruneStale() {
+    if (!window.confirm(t('maintenance.clearStaleConfirm'))) return
     try {
       setPruning(true)
-      setError('')
-      setSuccess('')
+      report('stale', '')
       // The polled count can be up to activeJobsPollMs stale; re-check so a job
       // started since the last poll still blocks the prune.
       const counts = await getActiveJobCounts().catch(() => null)
       setActiveJobs(counts)
       if (counts && counts.pending + counts.running > 0) {
-        setError(
+        report(
+          'stale',
           t('maintenance.inFlight', { jobs: activeJobsLabel(counts) }),
         )
         return
       }
       const result = await pruneStaleTaxonomy()
-      setSuccess(pruneSummary(result))
+      report('stale', '', pruneSummary(result))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.pruneFailed'))
+      report('stale', err instanceof Error ? err.message : t('maintenance.pruneFailed'))
     } finally {
       setPruning(false)
     }
@@ -366,7 +385,7 @@ export function MaintenancePage() {
       <div className="flex flex-col gap-5">
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.failedTitle')}</h2>
-          <p className="text-xs text-ink-soft">
+          <p className={fieldHintClassName}>
             {t('maintenance.failedHint')}
           </p>
           <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -421,11 +440,12 @@ export function MaintenancePage() {
               jobsInFlight &&
               ` ${t('maintenance.queue', { jobs: activeJobsLabel(activeJobs) })}`}
           </p>
+          {notice('failed')}
         </section>
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.duplicatesTitle')}</h2>
-          <p className="text-xs text-ink-soft">
+          <p className={fieldHintClassName}>
             {t('maintenance.duplicatesHint')}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -441,12 +461,13 @@ export function MaintenancePage() {
               </p>
             )}
           </div>
+          {notice('duplicates')}
         </section>
 
         {ingestImap && (
           <section className={sectionClassName}>
             <h2 className={sectionTitleClassName}>{t('maintenance.mailboxTitle')}</h2>
-            <p className="text-xs text-ink-soft">
+            <p className={fieldHintClassName}>
               {t('maintenance.mailboxHint')}
             </p>
             <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -483,12 +504,13 @@ export function MaintenancePage() {
                 {t('maintenance.mailRunning', { from: mailBackfill.from, to: mailBackfill.to })}
               </p>
             )}
+            {notice('mail')}
           </section>
         )}
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.staleTitle')}</h2>
-          <p className="text-xs text-ink-soft">
+          <p className={fieldHintClassName}>
             {t('maintenance.staleHint')}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -505,11 +527,12 @@ export function MaintenancePage() {
               </p>
             )}
           </div>
+          {notice('stale')}
         </section>
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.searchTitle')}</h2>
-          <p className="text-xs text-ink-soft">
+          <p className={fieldHintClassName}>
             {t('maintenance.searchHint')}
           </p>
           <div className="mt-4">
@@ -517,11 +540,12 @@ export function MaintenancePage() {
               {reindexing ? t('maintenance.reindexing') : t('maintenance.rebuild')}
             </Button>
           </div>
+          {notice('search')}
         </section>
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.embeddingsTitle')}</h2>
-          <p className="text-xs text-ink-soft">
+          <p className={fieldHintClassName}>
             {t('maintenance.embeddingsHint')}
           </p>
           {!embeddingLoaded ? (
@@ -578,11 +602,11 @@ export function MaintenancePage() {
               </p>
             </>
           )}
+          {notice('embeddings')}
         </section>
 
       </div>
 
-      <ResultDialog error={error} success={success} onClose={closeResult} />
     </>
   )
 }

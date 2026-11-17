@@ -19,6 +19,7 @@ import {
   sectionClassName,
   sectionTitleClassName,
 } from '../components/ui'
+import { ResultNotice } from '../components/settings/SettingsFeedback'
 import { t } from '../i18n'
 
 type Draft = { email: string; name: string; password: string }
@@ -56,17 +57,20 @@ function UserFields({
           className={inputClassName}
         />
       </label>
-      <label className={labelClassName}>
-        <span className={labelTextClassName}>{passwordLabel}</span>
-        <input
-          type="password"
-          autoComplete="new-password"
-          minLength={8}
-          value={draft.password}
-          onChange={(event) => onChange({ ...draft, password: event.target.value })}
-          className={inputClassName}
-        />
-      </label>
+      <div className={labelClassName}>
+        <label className={labelClassName}>
+          <span className={labelTextClassName}>{passwordLabel}</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            minLength={8}
+            value={draft.password}
+            onChange={(event) => onChange({ ...draft, password: event.target.value })}
+            className={inputClassName}
+          />
+        </label>
+        <p className={fieldHintClassName}>{t('managementUsers.passwordHint')}</p>
+      </div>
     </div>
   )
 }
@@ -205,9 +209,7 @@ export function ManagementUsersPage() {
       <section className={sectionClassName}>
         <h2 className={`${sectionTitleClassName} mb-3`}>{t('managementUsers.accounts')}</h2>
 
-        {loadError && <p className="mb-3 text-sm text-madder">{loadError}</p>}
-        {error && <p className="mb-3 text-sm text-madder">{error}</p>}
-        {notice && <p className="mb-3 text-sm text-ink-soft">{notice}</p>}
+        <ResultNotice className="mb-3 empty:mb-0" error={loadError || error} success={notice} />
 
         {loading ? (
           <p className="text-sm text-ink-soft">{t('managementUsers.loading')}</p>
