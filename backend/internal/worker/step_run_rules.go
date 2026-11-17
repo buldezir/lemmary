@@ -323,14 +323,10 @@ func (r *rulesRun) applyAIExtract(ctx context.Context, rule rules.Rule, action r
 	}
 }
 
+// save writes only what the rules changed onto a fresh copy of the document:
+// the job's copy is as old as the job, and the owner may have edited it while
+// a model or a webhook was answering.
 func (r *rulesRun) save() error {
-	document := r.state.Document
-	if r.changed["tags"] {
-		document.Set("tags", r.doc.Tags)
-	}
-	if r.review {
-		document.Set("processing_status", models.DocStatusNeedsReview)
-	}
 	var writes []models.FieldWrite
 	for id := range r.changed {
 		field, ok := r.cat.Fields[id]
@@ -343,11 +339,38 @@ func (r *rulesRun) save() error {
 		return nil
 	}
 	return r.state.App.RunInTransaction(func(txApp core.App) error {
+		document, err := txApp.FindRecordById("documents", r.state.Document.Id)
+		if err != nil {
+			return err
+		}
+		if r.changed["tags"] {
+			tags := retag(document.GetStringSlice("tags"), r.state.Document.GetStringSlice("tags"), r.doc.Tags)
+			document.Set("tags", tags)
+			r.state.Document.Set("tags", tags)
+		}
+		if r.review {
+			document.Set("processing_status", models.DocStatusNeedsReview)
+			r.state.Document.Set("processing_status", models.DocStatusNeedsReview)
+		}
 		if err := models.SaveFieldValues(txApp, document, writes); err != nil {
 			return err
 		}
-		return txApp.Save(document)
+		return txApp.Save(document.IgnoreUnchangedFields(true))
 	})
+}
+
+// retag applies what the rules did to the tags, from before to after, onto
+// current, so a tag the owner added or removed meanwhile stays that way.
+func retag(current, before, after []string) []string {
+	out := slices.DeleteFunc(slices.Clone(current), func(id string) bool {
+		return slices.Contains(before, id) && !slices.Contains(after, id)
+	})
+	for _, id := range after {
+		if !slices.Contains(before, id) && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // storedValue is what SaveFieldValue takes for a value: the id for an option
@@ -384,6 +407,18 @@ func (r *rulesRun) deliver(ctx context.Context, client *http.Client, trigger str
 	r.state.Logger.Info("webhook delivered", "rule", strutil.TruncateRunes(hook.rule.Name, 40))
 }
 
+// finalStatus is the status the job will leave the document in, not the
+// processing it is in while the rules run after an edit.
+func (r *rulesRun) finalStatus() string {
+	if r.review {
+		return models.DocStatusNeedsReview
+	}
+	if back := r.state.Job.GetString(models.JobReturnStatus); back != "" {
+		return back
+	}
+	return r.state.Document.GetString("processing_status")
+}
+
 func (r *rulesRun) webhookDocument() rules.WebhookDocument {
 	document := r.state.Document
 	out := rules.WebhookDocument{
@@ -394,7 +429,7 @@ func (r *rulesRun) webhookDocument() rules.WebhookDocument {
 		Correspondent:    r.doc.Values.OptionName(models.CorrespondentFieldID),
 		Tags:             []string{},
 		Fields:           map[string]any{},
-		ProcessingStatus: document.GetString("processing_status"),
+		ProcessingStatus: r.finalStatus(),
 	}
 	if date := document.GetDateTime("document_date"); !date.IsZero() {
 		out.DocumentDate = date.Time().Format(time.DateOnly)

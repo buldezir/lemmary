@@ -49,7 +49,8 @@ func privateHostsAllowed() bool {
 }
 
 // Client refuses blocked addresses when it dials, so a hostname that resolves
-// to one, or a redirect to one, fails the same as a literal.
+// to one, or a redirect to one, fails the same as a literal. It ignores
+// HTTP_PROXY and HTTPS_PROXY.
 func Client(timeout time.Duration) *http.Client {
 	dialer := &net.Dialer{
 		Timeout:   30 * time.Second,
@@ -58,6 +59,8 @@ func Client(timeout time.Duration) *http.Client {
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DialContext = dialer.DialContext
+	// Through a proxy the dial check would see the proxy, never the target.
+	transport.Proxy = nil
 	return &http.Client{
 		Timeout:   timeout,
 		Transport: transport,

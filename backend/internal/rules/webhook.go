@@ -47,7 +47,7 @@ type WebhookDocument struct {
 	ProcessingStatus string         `json:"processing_status"`
 }
 
-// Deliver POSTs body to rawURL and wants a 2xx back. The error names the host
+// Deliver POSTs body to rawURL and wants a 2xx back; a redirect fails. The error names the host
 // only: a URL often carries a token in its path or query.
 func Deliver(ctx context.Context, client *http.Client, rawURL, secret string, body []byte) error {
 	host := rawURL
@@ -66,7 +66,10 @@ func Deliver(ctx context.Context, client *http.Client, rawURL, secret string, bo
 	if secret != "" {
 		req.Header.Set(SignatureHeader, Sign(secret, body))
 	}
-	resp, err := client.Do(req)
+	// A redirect would repeat the POST, signature included, at another host.
+	noRedirects := *client
+	noRedirects.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := noRedirects.Do(req)
 	if err != nil {
 		// url.Error quotes the whole URL.
 		if urlErr, ok := errors.AsType[*url.Error](err); ok {

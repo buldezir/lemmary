@@ -109,7 +109,9 @@ A webhook is a `POST` with this JSON body:
 
 With a signing secret, the `X-Lemmary-Signature` header carries `sha256=` followed by the hex
 HMAC-SHA256 of the body under the secret. Compare it in constant time before trusting the
-call. Any 2xx answer is success; a webhook has 10 seconds and is not retried.
+call. Any 2xx answer is success and a redirect is a failure; a webhook has 10 seconds, and a
+failed one is not retried. If the server restarts while the job runs, the job runs again, so a
+webhook can arrive twice.
 
 Webhooks go through the same address check as remote imports: link-local and cloud metadata
 addresses are always refused, and private and loopback addresses are refused when the server

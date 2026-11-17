@@ -427,10 +427,86 @@ func TestEnqueueEditedRulesReturnsTheDocumentAsItWas(t *testing.T) {
 	}
 
 	doc.Set("processing_status", models.DocStatusProcessing)
+	if err := app.Save(doc); err != nil {
+		t.Fatal(err)
+	}
+	edited, err := app.FindRecordById("documents", doc.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited.Set("title", "Renamed while the job ran")
+	if err := app.Save(edited); err != nil {
+		t.Fatal(err)
+	}
 	if err := finalizeDocumentWithoutApply(app, job, doc, models.EditedRulesSteps); err != nil {
 		t.Fatal(err)
 	}
-	if got := doc.GetString("processing_status"); got != models.DocStatusNeedsReview {
+	stored, err := app.FindRecordById("documents", doc.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("processing_status"); got != models.DocStatusNeedsReview {
 		t.Fatalf("status after the job = %q", got)
+	}
+	if got := stored.GetString("title"); got != "Renamed while the job ran" {
+		t.Fatalf("the job put back its own title: %q", got)
+	}
+}
+
+// The job's copy is as old as the job: what the owner changed meanwhile
+// survives the rules' save, and the webhook reports the status the job will
+// hand the document back in, not processing.
+func TestRunRulesKeepsEditsMadeWhileItRan(t *testing.T) {
+	app := bootTagTestApp(t)
+	owner := createTagUser(t, app, "owner@example.com")
+	toPay := createTag(t, app, "to pay", owner)
+	urgent := createTag(t, app, "urgent", owner)
+	doc := rulesTestDocument(t, app, owner, "Invoice")
+	doc.Set("processing_status", models.DocStatusProcessing)
+	if err := app.Save(doc); err != nil {
+		t.Fatal(err)
+	}
+
+	var status string
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload rules.WebhookPayload
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		status = payload.Document.ProcessingStatus
+	}))
+	t.Cleanup(hook.Close)
+	saveTestRule(t, app, owner, "Edits", true, []string{rules.TriggerEdited}, nil, []rules.Action{
+		{Type: rules.ActionAddTag, Value: toPay},
+		{Type: rules.ActionWebhook, URL: hook.URL},
+	})
+
+	job := rulesTestJob(t, app, doc, models.EditedRulesSteps)
+	job.Set(models.JobReturnStatus, models.DocStatusCompleted)
+	state := &StepState{App: app, Job: job, Document: doc, Logger: slog.Default()}
+
+	edited, err := app.FindRecordById("documents", doc.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited.Set("title", "Renamed while the job ran")
+	edited.Set("tags", []string{urgent})
+	if err := app.Save(edited); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (&RunRulesStep{HTTPClient: hook.Client()}).Run(context.Background(), state); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := app.FindRecordById("documents", doc.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("title"); got != "Renamed while the job ran" {
+		t.Fatalf("title = %q", got)
+	}
+	if got := stored.GetStringSlice("tags"); !slices.Equal(got, []string{urgent, toPay}) {
+		t.Fatalf("tags = %v", got)
+	}
+	if status != models.DocStatusCompleted {
+		t.Fatalf("webhook processing_status = %q", status)
 	}
 }

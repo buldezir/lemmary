@@ -247,3 +247,25 @@ func TestDeliverSignsAndWantsA2xx(t *testing.T) {
 		t.Fatalf("the error leaks the URL's query: %v", err)
 	}
 }
+
+// A redirect would repeat the signed POST at another host.
+func TestDeliverDoesNotFollowRedirects(t *testing.T) {
+	t.Parallel()
+	followed := false
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		followed = true
+	}))
+	t.Cleanup(elsewhere.Close)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL, http.StatusPermanentRedirect)
+	}))
+	t.Cleanup(srv.Close)
+
+	err := Deliver(context.Background(), srv.Client(), srv.URL, "secret", []byte(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "answered 308") {
+		t.Fatalf("a redirect must fail the delivery, got %v", err)
+	}
+	if followed {
+		t.Fatal("the redirect was followed")
+	}
+}

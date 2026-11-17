@@ -380,13 +380,21 @@ func finalizeDocumentWithoutApply(app core.App, job, document *core.Record, step
 		}
 		return nil
 	}
-	status := models.DocStatusCompleted
-	if back := job.GetString(models.JobReturnStatus); back != "" {
-		if document.GetString("processing_status") != models.DocStatusProcessing {
-			return nil
-		}
-		status = back
+	back := job.GetString(models.JobReturnStatus)
+	if back == "" {
+		document.Set("processing_status", models.DocStatusCompleted)
+		return app.Save(document)
 	}
-	document.Set("processing_status", status)
-	return app.Save(document)
+	// Fresh rather than the job's copy: the owner may have edited the document
+	// while the rules ran, and that edit queued no job of its own.
+	fresh, err := app.FindRecordById("documents", document.Id)
+	if err != nil {
+		return err
+	}
+	if fresh.GetString("processing_status") != models.DocStatusProcessing {
+		return nil
+	}
+	fresh.Set("processing_status", back)
+	document.Set("processing_status", back)
+	return app.Save(fresh.IgnoreUnchangedFields(true))
 }

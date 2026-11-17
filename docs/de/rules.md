@@ -116,8 +116,9 @@ Ein Webhook ist ein `POST` mit diesem JSON-Body:
 
 Mit einem Signaturgeheimnis trägt der Header `X-Lemmary-Signature` `sha256=` gefolgt vom
 hexadezimalen HMAC-SHA256 des Bodys unter dem Geheimnis. Vergleichen Sie ihn in konstanter Zeit,
-bevor Sie dem Aufruf vertrauen. Jede 2xx-Antwort gilt als Erfolg; ein Webhook hat 10 Sekunden und
-wird nicht wiederholt.
+bevor Sie dem Aufruf vertrauen. Jede 2xx-Antwort gilt als Erfolg, eine Weiterleitung als Fehler;
+ein Webhook hat 10 Sekunden, und ein fehlgeschlagener wird nicht wiederholt. Startet der Server neu,
+während der Auftrag läuft, läuft der Auftrag erneut, sodass ein Webhook doppelt ankommen kann.
 
 Webhooks durchlaufen dieselbe Adressprüfung wie Remote-Importe: Link-Local- und
 Cloud-Metadaten-Adressen werden immer abgelehnt, private und Loopback-Adressen dann, wenn der
