@@ -165,9 +165,21 @@ var catalog = map[string]map[string]string{
 		"de": "Chats sind nicht verfügbar.",
 		"ru": "Чаты недоступны.",
 	},
+	"Check the reply email address.": {
+		"de": "Prüfen Sie die E-Mail-Adresse für die Antwort.",
+		"ru": "Проверьте адрес электронной почты для ответа.",
+	},
 	"Choose the password that will unlock this archive. You will be given a recovery code — it is shown once.": {
 		"de": "Wählen Sie das Passwort, mit dem dieses Archiv entsperrt wird. Sie erhalten einen Wiederherstellungscode – er wird nur einmal angezeigt.",
 		"ru": "Выберите пароль, которым будет разблокироваться этот архив. Вы получите код восстановления — он показывается один раз.",
+	},
+	"Choose how many minutes of logs to attach.": {
+		"de": "Wählen Sie, wie viele Minuten Logs angehängt werden.",
+		"ru": "Выберите, за сколько минут приложить логи.",
+	},
+	"Choose what kind of feedback this is.": {
+		"de": "Wählen Sie, welche Art von Feedback das ist.",
+		"ru": "Выберите, к какому типу относится отзыв.",
 	},
 	"Continue": {
 		"de": "Weiter",
@@ -392,6 +404,18 @@ var catalog = map[string]map[string]string{
 	"Failed to revoke the token.": {
 		"de": "Das Token konnte nicht widerrufen werden.",
 		"ru": "Не удалось отозвать токен.",
+	},
+	"Feedback could not be sent. Try again later.": {
+		"de": "Das Feedback konnte nicht gesendet werden. Versuchen Sie es später noch einmal.",
+		"ru": "Не удалось отправить отзыв. Повторите попытку позже.",
+	},
+	"Keep the message under %d characters.": {
+		"de": "Die Nachricht darf höchstens %d Zeichen lang sein.",
+		"ru": "Сообщение должно быть не длиннее %d символов.",
+	},
+	"Too much feedback from this install. Try again in an hour.": {
+		"de": "Zu viel Feedback von dieser Installation. Versuchen Sie es in einer Stunde noch einmal.",
+		"ru": "Слишком много отзывов с этой установки. Повторите попытку через час.",
 	},
 	"unknown custom field %q": {
 		"de": "Unbekanntes eigenes Feld %q",

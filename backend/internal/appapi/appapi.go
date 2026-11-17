@@ -35,6 +35,8 @@ func Register(
 	ingestDirEnabled bool,
 	// Nil when INGEST_IMAP_ENABLED is off.
 	imapScanner *imapimport.Scanner,
+	// Empty when FEEDBACK_ENABLED is off.
+	feedbackURL string,
 ) {
 	RegisterAppName(app)
 	app.OnRecordUpdate("documents").BindFunc(clearStaleTranslation)
@@ -52,7 +54,8 @@ func Register(
 			e.Router.BindFunc(refuseWritesWhenReadOnly(rt))
 
 			g := e.Router.Group("/api/app")
-			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled, imapScanner != nil))
+			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled, imapScanner != nil, feedbackURL != ""))
+			registerFeedbackRoute(g, app, rt, feedbackURL)
 			g.GET("/me", handleGetMe(app))
 			g.GET("/update", bindAdmin(func(e *core.RequestEvent) error {
 				return writeJSON(e, http.StatusOK, updatecheck.Current())
