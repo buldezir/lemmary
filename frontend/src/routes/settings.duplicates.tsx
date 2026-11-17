@@ -31,16 +31,18 @@ export function SettingsDuplicatesPage() {
     event.preventDefault()
     if (!form) return
 
+    if (!form.near_duplicate_detection_enabled) {
+      await save({ near_duplicate_detection_enabled: false })
+      return
+    }
+
     const threshold = Number(form.near_duplicate_threshold)
     if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 1) {
       setError(t('settingsDuplicates.thresholdInvalid'))
       return
     }
 
-    await save({
-      near_duplicate_detection_enabled: form.near_duplicate_detection_enabled,
-      near_duplicate_threshold: threshold,
-    })
+    await save({ near_duplicate_detection_enabled: true, near_duplicate_threshold: threshold })
   }
 
   // See the AI tab: in-flight meta is not a licence to name an owner.

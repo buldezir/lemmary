@@ -92,20 +92,15 @@ export function MaintenancePage() {
   const [mailTo, setMailTo] = useState('')
   const [mailStarting, setMailStarting] = useState(false)
   const [mailBackfill, setMailBackfill] = useState<IMAPBackfillState | null>(null)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  // A result is shown in the section whose action produced it.
-  const [resultSection, setResultSection] = useState<Section>('failed')
-  function begin(section: Section) {
-    setResultSection(section)
-    setError('')
-    setSuccess('')
+  const [results, setResults] = useState<Partial<Record<Section, { error: string; success: string }>>>({})
+  function report(section: Section, error: string, success = '') {
+    setResults((current) => ({ ...current, [section]: { error, success } }))
   }
   const notice = (section: Section) => (
     <ResultNotice
       className="mt-3 empty:mt-0"
-      error={resultSection === section ? error : ''}
-      success={resultSection === section ? success : ''}
+      error={results[section]?.error ?? ''}
+      success={results[section]?.success ?? ''}
     />
   )
 
@@ -181,7 +176,7 @@ export function MaintenancePage() {
 
     try {
       setReprocessing(true)
-      begin('failed')
+      report('failed', '')
       const result = await reprocessFailedDocuments({
         limit: reprocessBatch,
         mode: reprocessMode,
@@ -189,13 +184,15 @@ export function MaintenancePage() {
       })
       setFailedCount(result.remaining)
       const queued = t('maintenance.queued', { count: result.queued })
-      setSuccess(
+      report(
+        'failed',
+        '',
         result.remaining > 0
           ? `${queued} ${t('maintenance.stillFailed', { count: result.remaining })}`
           : `${queued} ${t('maintenance.noneLeft')}`,
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.reprocessFailed'))
+      report('failed', err instanceof Error ? err.message : t('maintenance.reprocessFailed'))
       // The batch may have queued part of the set before failing.
       setFailedCount(await countFailedDocuments().catch(() => null))
     } finally {
@@ -243,17 +240,19 @@ export function MaintenancePage() {
 
     try {
       setEmbeddingStarting(true)
-      begin('embeddings')
+      report('embeddings', '')
       const next = await startEmbeddingBackfill()
       setEmbedding(next)
       setEmbeddingLoaded(true)
-      setSuccess(
+      report(
+        'embeddings',
+        '',
         next.started
           ? t('maintenance.embeddingStarted', { count: missing })
           : t('maintenance.sweepRunning'),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.embeddingFailed'))
+      report('embeddings', err instanceof Error ? err.message : t('maintenance.embeddingFailed'))
     } finally {
       setEmbeddingStarting(false)
     }
@@ -262,11 +261,13 @@ export function MaintenancePage() {
   async function onScanDuplicates() {
     try {
       setScanning(true)
-      begin('duplicates')
+      report('duplicates', '')
       setScanResult(null)
       const result = await scanDuplicates()
       setScanResult(result)
-      setSuccess(
+      report(
+        'duplicates',
+        '',
         t('maintenance.scanFinished', {
           scanned: result.scanned,
           exact: result.exact_marked,
@@ -274,7 +275,7 @@ export function MaintenancePage() {
         }),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.duplicateScanFailed'))
+      report('duplicates', err instanceof Error ? err.message : t('maintenance.duplicateScanFailed'))
     } finally {
       setScanning(false)
     }
@@ -310,9 +311,12 @@ export function MaintenancePage() {
             skipped: next.skipped,
             failed: next.failed,
           })
-          setResultSection('mail')
-          setError(next.error ? t('maintenance.mailStopped', { error: next.error, counts }) : '')
-          setSuccess(next.error ? '' : t('maintenance.mailFinished', { counts }))
+          setResults((current) => ({
+            ...current,
+            mail: next.error
+              ? { error: t('maintenance.mailStopped', { error: next.error, counts }), success: '' }
+              : { error: '', success: t('maintenance.mailFinished', { counts }) },
+          }))
         })
         .catch(() => {})
     }, embeddingPollMs)
@@ -325,10 +329,10 @@ export function MaintenancePage() {
   async function onScanMailbox() {
     try {
       setMailStarting(true)
-      begin('mail')
+      report('mail', '')
       setMailBackfill(await startIMAPBackfill(mailFrom, mailTo))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.mailFailed'))
+      report('mail', err instanceof Error ? err.message : t('maintenance.mailFailed'))
     } finally {
       setMailStarting(false)
     }
@@ -337,11 +341,11 @@ export function MaintenancePage() {
   async function onReindexSearch() {
     try {
       setReindexing(true)
-      begin('search')
+      report('search', '')
       const result = await reindexSearch()
-      setSuccess(t('maintenance.reindexed', { count: result.indexed }))
+      report('search', '', t('maintenance.reindexed', { count: result.indexed }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.reindexFailed'))
+      report('search', err instanceof Error ? err.message : t('maintenance.reindexFailed'))
     } finally {
       setReindexing(false)
     }
@@ -351,21 +355,22 @@ export function MaintenancePage() {
     if (!window.confirm(t('maintenance.clearStaleConfirm'))) return
     try {
       setPruning(true)
-      begin('stale')
+      report('stale', '')
       // The polled count can be up to activeJobsPollMs stale; re-check so a job
       // started since the last poll still blocks the prune.
       const counts = await getActiveJobCounts().catch(() => null)
       setActiveJobs(counts)
       if (counts && counts.pending + counts.running > 0) {
-        setError(
+        report(
+          'stale',
           t('maintenance.inFlight', { jobs: activeJobsLabel(counts) }),
         )
         return
       }
       const result = await pruneStaleTaxonomy()
-      setSuccess(pruneSummary(result))
+      report('stale', '', pruneSummary(result))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('maintenance.pruneFailed'))
+      report('stale', err instanceof Error ? err.message : t('maintenance.pruneFailed'))
     } finally {
       setPruning(false)
     }

@@ -40,8 +40,12 @@ export function useSettingsForm<T extends object>(pick: (settings: AppSettings) 
 
   const dirty = form !== null && JSON.stringify(form) !== JSON.stringify(saved)
   // A tab is a route, so leaving it unmounts the form and whatever was typed.
+  // A pop within the same path (the skip link's #main) must not be blocked:
+  // the router undoes a blocked pop with history.go(-delta), and both entries
+  // share an index, so that is go(0) -- a reload.
   useBlocker({
-    shouldBlockFn: () => !window.confirm(t('useSettingsForm.leaveConfirm')),
+    shouldBlockFn: ({ current, next }) =>
+      current.pathname !== next.pathname && !window.confirm(t('useSettingsForm.leaveConfirm')),
     enableBeforeUnload: dirty,
     disabled: !dirty,
   })
