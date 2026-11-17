@@ -651,7 +651,7 @@ export const de: Catalog = {
   'feedback.logs': 'Server-Logs',
   'feedback.logs.none': 'Keine',
   'feedback.logs.minutes': { one: 'Letzte Minute', other: 'Letzte {count} Minuten' },
-  'feedback.logsHint': 'Auf 512 KB gekürzt, die neuesten bleiben. Sie können Dateinamen, E-Mail-Adressen und Anfragepfade enthalten.',
+  'feedback.logsHint': 'Auf 512 KB gekürzt, die neuesten bleiben. Sie können Dateinamen, E-Mail-Adressen und Anfragepfade enthalten; Datei-Tokens werden entfernt.',
   'feedback.send': 'Senden',
   'feedback.sending': 'Wird gesendet…',
   'feedback.sendFailed': 'Feedback konnte nicht gesendet werden',

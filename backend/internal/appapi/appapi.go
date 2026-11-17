@@ -52,7 +52,8 @@ func Register(
 			g := e.Router.Group("/api/app")
 			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled, imapScanner != nil, feedbackURL != ""))
 			if feedbackURL != "" {
-				g.POST("/feedback", bindAuth(handlePostFeedback(app, rt, feedbackURL)))
+				g.POST("/feedback", bindAuth(handlePostFeedback(app, rt, feedbackURL))).
+					Bind(apis.BodyLimit(feedbackMaxBody))
 			}
 			g.GET("/me", handleGetMe(app))
 			g.GET("/update", bindAdmin(func(e *core.RequestEvent) error {

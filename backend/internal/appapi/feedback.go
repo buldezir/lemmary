@@ -27,6 +27,9 @@ import (
 
 const (
 	feedbackMaxMessage = 5000
+	feedbackMaxEmail   = 254
+	// A 5000-character message is at most 20 KB of UTF-8, before JSON escaping.
+	feedbackMaxBody = 64 << 10
 	// The panel stores up to 512 KB of logs; the margin leaves room for the
 	// line that would have crossed it.
 	feedbackMaxLogs = 500 << 10
@@ -40,6 +43,9 @@ var (
 	feedbackKinds      = []string{"bug", "idea", "other"}
 	feedbackLogMinutes = []int{0, 1, 2, 3, 5}
 	feedbackInstallID  = regexp.MustCompile(`^[A-Za-z0-9-]{8,64}$`)
+	// PocketBase logs each request URI, and a file URL carries a token that
+	// downloads as its user for 15 minutes. json.Marshal writes & as &.
+	feedbackFileToken = regexp.MustCompile(`((?:[?&]|\\u0026)token=)[^&\s"\\]+`)
 )
 
 type feedbackRequest struct {
@@ -68,6 +74,9 @@ func handlePostFeedback(app core.App, rt *config.Runtime, target string) func(*c
 		}
 		if len([]rune(req.Message)) > feedbackMaxMessage {
 			return writeBadRequest(e, i18n.Errorf("Keep the message under %d characters.", feedbackMaxMessage))
+		}
+		if len(req.Email) > feedbackMaxEmail {
+			return writeError(e, http.StatusBadRequest, "Check the reply email address.")
 		}
 		if !slices.Contains(feedbackLogMinutes, req.LogMinutes) {
 			return writeError(e, http.StatusBadRequest, "Choose how many minutes of logs to attach.")
@@ -183,7 +192,8 @@ func feedbackLogTail(app core.App, window time.Duration) string {
 	for _, l := range logs {
 		data, _ := json.Marshal(l.Data)
 		// One huge entry must not crowd out every other line.
-		line := strutil.Truncate(fmt.Sprintf("%s %s %s %s", l.Created.String(), slog.Level(l.Level), l.Message, data), 8<<10)
+		line := fmt.Sprintf("%s %s %s %s", l.Created.String(), slog.Level(l.Level), l.Message, data)
+		line = strutil.Truncate(feedbackFileToken.ReplaceAllString(line, "${1}REDACTED"), 8<<10)
 		if size += len(line) + 1; size > feedbackMaxLogs {
 			break
 		}

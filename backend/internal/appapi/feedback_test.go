@@ -96,11 +96,12 @@ func TestPostFeedbackRefusesBeforeSending(t *testing.T) {
 	rt := config.NewRuntime(config.AIEnv{})
 
 	for body, want := range map[string]int{
-		`{"kind":"rant","message":"x"}`:                                 http.StatusBadRequest,
-		`{"kind":"idea","message":"   "}`:                               http.StatusBadRequest,
-		`{"kind":"idea","message":"` + strings.Repeat("x", 5001) + `"}`: http.StatusBadRequest,
-		`{"kind":"bug","message":"x","log_minutes":4}`:                  http.StatusBadRequest,
-		`{"kind":"bug","message":"x","log_minutes":1}`:                  http.StatusForbidden,
+		`{"kind":"rant","message":"x"}`:                                                http.StatusBadRequest,
+		`{"kind":"idea","message":"   "}`:                                              http.StatusBadRequest,
+		`{"kind":"idea","message":"` + strings.Repeat("x", 5001) + `"}`:                http.StatusBadRequest,
+		`{"kind":"bug","message":"x","log_minutes":4}`:                                 http.StatusBadRequest,
+		`{"kind":"bug","message":"x","email":"` + strings.Repeat("a", 250) + `@b.cd"}`: http.StatusBadRequest,
+		`{"kind":"bug","message":"x","log_minutes":1}`:                                 http.StatusForbidden,
 	} {
 		if rec := postFeedback(t, app, rt, upstream.URL, body); rec.Code != want {
 			t.Errorf("%.40s: status = %d, want %d", body, rec.Code, want)
@@ -110,7 +111,12 @@ func TestPostFeedbackRefusesBeforeSending(t *testing.T) {
 
 func saveLog(t *testing.T, app core.App, msg string, ago time.Duration) {
 	t.Helper()
-	l := &core.Log{Message: msg, Data: map[string]any{}, Created: types.NowDateTime().Add(-ago)}
+	saveLogData(t, app, msg, map[string]any{}, ago)
+}
+
+func saveLogData(t *testing.T, app core.App, msg string, data map[string]any, ago time.Duration) {
+	t.Helper()
+	l := &core.Log{Message: msg, Data: data, Created: types.NowDateTime().Add(-ago)}
 	l.Id = core.GenerateDefaultRandomId()
 	if err := app.AuxSave(l); err != nil {
 		t.Fatal(err)
@@ -129,6 +135,22 @@ func TestFeedbackLogTailKeepsTheWindowOldestFirst(t *testing.T) {
 	}
 	if i, j := strings.Index(tail, "first"), strings.Index(tail, "second"); i < 0 || j < i {
 		t.Fatalf("tail = %q", tail)
+	}
+}
+
+func TestFeedbackLogTailRedactsFileTokens(t *testing.T) {
+	app := testpb.Open(t)
+	saveLogData(t, app, "GET /api/files/c/r/a.pdf?thumb=1&token=secret1", map[string]any{
+		"url":     "/api/files/c/r/a.pdf?thumb=1&token=secret2",
+		"referer": "https://x/api/files/c/r/b.pdf?token=secret3",
+	}, time.Second)
+
+	tail := feedbackLogTail(app, time.Minute)
+	if strings.Contains(tail, "secret") || strings.Count(tail, "token=REDACTED") != 3 {
+		t.Fatalf("tail = %q", tail)
+	}
+	if !strings.Contains(tail, "thumb=1") {
+		t.Fatalf("other query values should stay: %q", tail)
 	}
 }
 

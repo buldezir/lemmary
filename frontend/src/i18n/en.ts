@@ -620,7 +620,7 @@ export const en = {
   'feedback.logs': 'Server logs',
   'feedback.logs.none': 'None',
   'feedback.logs.minutes': { one: 'Last minute', other: 'Last {count} minutes' },
-  'feedback.logsHint': 'Cut to fit 512 KB, newest kept. They can contain file names, email addresses and request paths.',
+  'feedback.logsHint': 'Cut to fit 512 KB, newest kept. They can contain file names, email addresses and request paths; file tokens are removed.',
   'feedback.send': 'Send',
   'feedback.sending': 'Sending…',
   'feedback.sendFailed': 'Feedback could not be sent',
