@@ -3,7 +3,6 @@ import { type SubmitEvent } from 'react'
 import { DEFAULT_ACCENT } from '../lib/api/meta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
 import {
-  ResultDialog,
   SaveSettingsButton,
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
@@ -19,7 +18,7 @@ import {
 import { t } from '../i18n'
 
 export function SettingsAppearancePage() {
-  const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
+  const { form, loading, error, status, updateField, save, setError } =
     useSettingsForm((settings) => ({
       app_name: settings.app_name,
       // The color input has no empty state, so it shows the accent actually in
@@ -92,11 +91,9 @@ export function SettingsAppearancePage() {
           </div>
         </div>
         <div className="mt-4">
-          <SaveSettingsButton saving={saving} />
+          <SaveSettingsButton {...status} />
         </div>
       </section>
-
-      <ResultDialog error={error} success={success} onClose={closeResult} />
     </form>
   )
 }

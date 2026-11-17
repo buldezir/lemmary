@@ -1,5 +1,6 @@
 import { t } from '../i18n'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useBlocker } from '@tanstack/react-router'
 
 import {
   getAppSettings,
@@ -17,6 +18,8 @@ import { useAsync } from './useAsync'
 export function useSettingsForm<T extends object>(pick: (settings: AppSettings) => T) {
   const { data, loading, error: loadError } = useAsync(getAppSettings, [])
   const [form, setForm] = useState<T | null>(null)
+  // The form as last loaded or saved: what `dirty` compares against.
+  const [saved, setSaved] = useState<T | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -29,8 +32,19 @@ export function useSettingsForm<T extends object>(pick: (settings: AppSettings) 
   })
 
   useEffect(() => {
-    if (data) setForm(pickRef.current(data))
+    if (!data) return
+    const picked = pickRef.current(data)
+    setForm(picked)
+    setSaved(picked)
   }, [data])
+
+  const dirty = form !== null && JSON.stringify(form) !== JSON.stringify(saved)
+  // A tab is a route, so leaving it unmounts the form and whatever was typed.
+  useBlocker({
+    shouldBlockFn: () => !window.confirm(t('useSettingsForm.leaveConfirm')),
+    enableBeforeUnload: dirty,
+    disabled: !dirty,
+  })
 
   // Takes a function as well as an object because the provider picker fires
   // onProviderChange and onModelChange back to back: a patch built from the
@@ -40,6 +54,7 @@ export function useSettingsForm<T extends object>(pick: (settings: AppSettings) 
       if (!current) return current
       return { ...current, ...(typeof patch === 'function' ? patch(current) : patch) }
     })
+    setError('')
     setSuccess('')
   }, [])
 
@@ -50,24 +65,25 @@ export function useSettingsForm<T extends object>(pick: (settings: AppSettings) 
     [updateFields],
   )
 
+  const savingRef = useRef(false)
   const save = useCallback(async (patch: AppSettingsPatch) => {
+    if (savingRef.current) return
     try {
+      savingRef.current = true
       setSaving(true)
       setError('')
       setSuccess('')
       const settings = await updateAppSettings(patch)
-      setForm(pickRef.current(settings))
+      const picked = pickRef.current(settings)
+      setForm(picked)
+      setSaved(picked)
       setSuccess(t('useSettingsForm.saved'))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('settingsApi.saveFailed'))
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
-  }, [])
-
-  const closeResult = useCallback(() => {
-    setError('')
-    setSuccess('')
   }, [])
 
   return {
@@ -75,13 +91,11 @@ export function useSettingsForm<T extends object>(pick: (settings: AppSettings) 
     loading,
     /** Set by a tab that refuses its own values before calling save. */
     error: error || loadError,
-    success,
-    saving,
+    /** What SaveSettingsButton shows beside itself. */
+    status: { saving, dirty, error, success },
     updateField,
     updateFields,
     save,
     setError,
-    setSuccess,
-    closeResult,
   }
 }

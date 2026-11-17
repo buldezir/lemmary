@@ -6,7 +6,6 @@ import { useSettingsForm } from '../hooks/useSettingsForm'
 import { getMCPStatus } from '../lib/api/mcp'
 import { mcpCapabilities } from '../lib/api/settings'
 import {
-  ResultDialog,
   SaveSettingsButton,
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
@@ -29,7 +28,7 @@ const capabilityText = {
 
 export function SettingsMCPPage() {
   const { data: status } = useAsync(getMCPStatus, [])
-  const { form, loading, error, success, saving, updateField, save, closeResult } =
+  const { form, loading, error, status: saveStatus, updateField, save } =
     useSettingsForm((settings) => ({ mcp_capabilities: settings.mcp_capabilities ?? [] }))
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
@@ -87,11 +86,9 @@ export function SettingsMCPPage() {
           ))}
         </div>
         <div className="mt-4">
-          <SaveSettingsButton saving={saving} />
+          <SaveSettingsButton {...saveStatus} />
         </div>
       </section>
-
-      <ResultDialog error={error} success={success} onClose={closeResult} />
     </form>
   )
 }

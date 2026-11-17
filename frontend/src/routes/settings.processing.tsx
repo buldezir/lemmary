@@ -5,7 +5,6 @@ import { useAppMeta } from '../hooks/useAppMeta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
 import type { AppSettingsPatch } from '../lib/api/settings'
 import {
-  ResultDialog,
   SaveSettingsButton,
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
@@ -36,7 +35,7 @@ export function SettingsProcessingPage() {
   const { managed } = useAppMeta()
   const selfHosted = managed === false
   const timeZoneId = useId()
-  const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
+  const { form, loading, error, status, updateField, save, setError } =
     useSettingsForm((settings) => ({
       ocr_timeout_sec: String(settings.ocr_timeout_sec),
       openai_timeout_sec: String(settings.openai_timeout_sec),
@@ -254,11 +253,9 @@ export function SettingsProcessingPage() {
           </>
         )}
         <div className="mt-4">
-          <SaveSettingsButton saving={saving} />
+          <SaveSettingsButton {...status} />
         </div>
       </section>
-
-      <ResultDialog error={error} success={success} onClose={closeResult} />
     </form>
   )
 }

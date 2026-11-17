@@ -346,7 +346,9 @@ export const de: Catalog = {
 
   'useAsync.loadFailed': 'Laden fehlgeschlagen',
 
-  'useSettingsForm.saved': 'Einstellungen gespeichert. Laufzeit neu geladen.',
+  'useSettingsForm.saved': 'Einstellungen gespeichert.',
+  'useSettingsForm.leaveConfirm':
+    'Ohne Speichern verlassen? Die Änderungen auf diesem Tab gehen verloren.',
 
   'useChatSession.runEndedWithoutAnswer': 'Dieser Lauf endete ohne Antwort.',
   'useChatSession.followFailed': 'Dem laufenden Chat konnte nicht gefolgt werden',
@@ -393,6 +395,7 @@ export const de: Catalog = {
 
   'settingsFeedback.saving': 'Wird gespeichert...',
   'settingsFeedback.save': 'Einstellungen speichern',
+  'settingsFeedback.unsaved': 'Nicht gespeicherte Änderungen',
   'settingsFeedback.loading': 'Einstellungen werden geladen...',
   'settingsFeedback.managedByHost':
     'Dies wird von Ihrem Hosting-Anbieter verwaltet und ist hier nicht verfügbar.',
@@ -670,6 +673,8 @@ export const de: Catalog = {
   'providersBlock.saveFailed': 'Anbieter konnte nicht gespeichert werden',
   'providersBlock.deleted': 'Anbieter gelöscht.',
   'providersBlock.deleteFailed': 'Anbieter konnte nicht gelöscht werden',
+  'providersBlock.deleteConfirm':
+    'Anbieter „{name}“ löschen? Sein API-Schlüssel wird mit gelöscht.',
   'providersBlock.title': 'Anbieter',
   'providersBlock.intro':
     'Ein Konto oder Endpunkt, auf dem die Modelle unten laufen. Welcher Anbieter welche Aufgabe übernehmen kann und was er kostet, steht unter {providersLink}; mit der {guidedLink} läuft einer kostenlos.',
@@ -1181,7 +1186,7 @@ export const de: Catalog = {
 
   'admin.title': 'Admin',
   'admin.intro':
-    'Konfiguration der ganzen Instanz, ihre Konten und die Wartung der Bibliothek. Änderungen gelten sofort.',
+    'Konfiguration der ganzen Instanz, ihre Konten und die Wartung der Bibliothek. Gespeicherte Änderungen gelten ohne Neustart.',
   'admin.sectionsLabel': 'Bereiche der Administration',
   'admin.settings': 'Einstellungen',
   'admin.management': 'Verwaltung',
@@ -2007,6 +2012,8 @@ export const de: Catalog = {
     'Löscht Korrespondenten und Dokumenttypen, auf die kein Dokument mehr verweist – Reste von gelöschten Dokumenten, Umbenennungen oder einem abgebrochenen Import. Dokumente werden nie angetastet, Tags ebenso wenig: Diese legen Sie selbst an, ein unbenutzter ist also einfach einer, den Sie noch nicht vergeben haben. Gesperrt, solange Dokumente verarbeitet werden, damit nichts entfernt wird, was ein Job gleich zuordnen will.',
   'maintenance.clearing': 'Wird bereinigt...',
   'maintenance.clearStale': 'Veraltete Daten bereinigen',
+  'maintenance.clearStaleConfirm':
+    'Alle Korrespondenten und Dokumenttypen löschen, die kein Dokument verwendet? Dies kann nicht rückgängig gemacht werden.',
   'maintenance.waiting': 'Warten, bis die Warteschlange leer ist: {jobs}.',
   'account.limitsTitle': 'Instanzlimits',
   'account.limitsHint':

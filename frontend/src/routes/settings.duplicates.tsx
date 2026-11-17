@@ -5,7 +5,6 @@ import { useAppMeta } from '../hooks/useAppMeta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
 import {
   ManagedByHostNotice,
-  ResultDialog,
   SaveSettingsButton,
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
@@ -21,7 +20,7 @@ import { t, tNode } from '../i18n'
 export function SettingsDuplicatesPage() {
   // unknown/failed meta counts as managed; see AppMeta.managed
   const { managed, metaLoaded } = useAppMeta()
-  const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
+  const { form, loading, error, status, updateField, save, setError } =
     useSettingsForm((settings) => ({
       near_duplicate_detection_enabled: settings.near_duplicate_detection_enabled,
       near_duplicate_threshold: String(settings.near_duplicate_threshold ?? 0.92),
@@ -84,11 +83,9 @@ export function SettingsDuplicatesPage() {
           })}
         </p>
         <div className="mt-4">
-          <SaveSettingsButton saving={saving} />
+          <SaveSettingsButton {...status} />
         </div>
       </section>
-
-      <ResultDialog error={error} success={success} onClose={closeResult} />
     </form>
   )
 }
