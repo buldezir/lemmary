@@ -410,6 +410,37 @@ func TestExtractMetadataSendsAdminRules(t *testing.T) {
 	}
 }
 
+func TestExtractFieldsAsksForTheGivenFieldsWithTheRuleInstructions(t *testing.T) {
+	t.Parallel()
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		writeChatJSON(w, "```json\n{\"custom_fields\":{\"Amount\":129.9}}\n```")
+	}))
+	t.Cleanup(srv.Close)
+
+	client := NewExtractor("openai", "test-key", "mistral-small-latest", srv.URL, "v1", "",
+		"Always tag invoices.", 5*time.Second, slog.Default())
+	answers, err := client.ExtractFields(context.Background(), "Invoice total 129,90 EUR",
+		"The amount is the gross total.", []models.CustomField{{ID: "famount", Name: "Amount", Type: models.CustomFieldNumber}})
+	if err != nil {
+		t.Fatalf("ExtractFields: %v", err)
+	}
+	if answers["Amount"] != 129.9 {
+		t.Fatalf("answers = %#v", answers)
+	}
+	for _, want := range []string{"one key, custom_fields (object)", `{\"name\":\"Amount\",\"type\":\"number\"}`, "the gross total", "Invoice total"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in the request, got %s", want, body)
+		}
+	}
+	// The admin's extraction rules are about the whole metadata, not this pass.
+	if strings.Contains(body, "Always tag invoices") || strings.Contains(body, "title (string") {
+		t.Fatalf("the field pass carries the full extraction prompt: %s", body)
+	}
+}
+
 // suggested_tags is asked for only in review mode: without a reviewer nobody
 // would ever accept a proposal, and the closed tags array stays closed either way.
 func TestBuildExtractionSystemPromptSuggestsNewTagsOnlyOnRequest(t *testing.T) {

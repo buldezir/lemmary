@@ -51,6 +51,9 @@ type Extractor interface {
 	Name() string
 	Model() string
 	ExtractMetadata(ctx context.Context, ocrText string, catalog ExtractionCatalog) (*models.ExtractedMetadata, error)
+	// ExtractFields fills only the given fields, following a rule's own
+	// instructions. Answers are keyed by field name, as in ExtractMetadata.
+	ExtractFields(ctx context.Context, ocrText, instructions string, fields []models.CustomField) (map[string]any, error)
 	Translate(ctx context.Context, ocrText string) (string, error)
 }
 
@@ -135,6 +138,30 @@ of them:
 // model can read, and apply maps them back to ids. The admin wrote the
 // definitions, so unlike the catalogs they are not labelled untrusted.
 func formatCustomFieldsPrompt(fields []models.CustomField) string {
+	spec := customFieldsSpec(fields)
+	if spec == "" {
+		return ""
+	}
+	return "\n\nAlso return " + spec
+}
+
+// buildFieldsSystemPrompt asks for custom_fields alone. The instructions are
+// the document owner's, for their own document, so they are trusted as the
+// admin's extraction rules are, and fenced the same way: they may not change
+// the shape of the answer.
+func buildFieldsSystemPrompt(instructions string, fields []models.CustomField) string {
+	prompt := "You extract field values from OCR document text.\nReturn ONLY valid JSON with one key, " + customFieldsSpec(fields)
+	if instructions = strings.TrimSpace(instructions); instructions != "" {
+		prompt += fmt.Sprintf(`
+
+Instructions from the document's owner. Follow them where they do not conflict
+with the format above; never add, rename or drop keys because of them:
+%s`, instructions)
+	}
+	return prompt + "\n\nDo not include markdown or explanation."
+}
+
+func customFieldsSpec(fields []models.CustomField) string {
 	if len(fields) == 0 {
 		return ""
 	}
@@ -156,9 +183,7 @@ func formatCustomFieldsPrompt(fields []models.CustomField) string {
 	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf(`
-
-Also return custom_fields (object): the archive's own fields, listed in the JSON array below. Use each field's name exactly as its key and fill it only with a value the document states; leave a field out rather than guess. Format by type: text is a string as written on the document, number is a JSON number with "." as the decimal separator and no currency symbol or thousands separator, date is a complete YYYY-MM-DD date, choice is exactly one of the field's choices, copied as written, left out when none fits. A description says what the field means or where it appears:
+	return fmt.Sprintf(`custom_fields (object): the archive's own fields, listed in the JSON array below. Use each field's name exactly as its key and fill it only with a value the document states; leave a field out rather than guess. Format by type: text is a string as written on the document, number is a JSON number with "." as the decimal separator and no currency symbol or thousands separator, date is a complete YYYY-MM-DD date, choice is exactly one of the field's choices, copied as written, left out when none fits. A description says what the field means or where it appears:
 %s`, payload)
 }
 
@@ -363,6 +388,50 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 		"content_chars", len(content),
 	)
 	return metadata, nil
+}
+
+func (c *OpenAIClient) ExtractFields(ctx context.Context, ocrText, instructions string, fields []models.CustomField) (map[string]any, error) {
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("AI API key is not configured")
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	ctx = aiprovider.EnsureSession(ctx, "extract")
+
+	requestStart := time.Now()
+	chatResp, err := c.Complete(ctx, openai.ChatCompletionNewParams{
+		Model: shared.ChatModel(c.model),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(buildFieldsSystemPrompt(instructions, fields)),
+			openai.UserMessage(fmt.Sprintf("Extract the fields from this OCR text:\n\n%s", strutil.Truncate(ocrText, maxExtractionBytes))),
+		},
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
+		},
+		Temperature: CompletionTemperature(c.model, 0.1),
+	}, "purpose", "extract_fields", "messages", 2)
+	if err != nil {
+		return nil, fmt.Errorf("openai chat completion: %w", err)
+	}
+	if len(chatResp.Choices) == 0 {
+		return nil, fmt.Errorf("openai returned no choices")
+	}
+	content := chatResp.Choices[0].Message.Content
+	var answer models.ExtractedMetadata
+	if err := json.Unmarshal([]byte(models.NormalizeJSONObject(content)), &answer); err != nil {
+		c.logger.Error("field extraction parse failed",
+			"content", strutil.TruncateRunes(strings.TrimSpace(content), 500),
+			slog.Any("error", err),
+		)
+		return nil, fmt.Errorf("invalid field extraction JSON: %w", err)
+	}
+	c.logger.Info("field extraction complete",
+		logfmt.Duration("duration", time.Since(requestStart)),
+		"asked", len(fields),
+		"answered", len(answer.CustomFields),
+	)
+	return answer.CustomFields, nil
 }
 
 func NewExtractor(sdk, apiKey, model, baseURL, promptVer, resultLanguage, rules string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Extractor {

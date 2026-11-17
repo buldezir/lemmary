@@ -18,6 +18,12 @@ const (
 	MetadataSourceUser = "user"
 )
 
+// JobReturnStatus is the processing_jobs field naming the status a job that
+// writes no metadata hands the document back in, for a run of the rules after
+// an edit: without it the document would leave the Inbox for having been
+// edited there.
+const JobReturnStatus = "return_status"
+
 // StatusFilterUnfinished is not a document status: it is what the Inbox asks
 // for, every status except completed. Mirrored in
 // frontend/src/lib/documentStatus.ts.

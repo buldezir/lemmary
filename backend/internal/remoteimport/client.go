@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/netguard"
 )
 
 const (
@@ -41,10 +42,10 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error)
 		return nil, fmt.Errorf("api key is required")
 	}
 	if httpClient == nil {
-		if err := rejectBlockedImportURL(normalized); err != nil {
+		if err := netguard.CheckURL(normalized); err != nil {
 			return nil, err
 		}
-		httpClient = newImportHTTPClient(listTimeout)
+		httpClient = netguard.Client(listTimeout)
 	}
 	downloadClient := httpClient
 	if httpClient.Timeout != 0 && httpClient.Timeout < downloadTimeout {

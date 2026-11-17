@@ -44,6 +44,7 @@ describe('route tree', () => {
       '/account/passkeys',
       '/account/sharing',
       '/tags',
+      '/rules',
       '/bulk',
       '/export',
       '/document/$documentId',

@@ -23,6 +23,9 @@ func (stubExtractor) Model() string { return "stub-model" }
 func (stubExtractor) ExtractMetadata(context.Context, string, ai.ExtractionCatalog) (*models.ExtractedMetadata, error) {
 	return nil, nil
 }
+func (stubExtractor) ExtractFields(context.Context, string, string, []models.CustomField) (map[string]any, error) {
+	return nil, nil
+}
 func (stubExtractor) Translate(context.Context, string) (string, error) {
 	return "", nil
 }

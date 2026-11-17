@@ -55,6 +55,7 @@ import {
   AccountProfilePage,
 } from './routes/account'
 import { TagsPage } from './routes/tags'
+import { RulesPage } from './routes/rules'
 import { BulkActionsPage } from './routes/bulk'
 
 // Admin-only routes bounce non-admins to the document list before the page
@@ -369,6 +370,13 @@ const tagsRoute = createRoute({
   component: TagsPage,
 })
 
+// No guard either: rules are per-user and act on the user's own documents.
+const rulesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/rules',
+  component: RulesPage,
+})
+
 const exportRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/export',
@@ -432,6 +440,7 @@ const routeTree = rootRoute.addChildren([
     accountSharingRoute,
   ]),
   tagsRoute,
+  rulesRoute,
   bulkRoute,
   documentRoute,
   documentAskRoute.addChildren([documentAskSessionRoute]),
