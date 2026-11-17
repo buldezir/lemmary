@@ -85,7 +85,7 @@ function RemoteImport({ source }: { source: RemoteImportSource }) {
       </div>
 
       <form onSubmit={onSubmit} className="space-y-4 rounded-none border border-line bg-surface p-5">
-        <label className={labelClassName}>
+        <label className={`${labelClassName} max-w-xl`}>
           <span className={labelTextClassName}>{text.url}</span>
           <input
             className={inputClassName}
@@ -97,7 +97,7 @@ function RemoteImport({ source }: { source: RemoteImportSource }) {
             autoComplete="off"
           />
         </label>
-        <label className={labelClassName}>
+        <label className={`${labelClassName} max-w-xl`}>
           <span className={labelTextClassName}>{t('importNgx.apiKey')}</span>
           <input
             className={inputClassName}

@@ -366,7 +366,7 @@ export function TagsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <header>
         <h1 className="font-display text-2xl font-semibold text-ink">{t('tagsPage.title')}</h1>
         <p className={`${fieldHintClassName} mt-1`}>{t('tagsPage.intro')}</p>

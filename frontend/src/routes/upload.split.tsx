@@ -138,9 +138,15 @@ function PageViewer({ page, pageCount, src, cut, busy, onPage, onToggleCut, onCl
         ) : (
           <span className="flex h-[60vh] w-[45vh] items-center justify-center text-sm text-ink-faint">…</span>
         )}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Button variant="secondary" size="sm" disabled={!hasPrevious} onClick={() => onPage(page - 1)}>
-            ← {t('uploadSplit.previousPage')}
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!hasPrevious}
+            aria-label={t('uploadSplit.previousPage')}
+            onClick={() => onPage(page - 1)}
+          >
+            ← <span className="hidden sm:inline">{t('uploadSplit.previousPage')}</span>
           </Button>
           {hasNext && (
             <Button
@@ -153,8 +159,14 @@ function PageViewer({ page, pageCount, src, cut, busy, onPage, onToggleCut, onCl
               ✂ {t('uploadSplit.cutHere')}
             </Button>
           )}
-          <Button variant="secondary" size="sm" disabled={!hasNext} onClick={() => onPage(page + 1)}>
-            {t('uploadSplit.nextPage')} →
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!hasNext}
+            aria-label={t('uploadSplit.nextPage')}
+            onClick={() => onPage(page + 1)}
+          >
+            <span className="hidden sm:inline">{t('uploadSplit.nextPage')}</span> →
           </Button>
         </div>
       </div>

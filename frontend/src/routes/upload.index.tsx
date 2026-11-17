@@ -419,7 +419,7 @@ export function UploadFilesPage() {
 
         {error && <p className="text-sm text-madder">{error}</p>}
 
-        <Button type="submit" disabled={uploading || files.length === 0}>
+        <Button type="submit" className="sm:self-start" disabled={uploading || files.length === 0}>
           {uploading
             ? files.length > 1
               ? t('uploadIndex.uploadingOf', { index: uploadIndex, total: files.length })

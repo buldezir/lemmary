@@ -27,15 +27,17 @@ export function UploadPage() {
   }, [])
 
   return (
-    <div className="mx-auto flex max-w-xl flex-col gap-5">
-      <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">{t('upload.title')}</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          {t('upload.intro')}
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">{t('upload.title')}</h1>
+          <p className="mt-1 text-sm text-ink-soft">
+            {t('upload.intro')}
+          </p>
+        </div>
 
-      <LimitsUsage limits={limits} />
+        <LimitsUsage limits={limits} className="lg:w-96 lg:shrink-0" />
+      </div>
 
       <nav aria-label={t('upload.sourcesLabel')} className="flex flex-wrap items-center gap-5 border-b border-line">
         <Link

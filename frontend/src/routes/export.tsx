@@ -26,7 +26,7 @@ export function ExportPage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-5">
+    <div className="space-y-5">
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">
           {t('export.title')}

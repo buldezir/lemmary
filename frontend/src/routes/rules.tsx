@@ -180,7 +180,7 @@ function describeAction(a: RuleAction, catalog: Catalog): string {
 /** The owner's if-then rules: listed and ordered here, each edited in a dialog. */
 export function RulesPage() {
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <header>
         <h1 className="font-display text-2xl font-semibold text-ink">{t('rulesPage.title')}</h1>
         <p className={`${fieldHintClassName} mt-1`}>{t('rulesPage.intro')}</p>

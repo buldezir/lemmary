@@ -157,7 +157,7 @@ function OCRTester() {
   }
 
   return (
-    <section className="mx-auto flex max-w-3xl flex-col gap-5">
+    <section className="flex flex-col gap-5">
       <div>
         <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('ocrTest.title')}</h2>
         <p className="text-sm text-ink-soft">
@@ -166,36 +166,38 @@ function OCRTester() {
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-        <div className="flex flex-col gap-1.5 text-sm font-medium text-ink-muted">
-          <label htmlFor={providerId}>{t('ocrTest.provider')}</label>
-          <Combobox
-            id={providerId}
-            value={provider}
-            options={providers.map((item) => ({ value: item.id, label: item.name }))}
-            onChange={(next) => {
-              setProvider(next)
-              setModel('')
-            }}
-            placeholder={t('ocrTest.noProviders')}
-            loading={loadingProviders}
-            loadingLabel={t('ocrTest.loadingProviders')}
-            disabled={providers.length === 0 || running}
-            bgClassName="bg-surface"
-            className="font-normal"
-          />
-        </div>
+        <div className="flex max-w-xl flex-col gap-4">
+          <div className="flex flex-col gap-1.5 text-sm font-medium text-ink-muted">
+            <label htmlFor={providerId}>{t('ocrTest.provider')}</label>
+            <Combobox
+              id={providerId}
+              value={provider}
+              options={providers.map((item) => ({ value: item.id, label: item.name }))}
+              onChange={(next) => {
+                setProvider(next)
+                setModel('')
+              }}
+              placeholder={t('ocrTest.noProviders')}
+              loading={loadingProviders}
+              loadingLabel={t('ocrTest.loadingProviders')}
+              disabled={providers.length === 0 || running}
+              bgClassName="bg-surface"
+              className="font-normal"
+            />
+          </div>
 
-        {!hideModel && provider && (
-          <ModelSelect
-            key={provider}
-            label="OCR"
-            model={model}
-            models={models}
-            loading={loadingModels}
-            disabled={running}
-            onChange={setModel}
-          />
-        )}
+          {!hideModel && provider && (
+            <ModelSelect
+              key={provider}
+              label="OCR"
+              model={model}
+              models={models}
+              loading={loadingModels}
+              disabled={running}
+              onChange={setModel}
+            />
+          )}
+        </div>
         {showWarning && <p className="text-xs text-amber-800">{OCR_MODEL_WARNING}</p>}
 
         <label
@@ -226,7 +228,7 @@ function OCRTester() {
           <p className="text-sm text-madder">{error || providersState.error}</p>
         )}
 
-        <Button type="submit" disabled={running || !file || !provider || providers.length === 0}>
+        <Button type="submit" className="sm:self-start" disabled={running || !file || !provider || providers.length === 0}>
           {running ? t('ocrTest.running') : t('ocrTest.run')}
         </Button>
       </form>

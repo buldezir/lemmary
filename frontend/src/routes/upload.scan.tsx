@@ -173,7 +173,7 @@ function ScanPanel() {
 
       <div className="flex flex-col gap-4 rounded-none border border-line bg-surface p-5">
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex min-w-64 flex-1 flex-col gap-1">
+          <label className="flex min-w-64 max-w-xl flex-1 flex-col gap-1">
             <span className={labelTextClassName}>{t('uploadScan.scanner')}</span>
             <input
               className={inputClassName}

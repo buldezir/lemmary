@@ -5,7 +5,7 @@ import { t } from '../i18n'
 
 export function ImportPage() {
   return (
-    <div className="mx-auto flex max-w-xl flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">{t('import.title')}</h1>
         <p className="mt-1 text-sm text-ink-soft">
