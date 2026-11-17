@@ -200,7 +200,10 @@ func (r *PipelineRunner) runStep(ctx context.Context, p *pipelineRun, idx int) (
 
 	p.logger.Info("step running", "step", stepName, "attempt", p.runs[idx].Attempts)
 
-	if err := step.Run(ctx, p.state); err != nil {
+	p.state.StepDetail = ""
+	err = step.Run(ctx, p.state)
+	p.runs[idx].Detail = p.state.StepDetail
+	if err != nil {
 		if errors.Is(err, ErrStepSoft) {
 			markStepSoftFailed(&p.runs[idx], err)
 			saveStepRuns(p.job, p.runs)
@@ -238,7 +241,7 @@ func (r *PipelineRunner) finishRun(p *pipelineRun, jobStart time.Time) error {
 	job.Set("finished_at", nowTimestamp())
 	job.Set("current_step", "")
 
-	if err := finalizeDocumentWithoutApply(r.App, document, p.steps); err != nil {
+	if err := finalizeDocumentWithoutApply(r.App, job, document, p.steps); err != nil {
 		return err
 	}
 
@@ -360,7 +363,10 @@ func failJob(app core.App, job *core.Record, document *core.Record, err error) e
 // does not reach here: without apply_metadata no model wrote the metadata (a
 // paperless-ngx import above all), so requiring review would empty a migrated
 // archive into the Inbox for an extraction that never ran.
-func finalizeDocumentWithoutApply(app core.App, document *core.Record, steps []string) error {
+//
+// A job with a return status, the rules run after an edit, hands the document
+// back as it found it, unless a rule already asked for review.
+func finalizeDocumentWithoutApply(app core.App, job, document *core.Record, steps []string) error {
 	if document.GetString("duplicate_of") != "" {
 		document.Set("processing_status", models.DocStatusNeedsReview)
 		return app.Save(document)
@@ -374,6 +380,21 @@ func finalizeDocumentWithoutApply(app core.App, document *core.Record, steps []s
 		}
 		return nil
 	}
-	document.Set("processing_status", models.DocStatusCompleted)
-	return app.Save(document)
+	back := job.GetString(models.JobReturnStatus)
+	if back == "" {
+		document.Set("processing_status", models.DocStatusCompleted)
+		return app.Save(document)
+	}
+	// Fresh rather than the job's copy: the owner may have edited the document
+	// while the rules ran, and that edit queued no job of its own.
+	fresh, err := app.FindRecordById("documents", document.Id)
+	if err != nil {
+		return err
+	}
+	if fresh.GetString("processing_status") != models.DocStatusProcessing {
+		return nil
+	}
+	fresh.Set("processing_status", back)
+	document.Set("processing_status", back)
+	return app.Save(fresh.IgnoreUnchangedFields(true))
 }

@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/router"
 	"github.com/pocketbase/pocketbase/tools/types"
 
 	"lemmary/backend/internal/config"
@@ -54,6 +56,14 @@ type feedbackRequest struct {
 	Email      string `json:"email"`
 	Page       string `json:"page"`
 	LogMinutes int    `json:"log_minutes"`
+}
+
+func registerFeedbackRoute(g *router.RouterGroup[*core.RequestEvent], app core.App, rt *config.Runtime, target string) {
+	if target == "" {
+		return
+	}
+	g.POST("/feedback", bindAuth(handlePostFeedback(app, rt, target))).
+		Bind(apis.BodyLimit(feedbackMaxBody))
 }
 
 // handlePostFeedback relays a report to the Lemmary maintainers' panel. The

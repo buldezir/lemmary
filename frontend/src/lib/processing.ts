@@ -6,6 +6,7 @@ export type ProcessingStep =
   | 'detect_duplicates'
   | 'extract_metadata'
   | 'apply_metadata'
+  | 'run_rules'
   | 'embed'
   | 'link_related'
 
@@ -24,6 +25,8 @@ export type StepRunRecord = {
   started_at?: string
   finished_at?: string
   error?: string
+  /** What the step reports beyond its status: run_rules names the rules that matched. */
+  detail?: string
 }
 
 export type ProcessingJobRecord = {
@@ -56,6 +59,7 @@ export const FULL_PIPELINE_STEPS: ProcessingStep[] = [
   'detect_duplicates',
   'extract_metadata',
   'apply_metadata',
+  'run_rules',
   'embed',
   'link_related',
 ]
@@ -63,6 +67,7 @@ export const FULL_PIPELINE_STEPS: ProcessingStep[] = [
 export const EXTRACTION_PIPELINE_STEPS: ProcessingStep[] = [
   'extract_metadata',
   'apply_metadata',
+  'run_rules',
   'embed',
   'link_related',
 ]
@@ -73,6 +78,7 @@ export const PROCESSING_STEP_LABELS: Record<ProcessingStep, string> = {
   detect_duplicates: t('processing.stepDetectDuplicates'),
   extract_metadata: t('processing.stepExtractMetadata'),
   apply_metadata: t('processing.stepApplyMetadata'),
+  run_rules: t('processing.stepRunRules'),
   embed: t('processing.stepEmbed'),
   link_related: t('processing.stepLinkRelated'),
 }
@@ -83,6 +89,7 @@ export const PROCESSING_STEP_DESCRIPTIONS: Record<ProcessingStep, string> = {
   detect_duplicates: t('processing.descDetectDuplicates'),
   extract_metadata: t('processing.descExtractMetadata'),
   apply_metadata: t('processing.descApplyMetadata'),
+  run_rules: t('processing.descRunRules'),
   embed: t('processing.descEmbed'),
   link_related: t('processing.descLinkRelated'),
 }

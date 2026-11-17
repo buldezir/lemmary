@@ -38,6 +38,9 @@ export function SettingsPage() {
         <Link to="/settings/fields" className={tabClassName}>
           {t('settings.tabFields')}
         </Link>
+        <Link to="/settings/rules" className={tabClassName}>
+          {t('settings.tabRules')}
+        </Link>
         {hostEditable && (
           <Link to="/settings/worker" className={tabClassName}>
             {t('settings.tabWorker')}

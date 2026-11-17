@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 
 import { t } from '../i18n'
 import { listboxClassName, listOptionClassName } from './ui'
@@ -67,6 +67,22 @@ const tokenBoxClassName =
 const tokenInputClassName =
   'min-w-32 flex-1 border-none bg-transparent px-1.5 py-0.5 text-sm text-ink outline-none placeholder:text-ink-faint disabled:cursor-not-allowed disabled:opacity-50'
 
+/**
+ * Fixed to the field: below it unless that would land past the fold and above
+ * has more room, as for the picker under the chat composer.
+ */
+function listPlacement(anchor: DOMRect | null): CSSProperties | undefined {
+  if (!anchor) return undefined
+  const below = window.innerHeight - anchor.bottom
+  const dropUp = below < listMaxHeightPx && anchor.top > below
+  return {
+    position: 'fixed',
+    left: anchor.left,
+    width: anchor.width,
+    ...(dropUp ? { bottom: window.innerHeight - anchor.top + 4 } : { top: anchor.bottom + 4 }),
+  }
+}
+
 function normalize(value: string) {
   return value.trim().toLowerCase()
 }
@@ -100,9 +116,10 @@ export function Combobox({
   // null means "showing the selection", a string means the user is typing.
   const [query, setQuery] = useState<string | null>(null)
   const [highlightedIndex, setHighlightedIndex] = useState(0)
-  // Which way the list opens: downward unless it would land past the fold, as
-  // it does for the picker under the chat composer.
-  const [dropUp, setDropUp] = useState(false)
+  // Where the field sits on screen while the list is open. The list is fixed
+  // to it rather than absolute inside it, so a scrolling ancestor -- a dialog
+  // above all -- cannot clip it.
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
 
   const selectedLabel = options.find((option) => option.value === value)?.label ?? ''
   const searchable = Boolean(onCreate || onQueryChange) || options.length > maxReadOnlyOptions
@@ -140,13 +157,7 @@ export function Combobox({
 
   function openList() {
     if (disabled || loading) return
-    // Measured on open rather than in a layout effect: the list has no box until
-    // it is open, and the input's does not move while it is.
-    const rect = rootRef.current?.getBoundingClientRect()
-    if (rect) {
-      const below = window.innerHeight - rect.bottom
-      setDropUp(below < listMaxHeightPx && rect.top > below)
-    }
+    setAnchor(rootRef.current?.getBoundingClientRect() ?? null)
     setOpen(true)
     // Start on the current selection, or on nothing when it is not listed (yet),
     // so Enter is a no-op rather than a surprise.
@@ -171,6 +182,21 @@ export function Combobox({
     if (!open) return
     highlightedRef.current?.scrollIntoView({ block: 'nearest' })
   }, [activeIndex, open, filteredOptions])
+
+  // Follows the field while anything but the list itself scrolls.
+  useEffect(() => {
+    if (!open) return
+    function follow(event: Event) {
+      if (event.target instanceof Node && rootRef.current?.contains(event.target)) return
+      setAnchor(rootRef.current?.getBoundingClientRect() ?? null)
+    }
+    window.addEventListener('scroll', follow, true)
+    window.addEventListener('resize', follow)
+    return () => {
+      window.removeEventListener('scroll', follow, true)
+      window.removeEventListener('resize', follow)
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -289,10 +315,7 @@ export function Combobox({
         </svg>
       </span>
       {open && (
-        <ul
-          role="listbox"
-          className={`${listboxClassName} w-full ${dropUp ? 'bottom-full mb-1' : 'mt-1'}`}
-        >
+        <ul role="listbox" className={listboxClassName} style={listPlacement(anchor)}>
           {filteredOptions.length === 0 ? (
             <li className="px-3 py-1.5 text-sm text-ink-faint">{t('combobox.noMatches')}</li>
           ) : (
