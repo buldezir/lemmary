@@ -6,6 +6,10 @@ const (
 	StepDetectDuplicates = "detect_duplicates"
 	StepExtractMetadata  = "extract_metadata"
 	StepApplyMetadata    = "apply_metadata"
+	// StepRunRules runs the owner's rules after apply_metadata, so they read
+	// the metadata the document ended up with, and before embed, so the index
+	// carries what they changed.
+	StepRunRules = "run_rules"
 	// StepEmbed runs after apply_metadata so the header chunk indexes the
 	// metadata the document ended up with, and after it so a document whose
 	// extraction failed is still embedded.
@@ -16,11 +20,13 @@ const (
 )
 
 var (
-	FullPipelineSteps       = []string{StepPreview, StepOCR, StepDetectDuplicates, StepExtractMetadata, StepApplyMetadata, StepEmbed, StepLinkRelated}
-	ExtractionPipelineSteps = []string{StepExtractMetadata, StepApplyMetadata, StepEmbed, StepLinkRelated}
+	FullPipelineSteps       = []string{StepPreview, StepOCR, StepDetectDuplicates, StepExtractMetadata, StepApplyMetadata, StepRunRules, StepEmbed, StepLinkRelated}
+	ExtractionPipelineSteps = []string{StepExtractMetadata, StepApplyMetadata, StepRunRules, StepEmbed, StepLinkRelated}
 	// ImportPreserveSteps runs preview/OCR/near-dup detection without AI metadata
 	// overwrite, so ngx title/tags/correspondent/type survive import.
 	ImportPreserveSteps = []string{StepPreview, StepOCR, StepDetectDuplicates, StepEmbed, StepLinkRelated}
+	// EditedRulesSteps runs the rules again after the owner edited a document.
+	EditedRulesSteps = []string{StepRunRules, StepEmbed}
 )
 
 const (
@@ -48,4 +54,7 @@ type StepRun struct {
 	StartedAt  string `json:"started_at,omitempty"`
 	FinishedAt string `json:"finished_at,omitempty"`
 	Error      string `json:"error,omitempty"`
+	// Detail is what the step reports beyond its status: run_rules names the
+	// rules that matched.
+	Detail string `json:"detail,omitempty"`
 }

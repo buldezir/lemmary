@@ -45,9 +45,61 @@ var catalog = map[string]map[string]string{
 		"de": "Eine Aufteilung läuft bereits.",
 		"ru": "Разделение уже выполняется.",
 	},
+	"A rule has at most %d conditions and %d actions.": {
+		"de": "Eine Regel hat höchstens %d Bedingungen und %d Aktionen.",
+		"ru": "В правиле может быть не больше %d условий и %d действий.",
+	},
+	"A rule needs at least one action.": {
+		"de": "Eine Regel braucht mindestens eine Aktion.",
+		"ru": "В правиле должно быть хотя бы одно действие.",
+	},
 	"A tag assignment is already running.": {
 		"de": "Eine Tag-Zuweisung läuft bereits.",
 		"ru": "Назначение тегов уже выполняется.",
+	},
+	"A condition refers to a field, tag or value that does not exist.": {
+		"de": "Eine Bedingung verweist auf ein Feld, einen Tag oder einen Wert, den es nicht gibt.",
+		"ru": "Условие ссылается на поле, тег или значение, которых не существует.",
+	},
+	"A condition's comparison does not fit its field.": {
+		"de": "Der Vergleich einer Bedingung passt nicht zu ihrem Feld.",
+		"ru": "Сравнение в условии не подходит к его полю.",
+	},
+	"A condition's value does not fit its field.": {
+		"de": "Der Wert einer Bedingung passt nicht zu ihrem Feld.",
+		"ru": "Значение в условии не подходит к его полю.",
+	},
+	"A webhook needs an http or https URL.": {
+		"de": "Ein Webhook braucht eine http- oder https-URL.",
+		"ru": "Для вебхука нужен URL с http или https.",
+	},
+	"A webhook's secret is limited to %d characters.": {
+		"de": "Das Geheimnis eines Webhooks ist auf %d Zeichen begrenzt.",
+		"ru": "Секрет вебхука ограничен %d символами.",
+	},
+	"An AI action needs at least one field to fill.": {
+		"de": "Eine KI-Aktion braucht mindestens ein Feld zum Ausfüllen.",
+		"ru": "Для действия ИИ нужно хотя бы одно поле для заполнения.",
+	},
+	"An AI action's instructions are limited to %d characters.": {
+		"de": "Die Anweisungen einer KI-Aktion sind auf %d Zeichen begrenzt.",
+		"ru": "Инструкции для действия ИИ ограничены %d символами.",
+	},
+	"An action has an unknown type.": {
+		"de": "Eine Aktion hat einen unbekannten Typ.",
+		"ru": "У действия неизвестный тип.",
+	},
+	"An action refers to a field, tag or value that does not exist.": {
+		"de": "Eine Aktion verweist auf ein Feld, einen Tag oder einen Wert, den es nicht gibt.",
+		"ru": "Действие ссылается на поле, тег или значение, которых не существует.",
+	},
+	"An action's value does not fit its field.": {
+		"de": "Der Wert einer Aktion passt nicht zu ihrem Feld.",
+		"ru": "Значение в действии не подходит к его полю.",
+	},
+	"The pattern %q is not a valid regular expression.": {
+		"de": "Das Muster %q ist kein gültiger regulärer Ausdruck.",
+		"ru": "Шаблон %q не является корректным регулярным выражением.",
 	},
 	"AI chat is not configured; update Settings.": {
 		"de": "KI-Chat ist nicht konfiguriert; passen Sie die Einstellungen an.",
@@ -709,13 +761,13 @@ var catalog = map[string]map[string]string{
 		"de": "Das Archiv wurde mit einer neueren Version von Lemmary erstellt.",
 		"ru": "Архив создан более новой версией Lemmary.",
 	},
-	"The import address %s is link-local, multicast or a cloud metadata endpoint, which is never allowed.": {
-		"de": "Die Importadresse %s ist eine Link-Local-, Multicast- oder Cloud-Metadaten-Adresse und ist nie erlaubt.",
-		"ru": "Адрес импорта %s — link-local, multicast или адрес облачных метаданных; такие адреса запрещены всегда.",
+	"The address %s is link-local, multicast or a cloud metadata endpoint, which is never allowed.": {
+		"de": "Die Adresse %s ist eine Link-Local-, Multicast- oder Cloud-Metadaten-Adresse und ist nie erlaubt.",
+		"ru": "Адрес %s — link-local, multicast или адрес облачных метаданных; такие адреса запрещены всегда.",
 	},
-	"The import address %s is on a private network, and this server refuses those (IMPORT_ALLOW_PRIVATE=0).": {
-		"de": "Die Importadresse %s liegt in einem privaten Netz, und dieser Server lehnt solche ab (IMPORT_ALLOW_PRIVATE=0).",
-		"ru": "Адрес импорта %s находится в частной сети, а этот сервер такие адреса отклоняет (IMPORT_ALLOW_PRIVATE=0).",
+	"The address %s is on a private network, and this server refuses those (IMPORT_ALLOW_PRIVATE=0).": {
+		"de": "Die Adresse %s liegt in einem privaten Netz, und dieser Server lehnt solche ab (IMPORT_ALLOW_PRIVATE=0).",
+		"ru": "Адрес %s находится в частной сети, а этот сервер такие адреса отклоняет (IMPORT_ALLOW_PRIVATE=0).",
 	},
 	"The model stopped before the end of the document; it is too long to translate in one reply of this model.": {
 		"de": "Das Modell hat vor dem Ende des Dokuments aufgehört; es ist zu lang, um es in einer Antwort dieses Modells zu übersetzen.",

@@ -222,7 +222,11 @@ func TestLinkRelatedSurvivesTheEndOfAJobWithoutApply(t *testing.T) {
 	if err := (&LinkRelatedStep{RelatedLinking{Enabled: true}}).Run(context.Background(), state); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if err := finalizeDocumentWithoutApply(app, state.Document, []string{models.StepLinkRelated}); err != nil {
+	jobs, err := app.FindCollectionByNameOrId("processing_jobs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := finalizeDocumentWithoutApply(app, core.NewRecord(jobs), state.Document, []string{models.StepLinkRelated}); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 

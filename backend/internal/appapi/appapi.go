@@ -16,6 +16,7 @@ import (
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/pdfsplit"
 	"lemmary/backend/internal/remoteimport"
+	"lemmary/backend/internal/rules"
 	"lemmary/backend/internal/updatecheck"
 	"lemmary/backend/internal/worker"
 	"lemmary/backend/internal/zipimport"
@@ -38,7 +39,10 @@ func Register(
 	RegisterAppName(app)
 	app.OnRecordUpdate("documents").BindFunc(clearStaleTranslation)
 	app.OnRecordUpdate("documents").BindFunc(duplicates.RefreshFingerprint)
+	app.OnRecordUpdateRequest("documents").BindFunc(runRulesAfterEdit)
 	app.OnRecordUpdateRequest("documents").BindFunc(saveFieldsWithDocument)
+	app.OnRecordCreateRequest(rules.Collection).BindFunc(validateRule)
+	app.OnRecordUpdateRequest(rules.Collection).BindFunc(validateRule)
 	app.OnRecordCreateRequest(models.CustomFieldsCollection).BindFunc(saveChoicesWithField)
 	app.OnRecordUpdateRequest(models.CustomFieldsCollection).BindFunc(saveChoicesWithField)
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{

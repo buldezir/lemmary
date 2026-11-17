@@ -34,6 +34,10 @@ type StepState struct {
 	Metadata *models.ExtractedMetadata
 
 	ForceSteps map[string]bool
+
+	// StepDetail is what the running step reports for its step run; the
+	// pipeline takes it when the step returns.
+	StepDetail string
 }
 
 func (s *StepState) forced(stepName string) bool {
@@ -49,6 +53,7 @@ func buildRegistry(ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder 
 		&DetectDuplicatesStep{},
 		&ExtractMetadataStep{Extractor: aiExtractor, ExtractReferences: linking.Enabled},
 		&ApplyMetadataStep{StoreReferences: linking.Enabled},
+		&RunRulesStep{Extractor: aiExtractor},
 		&EmbedStep{Embedder: embedder},
 		&LinkRelatedStep{RelatedLinking: linking},
 	}

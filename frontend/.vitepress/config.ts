@@ -67,6 +67,7 @@ const guides: Array<[string, Label]> = [
   ],
   ['paperless_ngx', { en: 'Paperless-ngx API', de: 'Paperless-ngx-API', ru: 'API Paperless-ngx' }],
   ['mcp', { en: 'MCP for agents', de: 'MCP für Agenten', ru: 'MCP для агентов' }],
+  ['rules', { en: 'Rules and webhooks', de: 'Regeln und Webhooks', ru: 'Правила и вебхуки' }],
   ['scanning', { en: 'Scanning', de: 'Scannen', ru: 'Сканирование' }],
   ['local_ai_macos', { en: 'Local AI on a Mac', de: 'Lokale KI auf dem Mac', ru: 'Локальный ИИ на Mac' }],
   ['local_ai_linux', { en: 'Local AI on Linux', de: 'Lokale KI unter Linux', ru: 'Локальный ИИ на Linux' }],
