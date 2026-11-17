@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router'
 import { pb, pbAdminUrl } from '../lib/pb'
 import { adoptAuthHandoff, ensureAuth, getUserDisplayName, isAdmin, logout, refreshAuthRecord } from '../lib/auth'
@@ -16,9 +16,10 @@ import {
   type NavIconKey,
   type NavItem,
 } from '../lib/nav'
-import { t } from '../i18n'
+import { docsUrl, t } from '../i18n'
 import { AppFooter } from './AppFooter'
 import { DemoCountdown } from './DemoCountdown'
+import { FeedbackDialog } from './FeedbackDialog'
 import { UpdateNotice } from './UpdateNotice'
 import { Button } from './ui'
 import { AppLogo } from './ui'
@@ -250,15 +251,92 @@ function NavItemLink({
   )
 }
 
+function HelpIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  )
+}
+
 function MoreNavMenu({ items }: { items: NavItem[] }) {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
   const matchRoute = useMatchRoute()
   const menuActive = items.some(
     (item) =>
       item.kind === 'route' &&
       [item.to, ...(item.alsoActiveOn ?? [])].some((to) => Boolean(matchRoute({ to, fuzzy: true }))),
   )
+
+  return (
+    <HeaderMenu label={t('rootLayout.more')} icon={<MoreIcon />} active={menuActive}>
+      {(close) =>
+        items.map((item) => (
+          <NavItemLink key={item.label} item={item} role="menuitem" className={menuItemClass} onNavigate={close} />
+        ))
+      }
+    </HeaderMenu>
+  )
+}
+
+function HelpMenu({ onFeedback }: { onFeedback?: () => void }) {
+  return (
+    <HeaderMenu label={t('rootLayout.help')} icon={<HelpIcon />}>
+      {(close) => (
+        <>
+          <a
+            href={docsUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            role="menuitem"
+            className={menuItemClass}
+            onClick={close}
+          >
+            {t('footer.documentation')}
+          </a>
+          {onFeedback && (
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => {
+                close()
+                onFeedback()
+              }}
+            >
+              {t('feedback.title')}
+            </button>
+          )}
+        </>
+      )}
+    </HeaderMenu>
+  )
+}
+
+function HeaderMenu({
+  label,
+  icon,
+  active = false,
+  children,
+}: {
+  label: string
+  icon: ReactElement
+  active?: boolean
+  children: (close: () => void) => ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -287,29 +365,21 @@ function MoreNavMenu({ items }: { items: NavItem[] }) {
     <div className="relative" ref={rootRef}>
       <button
         type="button"
-        className={`${iconButtonClass} ${menuActive ? iconButtonActiveClass : ''}`}
-        aria-label={t('rootLayout.more')}
-        title={t('rootLayout.more')}
+        className={`${iconButtonClass} ${active ? iconButtonActiveClass : ''}`}
+        aria-label={label}
+        title={label}
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((value) => !value)}
       >
-        <MoreIcon />
+        {icon}
       </button>
       {open && (
         <div
           role="menu"
           className="absolute right-0 z-20 mt-2 min-w-44 border border-line-strong bg-surface p-1 shadow-md shadow-ink/10"
         >
-          {items.map((item) => (
-            <NavItemLink
-              key={item.label}
-              item={item}
-              role="menuitem"
-              className={menuItemClass}
-              onNavigate={() => setOpen(false)}
-            />
-          ))}
+          {children(() => setOpen(false))}
         </div>
       )}
     </div>
@@ -328,6 +398,7 @@ function AppHeader({
   hostEditable,
   userDisplayName,
   writableUntil,
+  onFeedback,
 }: {
   appName: string
   accent: string
@@ -336,6 +407,7 @@ function AppHeader({
   hostEditable: boolean
   userDisplayName: string
   writableUntil?: number
+  onFeedback?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const primaryItems = primaryNavItems(reviewRequired)
@@ -393,7 +465,10 @@ function AppHeader({
                 badge={navBadge(item, badges)}
               />
             ))}
-            <MoreNavMenu items={secondaryItems} />
+            <div className="flex items-center gap-1">
+              <HelpMenu onFeedback={onFeedback} />
+              <MoreNavMenu items={secondaryItems} />
+            </div>
           </nav>
           <div className="flex items-center gap-2 border-l border-line pl-4">
             {userDisplayName && (
@@ -499,9 +574,11 @@ async function resolveGate(): Promise<Gate> {
 
 export function RootLayout() {
   const [gate, setGate] = useState<Gate>({ kind: 'loading' })
-  const { appName, accent, alwaysRequireReview, managed, writableUntil } = useAppMeta()
+  const { appName, accent, alwaysRequireReview, managed, writableUntil, feedback } = useAppMeta()
   const userDisplayName = gate.kind === 'app' ? getUserDisplayName() : ''
   const admin = gate.kind === 'app' ? gate.admin : false
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const openFeedback = feedback ? () => setFeedbackOpen(true) : undefined
 
   async function refreshGate() {
     try {
@@ -607,11 +684,13 @@ export function RootLayout() {
         hostEditable={managed === false}
         userDisplayName={userDisplayName}
         writableUntil={writableUntil}
+        onFeedback={openFeedback}
       />
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
         <Outlet />
       </main>
-      <AppFooter showLanguage={false} />
+      <AppFooter showLanguage={false} onFeedback={openFeedback} />
+      {feedbackOpen && <FeedbackDialog admin={admin} onClose={() => setFeedbackOpen(false)} />}
     </div>
   )
 }

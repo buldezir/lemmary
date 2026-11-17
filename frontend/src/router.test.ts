@@ -1,4 +1,11 @@
-import { describe, expect, test } from 'vitest'
+import { beforeAll, describe, expect, test } from 'vitest'
+
+// The router imports every page, which outlasts the 5s test timeout on a
+// loaded machine (test-all runs the Go suites alongside). Loaded once here,
+// with room, so each test below finds it in the module cache.
+beforeAll(async () => {
+  await import('./router')
+}, 60_000)
 
 // The route tree is hand-written, so a page reaches the app only because
 // somebody added a line to it. This asserts it holds every path nav links to.
@@ -44,6 +51,8 @@ describe('route tree', () => {
       '/account/passkeys',
       '/account/sharing',
       '/tags',
+      '/rules',
+      '/settings/rules',
       '/bulk',
       '/export',
       '/document/$documentId',

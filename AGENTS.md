@@ -55,6 +55,10 @@ The app, its API errors and the docs ship in English, German and Russian. Englis
 - A message the backend shows a user needs a de and ru entry in `backend/internal/i18n/catalog.go`; `i18n/messages_test.go` fails otherwise. Build one from values with `i18n.Errorf`, not `fmt`, and send it with `writeBadRequest`, so it is translated from its format.
 - Every `docs/*.md` has a copy under `docs/de/` and `docs/ru/` whose headings keep the English anchors (`{#slug}`); the docs build fails on a missing copy.
 
+## UI controls
+
+A dropdown is `Combobox` (`frontend/src/components/Combobox.tsx`), or `IconSelect` where an icon button is the trigger; never a native `<select>`. Give each instance a unique `id` (`useId()`): it names the listbox options. Browser specs pick from one with `pickOption` or the `combobox` role, not `selectOption`.
+
 ## Lint
 
 `test-all.sh` runs golangci-lint with `backend/.golangci.yml`, then `deadcode`, which fails on functions that nothing calls, not even a test. CI skips this stage, so your local run is the only check: a task is not done while it fails.

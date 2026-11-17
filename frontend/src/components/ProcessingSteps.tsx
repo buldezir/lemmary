@@ -103,9 +103,18 @@ export function ProcessingSteps({
     ? ''
     : job.error
 
+  const stepDetails = runs
+    .filter((run) => run.detail)
+    .map((run) => (
+      <p key={run.name} className="mt-1 text-xs text-ink-soft">
+        {stepLabel(run.name)}: {run.detail}
+      </p>
+    ))
+
   const body = (
     <>
       {list}
+      {stepDetails}
       {stepErrors}
       {unattributedError ? (
         <p className="mt-1 text-xs text-madder">{unattributedError}</p>

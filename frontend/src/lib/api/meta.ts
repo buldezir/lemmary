@@ -32,6 +32,8 @@ export type AppMeta = {
   ingestDir?: boolean
   /** Whether INGEST_IMAP_ENABLED is set; shows the mailbox half of the Ingest tab. */
   ingestImap?: boolean
+  /** Whether FEEDBACK_ENABLED leaves the Feedback dialog on. */
+  feedback?: boolean
   /** When a hosted instance stops taking changes (ms since the epoch); absent for any other. */
   writableUntil?: number
   /** LEMMARY_VERSION and LEMMARY_REVISION baked into the image; empty for a local build. */
@@ -85,6 +87,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       web_search?: boolean
       ingest_dir?: boolean
       ingest_imap?: boolean
+      feedback?: boolean
       result_language?: string
       writable_until?: string
       version?: string
@@ -105,6 +108,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       webSearch: data.web_search === true,
       ingestDir: data.ingest_dir === true,
       ingestImap: data.ingest_imap === true,
+      feedback: data.feedback === true,
       resultLanguage: typeof data.result_language === 'string' ? data.result_language : '',
       writableUntil: Number.isNaN(writableUntil) ? undefined : writableUntil,
       version: typeof data.version === 'string' ? data.version : '',

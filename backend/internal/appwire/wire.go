@@ -81,7 +81,7 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	if config.IngestIMAPEnabledFromEnv() {
 		imapScanner = imapimport.New(app, rt)
 	}
-	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill, gate, ingestDir != "", imapScanner)
+	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill, gate, ingestDir != "", imapScanner, config.FeedbackURLFromEnv())
 	// After config.RegisterHooks, so the settings singleton and env-seeded
 	// providers exist by the time an account is minted.
 	appapi.RegisterAdminBootstrap(app)

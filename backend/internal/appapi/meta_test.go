@@ -128,7 +128,7 @@ func TestMetaCarriesTheImageVersion(t *testing.T) {
 	t.Setenv(updatecheck.EnvVersion, "v2026.10.13")
 	t.Setenv(updatecheck.EnvRevision, "570da0c7abc")
 
-	handler := handleGetMeta(bootNamedApp(t, "", false), config.NewRuntime(config.AIEnv{}), false, false)
+	handler := handleGetMeta(bootNamedApp(t, "", false), config.NewRuntime(config.AIEnv{}), false, false, true)
 	rec := httptest.NewRecorder()
 	e := &core.RequestEvent{}
 	e.Response = rec
@@ -141,7 +141,7 @@ func TestMetaCarriesTheImageVersion(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &meta); err != nil {
 		t.Fatal(err)
 	}
-	if meta["version"] != "v2026.10.13" || meta["revision"] != "570da0c7abc" {
-		t.Fatalf("version = %v, revision = %v", meta["version"], meta["revision"])
+	if meta["version"] != "v2026.10.13" || meta["revision"] != "570da0c7abc" || meta["feedback"] != true {
+		t.Fatalf("version = %v, revision = %v, feedback = %v", meta["version"], meta["revision"], meta["feedback"])
 	}
 }

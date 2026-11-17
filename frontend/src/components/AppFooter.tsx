@@ -18,8 +18,11 @@ function GitHubIcon() {
   )
 }
 
-/** `showLanguage` off on sign-in and inside the app, where Account → Preferences has the choice. */
-export function AppFooter({ showLanguage = true }: { showLanguage?: boolean }) {
+/**
+ * `showLanguage` off on sign-in and inside the app, where Account → Preferences has the choice.
+ * `onFeedback` only inside the app: the server relays feedback for signed-in accounts.
+ */
+export function AppFooter({ showLanguage = true, onFeedback }: { showLanguage?: boolean; onFeedback?: () => void }) {
   const { version, revision } = useAppMeta()
   return (
     <footer className="mt-auto border-t border-line px-4 py-4 text-center text-[11px] uppercase tracking-[0.14em] text-ink-soft">
@@ -57,6 +60,20 @@ export function AppFooter({ showLanguage = true }: { showLanguage?: boolean }) {
         >
           {t('footer.documentation')}
         </a>
+        {onFeedback && (
+          <>
+            <span className="mx-2 text-line-strong" aria-hidden="true">
+              ·
+            </span>
+            <button
+              type="button"
+              onClick={onFeedback}
+              className="uppercase tracking-[0.14em] transition-colors hover:text-oxblood"
+            >
+              {t('footer.feedback')}
+            </button>
+          </>
+        )}
         <span className="mx-2 text-line-strong" aria-hidden="true">
           ·
         </span>

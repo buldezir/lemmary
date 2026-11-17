@@ -74,6 +74,7 @@ export function secondaryNavItems(pbAdminUrl: string, hostEditable: boolean): re
   return [
     { kind: 'route', label: t('nav.account'), to: '/account' },
     { kind: 'route', label: t('nav.tags'), to: '/tags' },
+    { kind: 'route', label: t('nav.rules'), to: '/rules' },
     { kind: 'route', label: t('nav.bulkActions'), to: '/bulk' },
     ...(hostEditable ? [{ kind: 'route', label: t('nav.ocrTest'), to: '/ocr-test' } as const] : []),
     { kind: 'route', label: t('nav.export'), to: '/export' },

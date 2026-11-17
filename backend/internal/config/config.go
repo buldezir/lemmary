@@ -160,6 +160,22 @@ func UpdateCheckEnabledFromEnv() bool {
 }
 
 const (
+	EnvFeedback        = "FEEDBACK_ENABLED"
+	EnvFeedbackURL     = "FEEDBACK_URL"
+	DefaultFeedbackURL = "https://feedback.lemmary.app/v1/feedback"
+)
+
+// FeedbackURLFromEnv is where the Feedback dialog sends to, or "" when
+// FEEDBACK_ENABLED is off. On when unset: nothing is sent until someone
+// writes a report and presses Send.
+func FeedbackURLFromEnv() string {
+	if !getEnvBool(EnvFeedback, true) {
+		return ""
+	}
+	return getEnv(EnvFeedbackURL, DefaultFeedbackURL)
+}
+
+const (
 	EnvRelatedLinking                 = "RELATED_LINKING_ENABLED"
 	EnvRelatedSimilarityThreshold     = "RELATED_SIMILARITY_THRESHOLD"
 	DefaultRelatedSimilarityThreshold = 0.9
