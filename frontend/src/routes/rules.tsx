@@ -60,6 +60,12 @@ type Catalog = {
   tags: TagRecord[]
   fields: CustomField[]
   options: Record<string, OptionRecord[]>
+  /**
+   * A global rule's: it runs on every user's documents, and tags, types and
+   * correspondents are each user's own, so it names them instead of pointing
+   * at the admin's. The admin's own lists are only suggestions.
+   */
+  named: boolean
 }
 
 type Draft = {
@@ -85,9 +91,9 @@ const comboboxClassName = 'min-w-44'
 const removeButtonClassName =
   'flex h-9 w-9 shrink-0 items-center justify-center rounded-xs text-lg leading-none text-ink-faint transition-colors hover:text-madder'
 
-async function loadPage(): Promise<{ rules: RuleRecord[]; catalog: Catalog }> {
+async function loadPage(global: boolean): Promise<{ rules: RuleRecord[]; catalog: Catalog }> {
   const [rules, tags, fields, types, correspondents] = await Promise.all([
-    listRules(),
+    listRules(global),
     listTags(),
     listCustomFields(),
     listOptions(DOCUMENT_TYPE_FIELD_ID),
@@ -99,6 +105,7 @@ async function loadPage(): Promise<{ rules: RuleRecord[]; catalog: Catalog }> {
       tags,
       fields,
       options: { [DOCUMENT_TYPE_FIELD_ID]: types, [CORRESPONDENT_FIELD_ID]: correspondents },
+      named: global,
     },
   }
 }
@@ -124,6 +131,7 @@ function subjectName(subject: string, catalog: Catalog): string {
 /** A stored value as its owner reads it: an id becomes its name. */
 function valueName(subject: string, kind: SubjectKind | null, value: unknown, catalog: Catalog): string {
   const id = String(value ?? '')
+  if (catalog.named && (kind === 'tag' || kind === 'option')) return id
   if (kind === 'tag') return catalog.tags.find((tag) => tag.id === id)?.name ?? t('rules.missing')
   if (kind === 'option') return catalog.options[subject]?.find((o) => o.id === id)?.name ?? t('rules.missing')
   if (kind === 'choice') {
@@ -167,7 +175,28 @@ function describeAction(a: RuleAction, catalog: Catalog): string {
 
 /** The owner's if-then rules: listed and ordered here, each edited in a dialog. */
 export function RulesPage() {
-  const { data, loading, error: loadError, reload } = useAsync(loadPage, [])
+  return (
+    <div className="mx-auto flex max-w-3xl flex-col gap-5">
+      <header>
+        <h1 className="font-display text-2xl font-semibold text-ink">{t('rulesPage.title')}</h1>
+        <p className={`${fieldHintClassName} mt-1`}>{t('rulesPage.intro')}</p>
+        <p className={`${fieldHintClassName} mt-2`}>
+          {t('rulesPage.order')}{' '}
+          <DocsLink href={docsUrl('rules')}>{t('rulesPage.docs')}</DocsLink>
+        </p>
+      </header>
+      <RulesSection global={false} />
+    </div>
+  )
+}
+
+/** The admin's global rules, which run on every user's documents before their own. */
+export function SettingsRulesPage() {
+  return <RulesSection global />
+}
+
+function RulesSection({ global }: { global: boolean }) {
+  const { data, loading, error: loadError, reload } = useAsync(() => loadPage(global), [global])
   // null while the dialog is closed; a rule without an id is a new one.
   const [editing, setEditing] = useState<RuleRecord | null>(null)
   const [busy, setBusy] = useState(false)
@@ -201,19 +230,12 @@ export function RulesPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5">
-      <header>
-        <h1 className="font-display text-2xl font-semibold text-ink">{t('rulesPage.title')}</h1>
-        <p className={`${fieldHintClassName} mt-1`}>{t('rulesPage.intro')}</p>
-        <p className={`${fieldHintClassName} mt-2`}>
-          {t('rulesPage.order')}{' '}
-          <DocsLink href={docsUrl('rules')}>{t('rulesPage.docs')}</DocsLink>
-        </p>
-      </header>
-
+    <>
       <section className={sectionClassName}>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className={`${sectionTitleClassName} mb-0 flex-1`}>{t('rulesPage.yourRules')}</h2>
+          <h2 className={`${sectionTitleClassName} mb-0 flex-1`}>
+            {global ? t('rulesPage.globalTitle') : t('rulesPage.yourRules')}
+          </h2>
           <Button size="sm" disabled={!catalog} onClick={() =>
               setEditing({ ...NEW_DRAFT, id: '', user: '', position: Math.max(-1, ...rules.map((r) => r.position)) + 1 })
             }
@@ -221,6 +243,12 @@ export function RulesPage() {
             {t('rulesPage.add')}
           </Button>
         </div>
+        {global && (
+          <p className={`${fieldHintClassName} mb-3`}>
+            {t('rulesPage.globalIntro')}{' '}
+            <DocsLink href={docsUrl('rules#global')}>{t('rulesPage.docs')}</DocsLink>
+          </p>
+        )}
         {(loadError || error) && <p className="mb-3 text-sm text-madder">{loadError || error}</p>}
 
         {loading ? (
@@ -304,7 +332,7 @@ export function RulesPage() {
           }}
         />
       )}
-    </div>
+    </>
   )
 }
 
@@ -376,6 +404,7 @@ function RuleDialog({
           actions: ruleActionsForSave(draft.actions, catalog.fields),
         },
         rule.position,
+        catalog.named,
       )
       await onSaved()
     } catch (err) {
@@ -613,6 +642,21 @@ function ValueInput({
         : kind === 'choice'
           ? (catalog.fields.find((f) => f.id === subject)?.choices ?? [])
           : null
+  if (catalog.named && (kind === 'tag' || kind === 'option')) {
+    const names = (kind === 'tag' ? catalog.tags : (catalog.options[subject] ?? [])).map((c) => c.name)
+    return (
+      <Combobox
+        id={`${id}-value`}
+        ariaLabel={t('rulesPage.value')}
+        className={`${comboboxClassName} flex-1`}
+        value={current}
+        placeholder={t('rulesPage.pickOrName')}
+        options={[...new Set([...names, ...(current ? [current] : [])])].map((name) => ({ value: name, label: name }))}
+        onChange={onChange}
+        onCreate={(name) => onChange(name.trim())}
+      />
+    )
+  }
   if (choices) {
     return (
       <Combobox

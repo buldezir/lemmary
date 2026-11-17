@@ -143,6 +143,39 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+// A global rule names tags and options, so it reads the same for every owner:
+// each owner's ids stand in for the names, and a name the owner lacks matches
+// nothing.
+func TestGlobalRulesNameTagsAndOptions(t *testing.T) {
+	t.Parallel()
+	cat := testCatalog()
+	rule := Rule{Global: true, Conditions: []Condition{
+		{Subject: SubjectTag, Op: OpIs, Value: " TO PAY "},
+		{Subject: models.DocumentTypeFieldID, Op: OpIs, Value: "invoice"},
+		{Subject: SubjectTag, Op: OpIsNot, Value: "archived"},
+	}, Actions: []Action{{Type: ActionAddTag, Value: "brand new"}}}
+
+	doc := &Document{Tags: []string{"tpay"}, Values: models.FieldValues{
+		models.DocumentTypeFieldID: {Type: models.CustomFieldOption, Option: "oinvoice"},
+	}}
+	if !rule.Localize(cat).Matches(doc, cat.Fields) {
+		t.Fatalf("localized = %+v", rule.Localize(cat).Conditions)
+	}
+	if rule.Matches(doc, cat.Fields) {
+		t.Fatal("unlocalized, a name is no id")
+	}
+
+	// Names need not exist anywhere yet; the worker creates them per owner.
+	if err := Validate(rule, Catalog{Fields: testFields}); err != nil {
+		t.Fatalf("a global rule naming new tags was refused: %v", err)
+	}
+	// The same rule as somebody's own points at nothing.
+	rule.Global = false
+	if err := Validate(rule, cat); err == nil {
+		t.Fatal("a user's rule may not name a tag")
+	}
+}
+
 func TestDeliverSignsAndWantsA2xx(t *testing.T) {
 	t.Parallel()
 	var signature, body string

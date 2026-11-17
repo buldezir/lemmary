@@ -101,8 +101,12 @@ type Action struct {
 }
 
 type Rule struct {
-	ID         string
-	Name       string
+	ID   string
+	Name string
+	// Global is an admin's rule, stored without a user, that runs on every
+	// user's documents. Tags and options belong to each user, so a global rule
+	// names them rather than pointing at one user's ids; see Localize.
+	Global     bool
 	Triggers   []string
 	Conditions []Condition
 	Actions    []Action
@@ -112,6 +116,7 @@ func FromRecord(record *core.Record) (Rule, error) {
 	rule := Rule{
 		ID:       record.Id,
 		Name:     record.GetString("name"),
+		Global:   record.GetString("user") == "",
 		Triggers: record.GetStringSlice("triggers"),
 	}
 	if err := record.UnmarshalJSONField("conditions", &rule.Conditions); err != nil {
@@ -123,10 +128,12 @@ func FromRecord(record *core.Record) (Rule, error) {
 	return rule, nil
 }
 
-// Load is the owner's enabled rules for trigger, in the order they run.
+// Load is the enabled rules for trigger that apply to the owner's documents,
+// in the order they run: the global ones first, then the owner's own, so an
+// owner's rule sees what the admin's did.
 func Load(app core.App, userID, trigger string) ([]Rule, error) {
-	records, err := app.FindRecordsByFilter(Collection, "user = {:user} && enabled = true", "position,created,id", 0, 0,
-		dbx.Params{"user": userID})
+	records, err := app.FindRecordsByFilter(Collection, "(user = {:user} || user = '') && enabled = true",
+		"user,position,created,id", 0, 0, dbx.Params{"user": userID})
 	if err != nil {
 		return nil, err
 	}

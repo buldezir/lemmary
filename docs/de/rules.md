@@ -11,7 +11,8 @@ Aktionen. Typische Beispiele:
   Assistant oder Zapier mit dem Dokument aufgerufen.
 
 Regeln finden Sie unter **Mehr → Regeln**. Jeder Benutzer hat seine eigenen; eine Regel wirkt nur
-auf die Dokumente ihres Besitzers.
+auf die Dokumente ihres Besitzers. Ein Administrator kann außerdem [globale Regeln](#global)
+anlegen, die für alle laufen.
 
 ---
 
@@ -65,6 +66,21 @@ Kann eine Aktion nicht ausgeführt werden – das Modell antwortet nicht, ein We
 erreichbar, ein Tag aus der Regel wurde gelöscht –, wirken die übrigen Aktionen trotzdem, und die
 Verarbeitungsschritte des Dokuments zeigen **Regeln ausführen** als fehlgeschlagen mit dem Grund.
 Die Schritte nennen auch die Regeln, die gegriffen haben.
+
+## Globale Regeln {#global}
+
+Administratoren verwalten Regeln für alle unter **Admin → Regeln**. Sie funktionieren genau wie
+die eigenen Regeln eines Benutzers und laufen für die Dokumente jedes Benutzers, vor dessen
+eigenen Regeln; eine Regel des Benutzers sieht also, was eine globale getan hat. Benutzer sehen
+globale Regeln nicht.
+
+Tags, Dokumenttypen und Korrespondenten gehören jedem Benutzer selbst, darum nennt eine globale
+Regel sie beim Namen, statt die eines Benutzers auszuwählen: Eine Bedingung wie *Tags enthalten
+„zu zahlen“* trifft auf den Tag dieses Namens beim Besitzer des Dokuments zu, ohne Rücksicht auf
+Groß- und Kleinschreibung. Eine Aktion, die einen Tag hinzufügt oder einen Dokumenttyp oder
+Korrespondenten setzt, legt ihn in der Liste des Besitzers an, wenn es dort keinen dieses Namens
+gibt; einen Tag zu entfernen, den er nicht hat, bewirkt nichts. Benutzerdefinierte Felder und ihre
+Auswahlwerte gelten für alle und werden wie gewohnt ausgewählt.
 
 ## Webhooks {#webhooks}
 

@@ -961,6 +961,10 @@ export const en = {
   'rules.subjectConfidence': 'AI confidence (0 to 1)',
   'rules.missing': '(deleted)',
   'rulesApi.saveFailed': 'Could not save the rule.',
+  'rulesPage.globalTitle': 'Rules for everyone',
+  'rulesPage.globalIntro':
+    'These rules run on every user\'s documents, before each user\'s own rules. Tags, document types and correspondents belong to each user, so a rule names them: a condition matches a user\'s tag or type of that name, and an action that adds a tag or sets a type creates it in that user\'s list when they have none.',
+  'rulesPage.pickOrName': 'Choose or type a name…',
   'rulesPage.title': 'Rules',
   'rulesPage.intro':
     'If-then automation for your documents: when a document is processed, or when you change its tags or fields, every rule whose conditions all hold runs its actions.',
@@ -1216,6 +1220,7 @@ export const en = {
   'settings.tabAi': 'AI',
   'settings.tabProcessing': 'Processing',
   'settings.tabFields': 'Fields',
+  'settings.tabRules': 'Rules',
   'settings.tabWorker': 'Worker',
   'settings.tabDuplicates': 'Duplicates',
   'settings.tabIngest': 'Ingest',

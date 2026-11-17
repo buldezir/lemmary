@@ -8,7 +8,8 @@ import (
 	"lemmary/backend/internal/rules"
 )
 
-// Adds rules, each user's if-then automation over their own documents, and
+// Adds rules, each user's if-then automation over their own documents and the
+// admin's global ones over everybody's, and
 // processing_jobs.return_status, the status a job that runs only the rules
 // leaves the document in.
 //
@@ -30,14 +31,16 @@ func createRulesCollection(app core.App) error {
 		return nil
 	}
 	coll := core.NewBaseCollection(rules.Collection)
-	owner := "user = @request.auth.id"
-	coll.ListRule = new(owner)
-	coll.ViewRule = new(owner)
-	coll.CreateRule = new("@request.auth.id != '' && " + owner)
-	coll.UpdateRule = new(owner + " && @request.body.user:changed = false")
-	coll.DeleteRule = new(owner)
+	// A rule without a user is global: it runs on everyone's documents, so
+	// only an admin sees or keeps one.
+	access := "(user = @request.auth.id || (user = '' && @request.auth." + pairedAdminField + " = true))"
+	coll.ListRule = new(access)
+	coll.ViewRule = new(access)
+	coll.CreateRule = new("@request.auth.id != '' && " + access)
+	coll.UpdateRule = new(access + " && @request.body.user:changed = false")
+	coll.DeleteRule = new(access)
 	coll.Fields.Add(
-		&core.RelationField{Name: "user", Required: true, CollectionId: "_pb_users_auth_", MaxSelect: 1, CascadeDelete: true},
+		&core.RelationField{Name: "user", CollectionId: "_pb_users_auth_", MaxSelect: 1, CascadeDelete: true},
 		&core.TextField{Name: "name", Required: true, Max: 100},
 		&core.BoolField{Name: "enabled"},
 		&core.NumberField{Name: "position", OnlyInt: true},

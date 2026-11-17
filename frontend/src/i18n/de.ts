@@ -1009,6 +1009,10 @@ export const de: Catalog = {
   'rules.subjectConfidence': 'KI-Konfidenz (0 bis 1)',
   'rules.missing': '(gelöscht)',
   'rulesApi.saveFailed': 'Die Regel konnte nicht gespeichert werden.',
+  'rulesPage.globalTitle': 'Regeln für alle',
+  'rulesPage.globalIntro':
+    'Diese Regeln laufen für die Dokumente aller Benutzer, vor deren eigenen Regeln. Tags, Dokumenttypen und Korrespondenten gehören jedem Benutzer selbst, darum nennt eine Regel sie beim Namen: Eine Bedingung trifft auf den Tag oder Typ dieses Namens beim jeweiligen Benutzer zu, und eine Aktion, die einen Tag hinzufügt oder einen Typ setzt, legt ihn in dessen Liste an, wenn es ihn dort noch nicht gibt.',
+  'rulesPage.pickOrName': 'Auswählen oder Namen eingeben…',
   'rulesPage.title': 'Regeln',
   'rulesPage.intro':
     'Wenn-dann-Automatisierung für Ihre Dokumente: Wird ein Dokument verarbeitet oder ändern Sie seine Tags oder Felder, führt jede Regel, deren Bedingungen alle zutreffen, ihre Aktionen aus.',
@@ -1278,6 +1282,7 @@ export const de: Catalog = {
   'settings.tabAi': 'KI',
   'settings.tabProcessing': 'Verarbeitung',
   'settings.tabFields': 'Felder',
+  'settings.tabRules': 'Regeln',
   'settings.tabWorker': 'Worker',
   'settings.tabDuplicates': 'Duplikate',
   'settings.tabIngest': 'Eingang',

@@ -55,7 +55,7 @@ import {
   AccountProfilePage,
 } from './routes/account'
 import { TagsPage } from './routes/tags'
-import { RulesPage } from './routes/rules'
+import { RulesPage, SettingsRulesPage } from './routes/rules'
 import { BulkActionsPage } from './routes/bulk'
 
 // Admin-only routes bounce non-admins to the document list before the page
@@ -242,6 +242,12 @@ const settingsFieldsRoute = createRoute({
   component: SettingsFieldsPage,
 })
 
+const settingsRulesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'rules',
+  component: SettingsRulesPage,
+})
+
 const settingsWorkerRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'worker',
@@ -420,6 +426,7 @@ const routeTree = rootRoute.addChildren([
       settingsAIRoute,
       settingsProcessingRoute,
       settingsFieldsRoute,
+      settingsRulesRoute,
       settingsWorkerRoute,
       settingsDuplicatesRoute,
       settingsIngestRoute,

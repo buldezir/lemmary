@@ -45,6 +45,7 @@ describe('route tree', () => {
       '/account/sharing',
       '/tags',
       '/rules',
+      '/settings/rules',
       '/bulk',
       '/export',
       '/document/$documentId',

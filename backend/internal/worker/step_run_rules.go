@@ -97,7 +97,7 @@ func (s *RunRulesStep) Run(ctx context.Context, state *StepState) error {
 
 	var fired []string
 	for _, rule := range list {
-		if !rule.Matches(run.doc, cat.Fields) {
+		if !rule.Localize(cat).Matches(run.doc, cat.Fields) {
 			continue
 		}
 		fired = append(fired, rule.Name)
@@ -147,9 +147,8 @@ func (r *rulesRun) apply(ctx context.Context, rule rules.Rule, action rules.Acti
 }
 
 func (r *rulesRun) applyTag(rule rules.Rule, action rules.Action) {
-	id, _ := action.Value.(string)
-	if _, ok := r.cat.Tags[id]; !ok {
-		r.fail(rule, "its tag no longer exists")
+	id, ok := r.tagID(rule, action)
+	if !ok {
 		return
 	}
 	has := slices.Contains(r.doc.Tags, id)
@@ -163,13 +162,54 @@ func (r *rulesRun) applyTag(rule rules.Rule, action rules.Action) {
 	}
 }
 
+// tagID is the owner's tag an action names. A global rule names it, and adding
+// a tag the owner lacks creates it in their list: the admin asked for it on
+// every document, and a rule that silently does nothing for some users would
+// be worse. Removing one they lack is nothing to do.
+func (r *rulesRun) tagID(rule rules.Rule, action rules.Action) (string, bool) {
+	value, _ := action.Value.(string)
+	if !rule.Global {
+		if _, ok := r.cat.Tags[value]; !ok {
+			r.fail(rule, "its tag no longer exists")
+			return "", false
+		}
+		return value, true
+	}
+	if id := r.cat.IDByName("", value); id != "" {
+		return id, true
+	}
+	if action.Type == rules.ActionRemoveTag {
+		return "", false
+	}
+	id, _, err := EnsureTag(r.state.App, r.state.Document.GetString("user"), value)
+	if err != nil {
+		r.fail(rule, "tag %q: %v", value, err)
+		return "", false
+	}
+	r.cat.Tags[id] = value
+	return id, true
+}
+
 func (r *rulesRun) applySetField(rule rules.Rule, action rules.Action) {
 	field, ok := r.cat.Fields[action.Field]
 	if !ok {
 		r.fail(rule, "its field no longer exists")
 		return
 	}
-	value, ok := r.fieldValue(field, action.Value)
+	raw := action.Value
+	if rule.Global && field.Type == models.CustomFieldOption {
+		// Named, like a global rule's tags, and created the way extraction
+		// creates a type or correspondent it has not seen.
+		name, _ := raw.(string)
+		id, _, err := EnsureOption(r.state.App, field.ID, r.state.Document.GetString("user"), name)
+		if err != nil {
+			r.fail(rule, "%s %q: %v", field.Name, name, err)
+			return
+		}
+		r.cat.Options[id] = rules.Option{Field: field.ID, Name: name}
+		raw = id
+	}
+	value, ok := r.fieldValue(field, raw)
 	if !ok {
 		r.fail(rule, "its value for %s no longer exists", field.Name)
 		return

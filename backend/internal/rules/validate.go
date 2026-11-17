@@ -30,6 +30,65 @@ type Catalog struct {
 	Fields  map[string]models.CustomField
 	Tags    map[string]string
 	Options map[string]Option
+	// named is set while validating a global rule, which names tags and
+	// options instead of pointing at one user's.
+	named bool
+}
+
+// noMatch is an id no tag or option has. A global rule naming a tag its owner
+// lacks asks about nothing: "includes" fails and "does not include" holds.
+const noMatch = "\x00none"
+
+// IDByName is the owner's tag (field "") or option of field with that name,
+// ignoring case and surrounding space, or "" when there is none.
+func (cat Catalog) IDByName(field, name string) string {
+	name = strings.TrimSpace(name)
+	if field == "" {
+		for id, tag := range cat.Tags {
+			if strings.EqualFold(strings.TrimSpace(tag), name) {
+				return id
+			}
+		}
+		return ""
+	}
+	for id, option := range cat.Options {
+		if option.Field == field && strings.EqualFold(strings.TrimSpace(option.Name), name) {
+			return id
+		}
+	}
+	return ""
+}
+
+// Localize points a global rule's conditions at the owner's tags and options by
+// name. Its actions keep their names: the worker resolves them as it runs, and
+// creates what the owner lacks.
+func (r Rule) Localize(cat Catalog) Rule {
+	if !r.Global {
+		return r
+	}
+	conditions := make([]Condition, len(r.Conditions))
+	for i, c := range r.Conditions {
+		conditions[i] = c
+		kind, _ := subjectKind(c.Subject, cat.Fields)
+		if (kind != kindTag && kind != kindOption) || !needsValue(c.Op) {
+			continue
+		}
+		field := c.Subject
+		if kind == kindTag {
+			field = ""
+		}
+		if id := cat.IDByName(field, stringValue(c.Value)); id != "" {
+			conditions[i].Value = id
+		} else {
+			conditions[i].Value = noMatch
+		}
+	}
+	r.Conditions = conditions
+	return r
+}
+
+func needsValue(op string) bool {
+	return op != OpIsSet && op != OpIsNotSet
 }
 
 type Option struct {
@@ -71,6 +130,7 @@ func LoadCatalog(app core.App, userID string) (Catalog, error) {
 // condition it cannot read or an action it cannot run. Ids are checked against
 // the catalog now; one deleted later is the worker's to skip.
 func Validate(r Rule, cat Catalog) error {
+	cat.named = r.Global
 	if len(r.Actions) == 0 {
 		return i18n.Errorf("A rule needs at least one action.")
 	}
@@ -98,7 +158,7 @@ func validateCondition(c Condition, cat Catalog) error {
 	if !slices.Contains(opsByKind[kind], c.Op) {
 		return i18n.Errorf("A condition's comparison does not fit its field.")
 	}
-	if c.Op == OpIsSet || c.Op == OpIsNotSet {
+	if !needsValue(c.Op) {
 		return nil
 	}
 	if c.Op == OpMatches {
@@ -122,6 +182,9 @@ func validateValue(kind, subject string, value any, cat Catalog, forAction bool)
 		missing = i18n.Errorf("An action refers to a field, tag or value that does not exist.")
 	}
 	s, isString := value.(string)
+	if cat.named && (kind == kindOption || kind == kindTag) {
+		kind = kindText
+	}
 	switch kind {
 	case kindNumber:
 		if _, ok := value.(float64); !ok {

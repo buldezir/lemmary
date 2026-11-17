@@ -10,7 +10,7 @@ actions: when the trigger fires and every condition holds, the actions run. Typi
   webhook with the document.
 
 Rules live under **More → Rules**. Every user has their own; a rule only ever acts on its
-owner's documents.
+owner's documents. An admin can also set up [global rules](#global) that run on everyone's.
 
 ---
 
@@ -61,6 +61,19 @@ sent after everything else is saved.
 When an action cannot run — the model does not answer, a webhook is down, a tag the rule
 names was deleted — the other actions still apply, and the document's processing steps show
 **Run rules** as failed with the reason. The steps also name the rules that matched.
+
+## Global rules {#global}
+
+Admins keep rules for everyone under **Admin → Rules**. They work exactly like a user's own
+rules and run on every user's documents, before that user's own rules, so a user's rule sees
+what a global one did. Users do not see global rules.
+
+Tags, document types and correspondents belong to each user, so a global rule names them
+instead of picking one user's: a condition such as *Tags include "to pay"* matches whichever
+tag of that name the document's owner has, ignoring case. An action that adds a tag or sets
+a document type or correspondent creates it in the owner's list when they have none of that
+name; removing a tag they do not have does nothing. Custom fields and their choices are
+shared by everyone, so they are picked as usual.
 
 ## Webhooks {#webhooks}
 

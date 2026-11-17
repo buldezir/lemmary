@@ -229,6 +229,65 @@ func TestRunRulesAppliesMatchingRulesInOrder(t *testing.T) {
 	}
 }
 
+// An admin's global rule runs before the owner's own, matches the owner's tags
+// and types by name, and creates the tag and type it sets when the owner has
+// none of that name; another user's rules never run.
+func TestRunRulesRunsGlobalRulesFirstByName(t *testing.T) {
+	app := bootTagTestApp(t)
+	owner := createTagUser(t, app, "owner@example.com")
+	other := createTagUser(t, app, "other@example.com")
+	mine := createTag(t, app, "mine", owner)
+	doc := rulesTestDocument(t, app, owner, "Invoice")
+
+	processed := []string{rules.TriggerProcessed}
+	saveTestRule(t, app, owner, "Own", true, processed,
+		[]rules.Condition{{Subject: rules.SubjectTag, Op: rules.OpIsNot, Value: mine}},
+		[]rules.Action{{Type: rules.ActionAddTag, Value: mine}})
+	saveTestRule(t, app, "", "Global", true, processed,
+		[]rules.Condition{{Subject: models.DocumentTypeFieldID, Op: rules.OpIs, Value: "invoice"}},
+		[]rules.Action{
+			{Type: rules.ActionAddTag, Value: "Bookkeeping"},
+			{Type: rules.ActionRemoveTag, Value: "never had it"},
+			{Type: rules.ActionSetField, Field: models.CorrespondentFieldID, Value: "Tax office"},
+		})
+	saveTestRule(t, app, other, "Someone else's", true, processed, nil,
+		[]rules.Action{{Type: rules.ActionRequireReview}})
+
+	state := &StepState{
+		App:      app,
+		Job:      rulesTestJob(t, app, doc, models.ExtractionPipelineSteps),
+		Document: doc,
+		Logger:   slog.Default(),
+	}
+	if err := (&RunRulesStep{}).Run(context.Background(), state); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if state.StepDetail != "Global, Own" {
+		t.Fatalf("detail = %q", state.StepDetail)
+	}
+	bookkeeping, err := findTagByName(app, owner, "Bookkeeping")
+	if err != nil || bookkeeping == "" {
+		t.Fatalf("the global rule's tag was not created for the owner: %q %v", bookkeeping, err)
+	}
+	stored, err := app.FindRecordById("documents", doc.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetStringSlice("tags"); !slices.Equal(got, []string{bookkeeping, mine}) {
+		t.Fatalf("tags = %v", got)
+	}
+	if got := stored.GetString("processing_status"); got != models.DocStatusCompleted {
+		t.Fatalf("another user's rule ran: status %q", got)
+	}
+	values, err := models.LoadDocumentFieldValues(app, doc.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := values.OptionName(models.CorrespondentFieldID); got != "Tax office" {
+		t.Fatalf("correspondent = %q", got)
+	}
+}
+
 // What an action could not do fails the step softly, after the rest is saved.
 func TestRunRulesFailsSoftlyAfterSavingTheRest(t *testing.T) {
 	app := bootTagTestApp(t)
