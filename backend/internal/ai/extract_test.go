@@ -441,6 +441,34 @@ func TestExtractFieldsAsksForTheGivenFieldsWithTheRuleInstructions(t *testing.T)
 	}
 }
 
+func TestAnswerYesNo(t *testing.T) {
+	t.Parallel()
+	reply := `{"answer": true, "reason": "It says final reminder."}`
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		writeChatJSON(w, reply)
+	}))
+	t.Cleanup(srv.Close)
+	client := NewExtractor("openai", "test-key", "mistral-small-latest", srv.URL, "v1", "", "", 5*time.Second, slog.Default())
+
+	yes, err := client.AnswerYesNo(context.Background(), "Text:\nFinal reminder", "Is this a final reminder?")
+	if err != nil || !yes {
+		t.Fatalf("answer = %v, %v", yes, err)
+	}
+	for _, want := range []string{"Is this a final reminder?", "Final reminder", "untrusted data"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in the request, got %s", want, body)
+		}
+	}
+
+	reply = `{"reason": "unsure"}`
+	if _, err := client.AnswerYesNo(context.Background(), "x", "y"); err == nil {
+		t.Fatal("a reply without an answer counted as one")
+	}
+}
+
 // suggested_tags is asked for only in review mode: without a reviewer nobody
 // would ever accept a proposal, and the closed tags array stays closed either way.
 func TestBuildExtractionSystemPromptSuggestsNewTagsOnlyOnRequest(t *testing.T) {

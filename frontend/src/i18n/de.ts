@@ -1007,6 +1007,12 @@ export const de: Catalog = {
   'rules.subjectTitle': 'Titel',
   'rules.subjectText': 'Dokumenttext',
   'rules.subjectConfidence': 'KI-Konfidenz (0 bis 1)',
+  'rules.subjectAI': 'KI',
+  'rules.opAnswersYes': 'beantwortet mit Ja',
+  'rules.opAnswersNo': 'beantwortet mit Nein',
+  'rulesPage.aiQuestionPlaceholder': 'Ist das eine letzte Mahnung?',
+  'rulesPage.aiQuestionHint':
+    'Eine KI-Frage kostet eine Anfrage je Dokument, das bis hierher kommt, mit dem Extraktionsmodell. Sie wird erst gestellt, wenn alle anderen Bedingungen zutreffen, und sieht die Metadaten und den Text des Dokuments.',
   'rules.missing': '(gelöscht)',
   'rulesApi.saveFailed': 'Die Regel konnte nicht gespeichert werden.',
   'rulesPage.globalTitle': 'Regeln für alle',

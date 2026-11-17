@@ -26,6 +26,7 @@ describe('subjectKind', () => {
     expect(subjectKind(CORRESPONDENT_FIELD_ID, fields)).toBe('option')
     expect(subjectKind('famount', fields)).toBe('number')
     expect(subjectKind('fstatus', fields)).toBe('choice')
+    expect(subjectKind('ai', fields)).toBe('ai')
   })
 
   test('is null for a field deleted since', () => {

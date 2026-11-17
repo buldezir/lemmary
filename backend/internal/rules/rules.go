@@ -6,6 +6,7 @@
 package rules
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -33,6 +34,9 @@ const (
 	SubjectText       = "text"
 	SubjectTag        = "tag"
 	SubjectConfidence = "confidence"
+	// SubjectAI asks the model the condition's value, a yes/no question about
+	// the document; is wants yes, is_not wants no.
+	SubjectAI = "ai"
 )
 
 const (
@@ -64,6 +68,7 @@ const (
 	kindOption = "option"
 	kindChoice = "choice"
 	kindTag    = "tag"
+	kindAI     = "ai"
 )
 
 var opsByKind = map[string][]string{
@@ -73,6 +78,7 @@ var opsByKind = map[string][]string{
 	kindOption: {OpIs, OpIsNot, OpIsSet, OpIsNotSet},
 	kindChoice: {OpIs, OpIsNot, OpIsSet, OpIsNotSet},
 	kindTag:    {OpIs, OpIsNot},
+	kindAI:     {OpIs, OpIsNot},
 }
 
 type Condition struct {
@@ -160,14 +166,37 @@ type Document struct {
 	Values     models.FieldValues
 }
 
+// Asker answers a yes/no question about the document being matched.
+type Asker func(question string) (bool, error)
+
 // Matches is true when every condition holds; a rule without any always does.
-func (r Rule) Matches(d *Document, fields map[string]models.CustomField) bool {
+// The AI questions cost a request each, so they are asked last, in order, and
+// only once every other condition holds; an unanswered one fails the match
+// with its error.
+func (r Rule) Matches(d *Document, fields map[string]models.CustomField, ask Asker) (bool, error) {
+	var questions []Condition
 	for _, c := range r.Conditions {
+		if c.Subject == SubjectAI {
+			questions = append(questions, c)
+			continue
+		}
 		if !c.holds(d, fields) {
-			return false
+			return false, nil
 		}
 	}
-	return true
+	for _, c := range questions {
+		if ask == nil {
+			return false, errors.New("no AI is configured to answer its question")
+		}
+		yes, err := ask(stringValue(c.Value))
+		if err != nil {
+			return false, err
+		}
+		if yes != (c.Op == OpIs) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func subjectKind(subject string, fields map[string]models.CustomField) (string, bool) {
@@ -178,6 +207,8 @@ func subjectKind(subject string, fields map[string]models.CustomField) (string, 
 		return kindTag, true
 	case SubjectConfidence:
 		return kindNumber, true
+	case SubjectAI:
+		return kindAI, true
 	}
 	field, ok := fields[subject]
 	if !ok {

@@ -28,6 +28,9 @@ func (f *fakeTranslator) ExtractMetadata(context.Context, string, ai.ExtractionC
 func (f *fakeTranslator) ExtractFields(context.Context, string, string, []models.CustomField) (map[string]any, error) {
 	return nil, nil
 }
+func (f *fakeTranslator) AnswerYesNo(context.Context, string, string) (bool, error) {
+	return false, nil
+}
 func (f *fakeTranslator) Translate(_ context.Context, text string) (string, error) {
 	f.calls++
 	if f.during != nil {

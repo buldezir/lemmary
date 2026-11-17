@@ -97,7 +97,11 @@ func (s *RunRulesStep) Run(ctx context.Context, state *StepState) error {
 
 	var fired []string
 	for _, rule := range list {
-		if !rule.Localize(cat).Matches(run.doc, cat.Fields) {
+		matched, err := rule.Localize(cat).Matches(run.doc, cat.Fields, run.asker(ctx))
+		if err != nil {
+			run.fail(rule, "AI question: %v", err)
+		}
+		if !matched {
 			continue
 		}
 		fired = append(fired, rule.Name)
@@ -122,6 +126,24 @@ func (s *RunRulesStep) Run(ctx context.Context, state *StepState) error {
 		return fmt.Errorf("%w: %w", ErrStepSoft, errors.Join(run.problems...))
 	}
 	return nil
+}
+
+// asker puts a rule's question to the extraction model, with the document as
+// the rules have left it so far: its metadata as a webhook would carry it, then
+// its text.
+func (r *rulesRun) asker(ctx context.Context) rules.Asker {
+	if r.extractor == nil {
+		return nil
+	}
+	return func(question string) (bool, error) {
+		metadata, err := json.MarshalIndent(r.webhookDocument(), "", "  ")
+		if err != nil {
+			return false, err
+		}
+		aiCtx, cancel := context.WithTimeout(ctx, r.state.Cfg.OpenAITimeout)
+		defer cancel()
+		return r.extractor.AnswerYesNo(aiCtx, "Metadata:\n"+string(metadata)+"\n\nText:\n"+r.doc.Text, question)
+	}
 }
 
 func (r *rulesRun) fail(rule rules.Rule, format string, args ...any) {

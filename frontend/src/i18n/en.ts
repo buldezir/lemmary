@@ -959,6 +959,12 @@ export const en = {
   'rules.subjectTitle': 'Title',
   'rules.subjectText': 'Document text',
   'rules.subjectConfidence': 'AI confidence (0 to 1)',
+  'rules.subjectAI': 'AI',
+  'rules.opAnswersYes': 'answers yes to',
+  'rules.opAnswersNo': 'answers no to',
+  'rulesPage.aiQuestionPlaceholder': 'Is this a final payment reminder?',
+  'rulesPage.aiQuestionHint':
+    'An AI question costs one request per document that gets this far, on the extraction model. It is asked only once every other condition holds, and sees the document\'s metadata and text.',
   'rules.missing': '(deleted)',
   'rulesApi.saveFailed': 'Could not save the rule.',
   'rulesPage.globalTitle': 'Rules for everyone',

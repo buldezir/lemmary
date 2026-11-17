@@ -26,6 +26,15 @@ type fieldsExtractor struct {
 	answers map[string]any
 	asked   []string
 	prompt  string
+	// questions holds what AnswerYesNo was asked and the document it saw.
+	questions []string
+	document  string
+}
+
+func (f *fieldsExtractor) AnswerYesNo(_ context.Context, document, question string) (bool, error) {
+	f.questions = append(f.questions, question)
+	f.document = document
+	return strings.Contains(question, "reminder"), nil
 }
 
 func (f *fieldsExtractor) ExtractFields(_ context.Context, _ string, instructions string, fields []models.CustomField) (map[string]any, error) {
@@ -285,6 +294,59 @@ func TestRunRulesRunsGlobalRulesFirstByName(t *testing.T) {
 	}
 	if got := values.OptionName(models.CorrespondentFieldID); got != "Tax office" {
 		t.Fatalf("correspondent = %q", got)
+	}
+}
+
+// A rule's AI question sees the document's metadata as the rules above left it
+// and its text, and decides whether the rule runs.
+func TestRunRulesAsksTheAIQuestion(t *testing.T) {
+	app := bootTagTestApp(t)
+	owner := createTagUser(t, app, "owner@example.com")
+	toPay := createTag(t, app, "to pay", owner)
+	reminder := createTag(t, app, "reminder", owner)
+	doc := rulesTestDocument(t, app, owner, "Invoice")
+
+	processed := []string{rules.TriggerProcessed}
+	saveTestRule(t, app, owner, "Tag", true, processed, nil,
+		[]rules.Action{{Type: rules.ActionAddTag, Value: toPay}})
+	saveTestRule(t, app, owner, "Reminders", true, processed,
+		[]rules.Condition{{Subject: rules.SubjectAI, Op: rules.OpIs, Value: "Is this a payment reminder?"}},
+		[]rules.Action{{Type: rules.ActionAddTag, Value: reminder}})
+	saveTestRule(t, app, owner, "Not paid", true, processed,
+		[]rules.Condition{{Subject: rules.SubjectAI, Op: rules.OpIs, Value: "Is it paid?"}},
+		[]rules.Action{{Type: rules.ActionRequireReview}})
+
+	extractor := &fieldsExtractor{}
+	state := &StepState{
+		App:      app,
+		Cfg:      config.Config{OpenAITimeout: 5e9},
+		Job:      rulesTestJob(t, app, doc, models.ExtractionPipelineSteps),
+		Document: doc,
+		Logger:   slog.Default(),
+	}
+	if err := (&RunRulesStep{Extractor: extractor}).Run(context.Background(), state); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if state.StepDetail != "Tag, Reminders" {
+		t.Fatalf("detail = %q", state.StepDetail)
+	}
+	if len(extractor.questions) != 2 {
+		t.Fatalf("questions = %v", extractor.questions)
+	}
+	for _, want := range []string{`"document_type": "Invoice"`, `"to pay"`, "Invoice R-1, total"} {
+		if !strings.Contains(extractor.document, want) {
+			t.Fatalf("the question's document lacks %q:\n%s", want, extractor.document)
+		}
+	}
+	stored, err := app.FindRecordById("documents", doc.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetStringSlice("tags"); !slices.Equal(got, []string{toPay, reminder}) {
+		t.Fatalf("tags = %v", got)
+	}
+	if got := stored.GetString("processing_status"); got != models.DocStatusCompleted {
+		t.Fatalf("a rule whose question was answered no ran: %q", got)
 	}
 }
 

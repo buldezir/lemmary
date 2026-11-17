@@ -2,6 +2,7 @@ package rules
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -79,11 +80,54 @@ func TestConditionsHold(t *testing.T) {
 	}
 
 	rule := Rule{Conditions: []Condition{cases[0].c, cases[1].c}}
-	if rule.Matches(doc, testFields) {
+	if ok, _ := rule.Matches(doc, testFields, nil); ok {
 		t.Fatal("a rule matches only when every condition holds")
 	}
-	if !(Rule{}).Matches(doc, testFields) {
+	if ok, _ := (Rule{}).Matches(doc, testFields, nil); !ok {
 		t.Fatal("a rule without conditions always matches")
+	}
+}
+
+// An AI question costs a request, so it is asked only once every other
+// condition holds, wherever it sits; is wants yes and is_not wants no.
+func TestAIQuestionsAreAskedLast(t *testing.T) {
+	t.Parallel()
+	doc := &Document{Title: "Reminder from ACME"}
+	var asked []string
+	ask := func(question string) (bool, error) {
+		asked = append(asked, question)
+		return question == "Is this a final reminder?", nil
+	}
+	title := func(word string) Condition { return Condition{Subject: SubjectTitle, Op: OpContains, Value: word} }
+	question := func(op, q string) Condition { return Condition{Subject: SubjectAI, Op: op, Value: q} }
+
+	rule := Rule{Conditions: []Condition{question(OpIs, "Is this a final reminder?"), title("invoice")}}
+	if ok, err := rule.Matches(doc, testFields, ask); ok || err != nil || len(asked) != 0 {
+		t.Fatalf("matched %v, err %v, asked %v: the cheap condition failing must spare the question", ok, err, asked)
+	}
+
+	rule = Rule{Conditions: []Condition{question(OpIs, "Is this a final reminder?"), question(OpIsNot, "Is it paid?"), title("acme")}}
+	if ok, err := rule.Matches(doc, testFields, ask); !ok || err != nil {
+		t.Fatalf("matched %v, err %v", ok, err)
+	}
+	if len(asked) != 2 {
+		t.Fatalf("asked %v", asked)
+	}
+
+	failing := func(string) (bool, error) { return false, errors.New("model down") }
+	if ok, err := rule.Matches(doc, testFields, failing); ok || err == nil {
+		t.Fatalf("an unanswered question matched: %v %v", ok, err)
+	}
+	if ok, err := rule.Matches(doc, testFields, nil); ok || err == nil {
+		t.Fatalf("a question without an AI matched: %v %v", ok, err)
+	}
+
+	cat := testCatalog()
+	if err := Validate(Rule{Conditions: []Condition{question(OpIs, "")}, Actions: []Action{{Type: ActionRequireReview}}}, cat); err == nil {
+		t.Fatal("an empty question was accepted")
+	}
+	if err := Validate(Rule{Conditions: []Condition{question(OpContains, "x")}, Actions: []Action{{Type: ActionRequireReview}}}, cat); err == nil {
+		t.Fatal("a text comparison on a question was accepted")
 	}
 }
 
@@ -158,10 +202,10 @@ func TestGlobalRulesNameTagsAndOptions(t *testing.T) {
 	doc := &Document{Tags: []string{"tpay"}, Values: models.FieldValues{
 		models.DocumentTypeFieldID: {Type: models.CustomFieldOption, Option: "oinvoice"},
 	}}
-	if !rule.Localize(cat).Matches(doc, cat.Fields) {
+	if ok, _ := rule.Localize(cat).Matches(doc, cat.Fields, nil); !ok {
 		t.Fatalf("localized = %+v", rule.Localize(cat).Conditions)
 	}
-	if rule.Matches(doc, cat.Fields) {
+	if ok, _ := rule.Matches(doc, cat.Fields, nil); ok {
 		t.Fatal("unlocalized, a name is no id")
 	}
 

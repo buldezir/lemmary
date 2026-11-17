@@ -50,8 +50,10 @@ export const SUBJECT_TITLE = 'title'
 export const SUBJECT_TEXT = 'text'
 export const SUBJECT_TAG = 'tag'
 export const SUBJECT_CONFIDENCE = 'confidence'
+/** A yes/no question the AI answers about the document; its value is the question. */
+export const SUBJECT_AI = 'ai'
 
-export type SubjectKind = 'text' | 'number' | 'date' | 'option' | 'choice' | 'tag'
+export type SubjectKind = 'text' | 'number' | 'date' | 'option' | 'choice' | 'tag' | 'ai'
 
 /** Mirrors opsByKind in backend/internal/rules/rules.go. */
 export const OPS_BY_KIND: Record<SubjectKind, RuleOp[]> = {
@@ -61,6 +63,7 @@ export const OPS_BY_KIND: Record<SubjectKind, RuleOp[]> = {
   option: ['is', 'is_not', 'is_set', 'is_not_set'],
   choice: ['is', 'is_not', 'is_set', 'is_not_set'],
   tag: ['is', 'is_not'],
+  ai: ['is', 'is_not'],
 }
 
 /** What a condition's subject is, or null for a field deleted since. */
@@ -73,6 +76,8 @@ export function subjectKind(subject: string, fields: CustomField[]): SubjectKind
       return 'tag'
     case SUBJECT_CONFIDENCE:
       return 'number'
+    case SUBJECT_AI:
+      return 'ai'
     case DOCUMENT_TYPE_FIELD_ID:
     case CORRESPONDENT_FIELD_ID:
       return 'option'
@@ -169,6 +174,7 @@ export const ACTION_LABELS: Record<RuleActionType, string> = {
 /** A comparison's words depend on what it compares: a tag is had, a date is after. */
 export function opLabel(op: RuleOp, kind: SubjectKind): string {
   if (kind === 'tag') return op === 'is' ? t('rules.opHas') : t('rules.opHasNot')
+  if (kind === 'ai') return op === 'is' ? t('rules.opAnswersYes') : t('rules.opAnswersNo')
   if (kind === 'date' && op === 'gt') return t('rules.opAfter')
   if (kind === 'date' && op === 'lt') return t('rules.opBefore')
   return {

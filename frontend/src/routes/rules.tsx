@@ -33,6 +33,7 @@ import {
   ACTION_TYPES,
   OPS_BY_KIND,
   RULE_TRIGGERS,
+  SUBJECT_AI,
   SUBJECT_CONFIDENCE,
   SUBJECT_TAG,
   SUBJECT_TEXT,
@@ -84,9 +85,10 @@ const NEW_DRAFT: Draft = {
   actions: [defaultAction('add_tag')],
 }
 
-const selectClassName = `${inputClassName} w-auto min-w-0`
-
-const comboboxClassName = 'min-w-44'
+// A row's pickers keep a fixed width beside each other and its value takes the
+// rest; on a phone each takes a line of its own.
+const pickerClassName = 'w-full sm:w-52 sm:shrink-0'
+const valueClassName = 'min-w-0 basis-full sm:min-w-40 sm:flex-1 sm:basis-0'
 
 const removeButtonClassName =
   'flex h-9 w-9 shrink-0 items-center justify-center rounded-xs text-lg leading-none text-ink-faint transition-colors hover:text-madder'
@@ -120,6 +122,8 @@ function subjectName(subject: string, catalog: Catalog): string {
       return t('rules.subjectTag')
     case SUBJECT_CONFIDENCE:
       return t('rules.subjectConfidence')
+    case SUBJECT_AI:
+      return t('rules.subjectAI')
     case DOCUMENT_TYPE_FIELD_ID:
       return t('rules.subjectDocumentType')
     case CORRESPONDENT_FIELD_ID:
@@ -263,7 +267,7 @@ function RulesSection({ global }: { global: boolean }) {
                 aria-label={rule.name}
                 className={`flex flex-wrap items-start justify-between gap-3 rounded-xs border border-line bg-bright px-3 py-2.5 ${rule.enabled ? '' : 'opacity-60'}`}
               >
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
                   <div className="flex flex-wrap items-baseline gap-x-2">
                     <span className="text-sm font-medium text-ink">{rule.name}</span>
                     <span className={labelTextClassName}>
@@ -419,7 +423,7 @@ function RuleDialog({
       ref={ref}
       onClose={onClose}
       aria-labelledby="rule-dialog-title"
-      className="m-auto w-full max-w-3xl border border-line bg-surface p-5 text-ink backdrop:bg-ink/40"
+      className="m-auto w-[calc(100%-1rem)] max-w-4xl border border-line bg-surface p-4 text-ink backdrop:bg-ink/40 sm:p-5"
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-5">
         <h2 id="rule-dialog-title" className="font-display text-lg font-semibold text-ink">
@@ -477,6 +481,9 @@ function RuleDialog({
               {t('rulesPage.addCondition')}
             </Button>
           </div>
+          {draft.conditions.some((c) => c.subject === SUBJECT_AI) && (
+            <p className={fieldHintClassName}>{t('rulesPage.aiQuestionHint')}</p>
+          )}
         </fieldset>
 
         <fieldset className="flex flex-col gap-2">
@@ -558,7 +565,7 @@ function subjectOptions(catalog: Catalog, withMeta: boolean, current: string): C
   const ids = [
     DOCUMENT_TYPE_FIELD_ID,
     CORRESPONDENT_FIELD_ID,
-    ...(withMeta ? [SUBJECT_TAG, SUBJECT_TITLE, SUBJECT_TEXT, SUBJECT_CONFIDENCE] : []),
+    ...(withMeta ? [SUBJECT_TAG, SUBJECT_TITLE, SUBJECT_TEXT, SUBJECT_CONFIDENCE, SUBJECT_AI] : []),
     ...catalog.fields.map((field) => field.id),
   ]
   const options = ids.map((id) => ({ value: id, label: subjectName(id, catalog) }))
@@ -586,7 +593,7 @@ function ConditionRow({
       <Combobox
         id={`${id}-subject`}
         ariaLabel={t('rulesPage.subject')}
-        className={comboboxClassName}
+        className={pickerClassName}
         value={condition.subject}
         options={subjectOptions(catalog, true, condition.subject)}
         onChange={(subject) => onChange(withSubject(condition, subject, catalog.fields))}
@@ -595,7 +602,7 @@ function ConditionRow({
         <Combobox
           id={`${id}-op`}
           ariaLabel={t('rulesPage.comparison')}
-          className={comboboxClassName}
+          className={pickerClassName}
           value={condition.op}
           options={OPS_BY_KIND[kind].map((op) => ({ value: op, label: opLabel(op, kind) }))}
           onChange={(op) => onChange({ ...condition, op: op as RuleOp })}
@@ -648,7 +655,7 @@ function ValueInput({
       <Combobox
         id={`${id}-value`}
         ariaLabel={t('rulesPage.value')}
-        className={`${comboboxClassName} flex-1`}
+        className={valueClassName}
         value={current}
         placeholder={t('rulesPage.pickOrName')}
         options={[...new Set([...names, ...(current ? [current] : [])])].map((name) => ({ value: name, label: name }))}
@@ -662,7 +669,7 @@ function ValueInput({
       <Combobox
         id={`${id}-value`}
         ariaLabel={t('rulesPage.value')}
-        className={`${comboboxClassName} flex-1`}
+        className={valueClassName}
         value={current}
         placeholder={choices.length === 0 ? t('rulesPage.noValues') : t('rulesPage.pick')}
         options={[
@@ -673,15 +680,28 @@ function ValueInput({
       />
     )
   }
-  if (kind === 'date') return <input type="date" className={`${selectClassName} flex-1`} required {...common} />
+  if (kind === 'date') return <input type="date" className={`${inputClassName} ${valueClassName}`} required {...common} />
   if (kind === 'number') {
     // Confidence is a share; every other number is the document's own, negative included.
     const share = subject === SUBJECT_CONFIDENCE ? { min: 0, max: 1, step: 0.05 } : { step: 'any' }
-    return <input type="number" {...share} className={`${selectClassName} flex-1`} required {...common} />
+    return <input type="number" {...share} className={`${inputClassName} ${valueClassName}`} required {...common} />
+  }
+  if (kind === 'ai') {
+    // A sentence, so a line of its own that wraps rather than a field that scrolls.
+    return (
+      <textarea
+        rows={2}
+        className={`${inputClassName} basis-full resize-y`}
+        required
+        maxLength={500}
+        placeholder={t('rulesPage.aiQuestionPlaceholder')}
+        {...common}
+      />
+    )
   }
   return (
     <input
-      className={`${selectClassName} flex-1 ${pattern ? 'font-mono' : ''}`}
+      className={`${inputClassName} ${valueClassName} ${pattern ? 'font-mono' : ''}`}
       required
       maxLength={500}
       placeholder={pattern ? t('rulesPage.patternPlaceholder') : ''}
@@ -712,7 +732,7 @@ function ActionRow({
       <Combobox
         id={`${id}-type`}
         ariaLabel={t('rulesPage.actionType')}
-        className={comboboxClassName}
+        className={pickerClassName}
         value={action.type}
         options={ACTION_TYPES.map((type) => ({ value: type, label: ACTION_LABELS[type] }))}
         onChange={(type) => onChange(defaultAction(type as RuleActionType))}
@@ -733,7 +753,7 @@ function ActionRow({
           <Combobox
             id={`${id}-field`}
             ariaLabel={t('rulesPage.field')}
-            className={comboboxClassName}
+            className={pickerClassName}
             value={setField}
             options={subjectOptions(catalog, false, setField)}
             onChange={(field) => onChange({ ...action, field, value: '' })}

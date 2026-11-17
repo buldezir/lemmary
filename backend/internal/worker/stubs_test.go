@@ -26,6 +26,9 @@ func (stubExtractor) ExtractMetadata(context.Context, string, ai.ExtractionCatal
 func (stubExtractor) ExtractFields(context.Context, string, string, []models.CustomField) (map[string]any, error) {
 	return nil, nil
 }
+func (stubExtractor) AnswerYesNo(context.Context, string, string) (bool, error) {
+	return false, nil
+}
 func (stubExtractor) Translate(context.Context, string) (string, error) {
 	return "", nil
 }

@@ -39,11 +39,20 @@ Alle Bedingungen einer Regel müssen zutreffen. Eine Regel ohne Bedingungen läu
 | Titel, Dokumenttext, Textfelder | enthält, enthält nicht, passt auf das Muster, ist ausgefüllt, ist leer |
 | Zahlenfelder, KI-Konfidenz | ist, ist größer als, ist kleiner als, ist ausgefüllt, ist leer |
 | Datumsfelder | ist, ist nach, ist vor, ist ausgefüllt, ist leer |
+| KI | beantwortet mit Ja, beantwortet mit Nein – eine Frage, die Sie formulieren |
 
 Textvergleiche ignorieren Groß- und Kleinschreibung. Ein Muster ist ein [regulärer Ausdruck in
 Go-Syntax](https://github.com/google/re2/wiki/Syntax) und beachtet Groß- und Kleinschreibung, außer
 es beginnt mit `(?i)`. Die KI-Konfidenz reicht von 0 bis 1; eine Extraktion unter 0,5 landet
 ohnehin im Eingang.
+
+Eine **KI**-Bedingung stellt dem Extraktionsmodell eine Ja/Nein-Frage, die Sie formulieren, etwa
+*Ist das eine letzte Mahnung?*. Das Modell sieht die Metadaten des Dokuments, so wie die Regeln
+darüber sie hinterlassen haben, und seinen Text, und antwortet nur dann mit Ja, wenn das Dokument
+es klar belegt. Jede Frage ist eine KI-Anfrage je Dokument, darum wird sie zuletzt gestellt: erst
+wenn alle anderen Bedingungen der Regel zutreffen. Stellen Sie eine günstige Bedingung daneben –
+*Dokumenttyp ist Rechnung* –, und nur Rechnungen werden gefragt. Antwortet das Modell nicht, läuft
+die Regel nicht, und **Regeln ausführen** zeigt den Grund.
 
 ## Aktionen {#actions}
 

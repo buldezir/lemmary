@@ -36,10 +36,19 @@ All conditions of a rule must hold. A rule without conditions runs on every docu
 | Title, document text, text fields | contains, does not contain, matches the pattern, is filled in, is empty |
 | Number fields, AI confidence | is, is more than, is less than, is filled in, is empty |
 | Date fields | is, is after, is before, is filled in, is empty |
+| AI | answers yes to, answers no to — a question you write |
 
 Text comparisons ignore case. A pattern is a [Go regular
 expression](https://github.com/google/re2/wiki/Syntax) and is case-sensitive unless it starts
 with `(?i)`. AI confidence runs from 0 to 1; extraction below 0.5 already goes to the Inbox.
+
+An **AI** condition asks the extraction model a yes/no question you write, such as *Is this a
+final payment reminder?*. The model sees the document's metadata, as the rules above have left
+it, and its text, and answers yes only when the document clearly supports it. Each question is
+one AI request per document, so it is asked last: only once every other condition of the rule
+holds. Put a cheap condition beside it — *Document type is Invoice* — and only invoices are
+asked. When the model does not answer, the rule does not run, and **Run rules** shows the
+reason.
 
 ## Actions
 

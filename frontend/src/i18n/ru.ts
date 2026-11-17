@@ -1126,6 +1126,12 @@ export const ru: Catalog = {
   'rules.subjectTitle': 'Заголовок',
   'rules.subjectText': 'Текст документа',
   'rules.subjectConfidence': 'Уверенность ИИ (от 0 до 1)',
+  'rules.subjectAI': 'ИИ',
+  'rules.opAnswersYes': 'отвечает «да» на',
+  'rules.opAnswersNo': 'отвечает «нет» на',
+  'rulesPage.aiQuestionPlaceholder': 'Это последнее напоминание об оплате?',
+  'rulesPage.aiQuestionHint':
+    'Вопрос к ИИ стоит одного запроса на каждый документ, дошедший до него, моделью извлечения. Он задаётся, только когда выполняются все остальные условия, и видит метаданные и текст документа.',
   'rules.missing': '(удалено)',
   'rulesApi.saveFailed': 'Не удалось сохранить правило.',
   'rulesPage.globalTitle': 'Правила для всех',
