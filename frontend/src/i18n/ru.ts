@@ -2163,6 +2163,13 @@ export const ru: Catalog = {
   'uploadSplit.splitAfter': 'Разрезать после страницы {page}',
   'uploadSplit.removeCut': 'Убрать разрез после страницы {page}',
   'uploadSplit.enlarged': 'Страница {page}, увеличено',
+  'uploadSplit.previousPage': 'Предыдущая страница',
+  'uploadSplit.nextPage': 'Следующая страница',
+  'uploadSplit.cutHere': 'Разделить после этой страницы',
+  'uploadSplit.thumbSize': 'Размер миниатюр',
+  'uploadSplit.sizeSmall': 'Мелкие',
+  'uploadSplit.sizeMedium': 'Средние',
+  'uploadSplit.sizeLarge': 'Крупные',
   'uploadSplit.summary': {
     one: '{count} документ: страницы {ranges}',
     few: '{count} документа: страницы {ranges}',

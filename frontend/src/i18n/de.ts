@@ -1990,6 +1990,13 @@ export const de: Catalog = {
   'uploadSplit.splitAfter': 'Nach Seite {page} teilen',
   'uploadSplit.removeCut': 'Schnitt nach Seite {page} entfernen',
   'uploadSplit.enlarged': 'Seite {page}, vergrößert',
+  'uploadSplit.previousPage': 'Vorherige Seite',
+  'uploadSplit.nextPage': 'Nächste Seite',
+  'uploadSplit.cutHere': 'Nach dieser Seite trennen',
+  'uploadSplit.thumbSize': 'Vorschaugröße',
+  'uploadSplit.sizeSmall': 'Klein',
+  'uploadSplit.sizeMedium': 'Mittel',
+  'uploadSplit.sizeLarge': 'Groß',
   'uploadSplit.summary': {
     one: '{count} Dokument: Seiten {ranges}',
     other: '{count} Dokumente: Seiten {ranges}',

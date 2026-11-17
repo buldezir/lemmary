@@ -1,4 +1,4 @@
-import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { type DragEvent, type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   cutsFromParts,
@@ -15,12 +15,19 @@ import {
 } from '../lib/api/split'
 import { documentsLanding } from '../lib/reviewPolicy'
 import { Button } from '../components/ui'
+import { useStoredValue } from '../hooks/useStoredFlag'
 import { t } from '../i18n'
 
 const ACCEPT_ATTR = '.pdf,application/pdf'
 
 /** How many thumbnails are fetched at once, so a long scan still paints early. */
 const THUMB_CONCURRENCY = 4
+
+const THUMB_SIZES = [
+  { label: 'uploadSplit.sizeSmall', tile: 'w-24', image: 'h-28' },
+  { label: 'uploadSplit.sizeMedium', tile: 'w-40', image: 'h-52' },
+  { label: 'uploadSplit.sizeLarge', tile: 'w-64', image: 'h-80' },
+] as const
 
 function isPdf(file: File) {
   return file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf'
@@ -78,6 +85,83 @@ function usePageThumbs(uploadId: string | undefined, pageCount: number) {
   return loaded.uploadId === uploadId ? loaded.pages : {}
 }
 
+type PageViewerProps = {
+  page: number
+  pageCount: number
+  src: string | undefined
+  cut: boolean
+  busy: boolean
+  onPage: (page: number) => void
+  onToggleCut: (page: number) => void
+  onClose: () => void
+}
+
+/** Full-size page in a modal, so cuts can be set while reading. Mounted only while open. */
+function PageViewer({ page, pageCount, src, cut, busy, onPage, onToggleCut, onClose }: PageViewerProps) {
+  const ref = useRef<HTMLDialogElement>(null)
+  const hasPrevious = page > 1
+  const hasNext = page < pageCount
+
+  useEffect(() => {
+    ref.current?.showModal()
+  }, [])
+
+  function onKeyDown(event: KeyboardEvent<HTMLDialogElement>) {
+    if (event.key === 'ArrowLeft' && hasPrevious) onPage(page - 1)
+    else if (event.key === 'ArrowRight' && hasNext) onPage(page + 1)
+  }
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      onKeyDown={onKeyDown}
+      onClick={(event) => event.target === ref.current && ref.current.close()}
+      aria-label={t('uploadSplit.page', { page })}
+      className="m-auto max-h-[96vh] max-w-[96vw] border border-line bg-surface p-0 text-ink backdrop:bg-ink/60"
+    >
+      <div className="flex flex-col gap-3 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
+            {t('uploadSplit.page', { page })} / {pageCount}
+          </p>
+          <Button variant="secondary" size="sm" onClick={() => ref.current?.close()}>
+            {t('common.close')}
+          </Button>
+        </div>
+        {src ? (
+          <img
+            src={src}
+            alt={t('uploadSplit.enlarged', { page })}
+            className="mx-auto max-h-[calc(96vh-8rem)] w-auto max-w-full object-contain"
+          />
+        ) : (
+          <span className="flex h-[60vh] w-[45vh] items-center justify-center text-sm text-ink-faint">…</span>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button variant="secondary" size="sm" disabled={!hasPrevious} onClick={() => onPage(page - 1)}>
+            ← {t('uploadSplit.previousPage')}
+          </Button>
+          {hasNext && (
+            <Button
+              variant={cut ? 'primary' : 'secondary'}
+              size="sm"
+              disabled={busy}
+              aria-pressed={cut}
+              onClick={() => onToggleCut(page)}
+            >
+              ✂ {t('uploadSplit.cutHere')}
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" disabled={!hasNext} onClick={() => onPage(page + 1)}>
+            {t('uploadSplit.nextPage')} →
+          </Button>
+        </div>
+      </div>
+    </dialog>
+  )
+}
+
 export function UploadSplitPage() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [reading, setReading] = useState(false)
@@ -90,6 +174,10 @@ export function UploadSplitPage() {
   const [zoomPage, setZoomPage] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [thumbSize, setThumbSize] = useStoredValue<number>('lemmary.splitThumbSize', 0, (stored) =>
+    THUMB_SIZES[Number(stored)] ? Number(stored) : undefined,
+  )
+  const size = THUMB_SIZES[thumbSize] ?? THUMB_SIZES[0]
 
   const pageCount = upload?.page_count ?? 0
   const thumbs = usePageThumbs(upload?.upload_id, pageCount)
@@ -256,9 +344,26 @@ export function UploadSplitPage() {
                 {t('uploadSplit.pages', { count: upload.page_count })}
               </p>
             </div>
-            <Button variant="secondary" size="sm" disabled={busy} onClick={() => void onDetect()}>
-              {t('uploadSplit.detect')}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <div role="group" aria-label={t('uploadSplit.thumbSize')} className="flex border border-line">
+                {THUMB_SIZES.map((option, index) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    aria-pressed={thumbSize === index}
+                    onClick={() => setThumbSize(index)}
+                    className={`px-2 py-1 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood ${
+                      thumbSize === index ? 'bg-ink text-paper' : 'text-ink-soft hover:bg-surface hover:text-ink'
+                    }`}
+                  >
+                    {t(option.label)}
+                  </button>
+                ))}
+              </div>
+              <Button variant="secondary" size="sm" disabled={busy} onClick={() => void onDetect()}>
+                {t('uploadSplit.detect')}
+              </Button>
+            </div>
           </div>
 
           <ol className="flex flex-wrap items-stretch gap-0">
@@ -268,16 +373,16 @@ export function UploadSplitPage() {
                   type="button"
                   onClick={() => setZoomPage(page)}
                   aria-label={t('uploadSplit.enlarge', { page })}
-                  className="flex w-24 flex-col items-center gap-1 border border-line bg-surface p-1 transition-colors hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood"
+                  className={`flex ${size.tile} cursor-zoom-in flex-col items-center gap-1 border border-line bg-surface p-1 transition-colors hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood`}
                 >
                   {thumbs[page] ? (
                     <img
                       src={thumbs[page]}
                       alt={t('uploadSplit.page', { page })}
-                      className="h-28 w-full object-contain object-top"
+                      className={`${size.image} w-full object-contain object-top`}
                     />
                   ) : (
-                    <span className="flex h-28 w-full items-center justify-center text-xs text-ink-faint">
+                    <span className={`flex ${size.image} w-full items-center justify-center text-xs text-ink-faint`}>
                       …
                     </span>
                   )}
@@ -308,26 +413,17 @@ export function UploadSplitPage() {
             ))}
           </ol>
 
-          {zoomPage !== null && thumbs[zoomPage] && (
-            <div className="flex flex-col items-start gap-2 border border-line-strong bg-surface p-3">
-              <div className="flex w-full items-center justify-between gap-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
-                  {t('uploadSplit.page', { page: zoomPage })}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setZoomPage(null)}
-                  className="text-xs font-medium text-ink-soft hover:text-ink"
-                >
-                  {t('common.close')}
-                </button>
-              </div>
-              <img
-                src={thumbs[zoomPage]}
-                alt={t('uploadSplit.enlarged', { page: zoomPage })}
-                className="max-h-[36rem] w-auto max-w-full"
-              />
-            </div>
+          {zoomPage !== null && (
+            <PageViewer
+              page={zoomPage}
+              pageCount={upload.page_count}
+              src={thumbs[zoomPage]}
+              cut={cuts.has(zoomPage)}
+              busy={busy}
+              onPage={setZoomPage}
+              onToggleCut={toggleCut}
+              onClose={() => setZoomPage(null)}
+            />
           )}
 
           <p className="text-sm font-medium text-ink">

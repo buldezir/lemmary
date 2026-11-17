@@ -1906,6 +1906,13 @@ export const en = {
   'uploadSplit.splitAfter': 'Split after page {page}',
   'uploadSplit.removeCut': 'Remove the cut after page {page}',
   'uploadSplit.enlarged': 'Page {page}, enlarged',
+  'uploadSplit.previousPage': 'Previous page',
+  'uploadSplit.nextPage': 'Next page',
+  'uploadSplit.cutHere': 'Split after this page',
+  'uploadSplit.thumbSize': 'Thumbnail size',
+  'uploadSplit.sizeSmall': 'Small',
+  'uploadSplit.sizeMedium': 'Medium',
+  'uploadSplit.sizeLarge': 'Large',
   'uploadSplit.summary': {
     one: '{count} document: pages {ranges}',
     other: '{count} documents: pages {ranges}',
