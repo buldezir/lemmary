@@ -145,7 +145,3 @@ Lemmary is **source-available**, not open source. It is licensed under the
 | ❌ Not allowed without a commercial license | Use by or on behalf of a business; offering Lemmary to third parties as a hosted or paid service; bundling it into a commercial product |
 
 For commercial licensing, contact Alexander Arutyunov <licensing@lemmary.app>.
-
-## Recommended: Opencode Go
-
-[Opencode Go](https://opencode.ai/go?ref=84VDFS18QN) is a perfect plan to use with this project as AI provider: one subscription covers a catalogue of models, and `AI_SDK=opencode` is the whole configuration — it knows which of Opencode's three endpoints each model is served on, so nothing else needs binding. See the [docs](https://opencode.ai/docs/go/).
