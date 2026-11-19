@@ -1518,6 +1518,12 @@ export const en = {
     'Every document the AI extracts metadata for waits in the Inbox, however confident the extraction was — reprocessed documents included. Nothing completes but by your saying so. Off, only low-confidence extractions and possible duplicates land there. While a document waits, the AI may also suggest new tags for it; accepting one creates the tag.',
   'settingsProcessing.ocrTimeout': 'OCR timeout (seconds)',
   'settingsProcessing.ocrTimeoutHint': 'How long one OCR call may take before the step fails.',
+  'settingsProcessing.ocrPageMode': 'Split PDFs for OCR',
+  'settingsProcessing.ocrPageModeAuto': 'Automatic: only when refused',
+  'settingsProcessing.ocrPageModeAlways': 'Always: one page per request',
+  'settingsProcessing.ocrPageModeOff': 'Never',
+  'settingsProcessing.ocrPageModeHint':
+    'Some providers reject a long PDF as too large or over their rate limit (429 Too Many Requests). Automatic sends it whole first and, if refused, in halves, down to single pages, one request after another. The OCR timeout applies to each request.',
   'settingsProcessing.aiTimeout': 'AI timeout (seconds)',
   'settingsProcessing.aiTimeoutHint':
     'How long one extraction, chat, search or split-detection request may take.',

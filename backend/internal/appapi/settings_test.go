@@ -301,6 +301,21 @@ func TestPatchTurnsAlwaysRequireReviewOnAndOff(t *testing.T) {
 	}
 }
 
+func TestPatchOCRPageMode(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest(t)
+
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{OCRPageMode: new("always")}); err != nil {
+		t.Fatalf("applySettingsPatch: %v", err)
+	}
+	if got := record.GetString("ocr_page_mode"); got != "always" {
+		t.Fatalf("ocr_page_mode = %q, want always", got)
+	}
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{OCRPageMode: new("sometimes")}); err == nil {
+		t.Fatal("expected an unknown mode to be refused")
+	}
+}
+
 func TestPatchMCPCapabilities(t *testing.T) {
 	t.Parallel()
 	record := settingsRecordForTest(t)

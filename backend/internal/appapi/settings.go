@@ -38,6 +38,7 @@ type settingsResponse struct {
 	// drops every vector.
 	EmbeddingDims                 int     `json:"embedding_dims"`
 	OCRTimeoutSec                 int     `json:"ocr_timeout_sec"`
+	OCRPageMode                   string  `json:"ocr_page_mode"`
 	ProcessingResultLanguage      string  `json:"processing_result_language"`
 	DeepSearchLanguages           string  `json:"deep_search_languages"`
 	OpenAITimeoutSec              int     `json:"openai_timeout_sec"`
@@ -88,6 +89,7 @@ type settingsPatchRequest struct {
 	EmbeddingModel                *string   `json:"embedding_model"`
 	WebSearchProviderID           *string   `json:"websearch_provider_id"`
 	OCRTimeoutSec                 *int      `json:"ocr_timeout_sec"`
+	OCRPageMode                   *string   `json:"ocr_page_mode"`
 	ProcessingResultLanguage      *string   `json:"processing_result_language"`
 	DeepSearchLanguages           *string   `json:"deep_search_languages"`
 	OpenAITimeoutSec              *int      `json:"openai_timeout_sec"`
@@ -292,6 +294,7 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		EmbeddingDims:                 cfg.EmbeddingDims,
 		WebSearchProviderID:           cfg.WebSearchProviderID,
 		OCRTimeoutSec:                 int(cfg.OCRTimeout.Seconds()),
+		OCRPageMode:                   cfg.OCRPageMode,
 		ProcessingResultLanguage:      cfg.ProcessingResultLanguage,
 		DeepSearchLanguages:           cfg.DeepSearchLanguages,
 		OpenAITimeoutSec:              int(cfg.OpenAITimeout.Seconds()),
@@ -435,6 +438,12 @@ func applyProcessingPatch(record *core.Record, req settingsPatchRequest) error {
 	}
 	if req.AlwaysRequireReview != nil {
 		record.Set("always_require_review", *req.AlwaysRequireReview)
+	}
+	if req.OCRPageMode != nil {
+		if !slices.Contains(config.OCRPageModes, *req.OCRPageMode) {
+			return errInvalid("ocr_page_mode must be off, auto or always")
+		}
+		record.Set("ocr_page_mode", *req.OCRPageMode)
 	}
 	return nil
 }

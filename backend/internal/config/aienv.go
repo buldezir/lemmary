@@ -414,6 +414,7 @@ func (e AIEnv) Defaults() Config {
 		ResearchModel:                 e.Providers.LLM.ResearchModel,
 		EmbeddingModel:                e.Providers.LLM.EmbeddingModel,
 		OCRTimeout:                    e.OCRTimeout,
+		OCRPageMode:                   OCRPageModeAuto,
 		DeepSearchLanguages:           e.DeepSearchLanguages,
 		OpenAITimeout:                 e.AITimeout,
 		WorkerCronExpr:                WorkerCronFromEnv(),

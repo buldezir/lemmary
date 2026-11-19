@@ -122,8 +122,6 @@ func filePartRefused(err error) bool {
 		strings.Contains(strings.ToLower(apiErr.RawJSON()), "file_id")
 }
 
-// ponytail: every page in one request; split into per-page calls if a long PDF
-// outgrows a model's image limit.
 func (p *LLMProvider) completeRendered(ctx context.Context, pdfPath string) (*openai.ChatCompletion, error) {
 	pages, err := pdftool.PageCount(ctx, pdfPath)
 	if err != nil {

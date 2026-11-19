@@ -3,7 +3,7 @@ import { type SubmitEvent, useId } from 'react'
 import { Combobox } from '../components/Combobox'
 import { useAppMeta } from '../hooks/useAppMeta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
-import type { AppSettingsPatch } from '../lib/api/settings'
+import type { AppSettingsPatch, OCRPageMode } from '../lib/api/settings'
 import {
   SaveSettingsButton,
   SettingsLoading,
@@ -35,6 +35,7 @@ export function SettingsProcessingPage() {
   const { managed } = useAppMeta()
   const selfHosted = managed === false
   const timeZoneId = useId()
+  const ocrPageModeId = useId()
   const { form, loading, error, status, updateField, save, setError } =
     useSettingsForm((settings) => ({
       ocr_timeout_sec: String(settings.ocr_timeout_sec),
@@ -43,6 +44,7 @@ export function SettingsProcessingPage() {
       deep_search_languages: settings.deep_search_languages,
       extraction_rules: settings.extraction_rules,
       always_require_review: settings.always_require_review,
+      ocr_page_mode: settings.ocr_page_mode,
       embedding_model: settings.embedding_model,
       processing_window_enabled: settings.processing_window_enabled,
       processing_window_start: settings.processing_window_start || '22:00',
@@ -85,6 +87,7 @@ export function SettingsProcessingPage() {
       deep_search_languages: form.deep_search_languages,
       extraction_rules: form.extraction_rules,
       always_require_review: form.always_require_review,
+      ocr_page_mode: form.ocr_page_mode,
     })
   }
 
@@ -174,6 +177,22 @@ export function SettingsProcessingPage() {
                 ? t('settingsProcessing.deepSearchLanguagesEmbeddingHint')
                 : t('settingsProcessing.deepSearchLanguagesHint')}
             </p>
+          </div>
+          <div className={labelClassName}>
+            <label htmlFor={ocrPageModeId} className={labelTextClassName}>
+              {t('settingsProcessing.ocrPageMode')}
+            </label>
+            <Combobox
+              id={ocrPageModeId}
+              value={form.ocr_page_mode}
+              options={[
+                { value: 'auto', label: t('settingsProcessing.ocrPageModeAuto') },
+                { value: 'always', label: t('settingsProcessing.ocrPageModeAlways') },
+                { value: 'off', label: t('settingsProcessing.ocrPageModeOff') },
+              ]}
+              onChange={(next) => updateField('ocr_page_mode', next as OCRPageMode)}
+            />
+            <p className={fieldHintClassName}>{t('settingsProcessing.ocrPageModeHint')}</p>
           </div>
           <div className={`${labelClassName} sm:col-span-2`}>
             <label className={labelClassName}>

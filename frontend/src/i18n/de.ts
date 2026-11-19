@@ -1593,6 +1593,12 @@ export const de: Catalog = {
   'settingsProcessing.ocrTimeout': 'OCR-Zeitlimit (Sekunden)',
   'settingsProcessing.ocrTimeoutHint':
     'Wie lange ein einzelner OCR-Aufruf dauern darf, bevor der Schritt fehlschlägt.',
+  'settingsProcessing.ocrPageMode': 'PDFs für OCR aufteilen',
+  'settingsProcessing.ocrPageModeAuto': 'Automatisch: nur bei Ablehnung',
+  'settingsProcessing.ocrPageModeAlways': 'Immer: eine Seite pro Anfrage',
+  'settingsProcessing.ocrPageModeOff': 'Nie',
+  'settingsProcessing.ocrPageModeHint':
+    'Manche Anbieter lehnen ein langes PDF als zu groß oder über ihrem Ratenlimit ab (429 Too Many Requests). Automatisch schickt es zuerst ganz und, falls abgelehnt, in Hälften bis hinunter zu einzelnen Seiten, eine Anfrage nach der anderen. Das OCR-Zeitlimit gilt pro Anfrage.',
   'settingsProcessing.aiTimeout': 'KI-Zeitlimit (Sekunden)',
   'settingsProcessing.aiTimeoutHint':
     'Wie lange eine Extraktions-, Chat-, Such- oder Aufteilungsanfrage dauern darf.',

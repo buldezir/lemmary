@@ -179,9 +179,9 @@ func (p *MistralProvider) requestOCR(ctx context.Context, docType, dataURL strin
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var apiErr mistralAPIError
 		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Message != "" {
-			return "", fmt.Errorf("mistral OCR: %s", apiErr.Message)
+			return "", newHTTPError(resp, "mistral OCR: %s", apiErr.Message)
 		}
-		return "", fmt.Errorf("mistral OCR: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return "", newHTTPError(resp, "mistral OCR: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	var ocrResp mistralOCRResponse

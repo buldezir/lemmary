@@ -470,6 +470,18 @@ rather than milliseconds a page.
 - **Local OCR times out** — raise `OCR_TIMEOUT_SEC`. On an instance that has
   already booted it must be raised in **Admin**, not `.env`: it is a seeded
   setting, so the environment applies only on the first boot.
+- **OCR fails with `429 Too Many Requests`** — the provider's rate limit (often
+  tokens per minute) is smaller than one whole document. **Split PDFs for OCR**
+  under **Admin → Processing** handles this: on *Automatic*, the default, a PDF
+  the provider refuses as too large or over its rate limit is sent again in
+  halves, and any half still refused in halves again, down to single pages, one
+  request after another. A part refused for the rate limit is first retried once,
+  after the wait the provider asks for (`Retry-After`, at most five minutes, else a minute), since the
+  parts before it may have spent the minute's budget. A spent quota is not split.
+  *Always* sends one page per request from the start;
+  *Never* sends the document whole and lets it fail. The OCR timeout applies to
+  each request, and those waits add to it, so a long split document can outlast `WORKER_TIMEOUT_SEC`; raise
+  that if it does. If a single page is refused, the step fails as before.
 - **AI extraction fails** — check that an extraction model is bound and that it
   is a chat model, not an embedding or OCR model.
 - **An `opencode` model answers every request with a 500 or a 404** — check that

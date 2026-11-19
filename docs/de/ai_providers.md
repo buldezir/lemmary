@@ -495,6 +495,19 @@ liest Sekunden statt Millisekunden pro Seite.
 - **Lokale OCR läuft in ein Timeout** – erhöhen Sie `OCR_TIMEOUT_SEC`. Auf einer Instanz, die
   bereits gestartet wurde, muss der Wert unter **Admin** erhöht werden, nicht in
   `.env`: Es ist eine vorbelegte Einstellung, daher wirkt die Umgebung nur beim ersten Start.
+- **OCR schlägt mit `429 Too Many Requests` fehl** – das Ratenlimit des Anbieters (oft
+  Tokens pro Minute) ist kleiner als ein ganzes Dokument. **PDFs für OCR aufteilen**
+  unter **Admin → Verarbeitung** fängt das ab: Bei *Automatisch*, der Voreinstellung, wird
+  ein PDF, das der Anbieter als zu groß oder über seinem Ratenlimit ablehnt, erneut in
+  Hälften geschickt, und jede weiter abgelehnte Hälfte wieder in Hälften, bis hinunter zu
+  einzelnen Seiten, eine Anfrage nach der anderen. Ein wegen des Ratenlimits abgelehnter
+  Teil wird zuerst einmal erneut versucht, nach der Wartezeit, die der Anbieter verlangt
+  (`Retry-After`, höchstens fünf Minuten, sonst eine Minute), da die Teile davor das Budget der Minute verbraucht
+  haben können. Ein aufgebrauchtes Kontingent wird nicht aufgeteilt. *Immer* schickt von Anfang an eine Seite
+  pro Anfrage; *Nie* schickt das Dokument ganz und lässt es fehlschlagen. Das OCR-Zeitlimit
+  gilt pro Anfrage, und die Wartezeiten kommen hinzu, sodass ein aufgeteiltes langes Dokument `WORKER_TIMEOUT_SEC`
+  überschreiten kann; erhöhen Sie diesen Wert in dem Fall. Wird eine einzelne Seite
+  abgelehnt, schlägt der Schritt wie bisher fehl.
 - **KI-Extraktion schlägt fehl** – prüfen Sie, ob ein Extraktionsmodell zugewiesen ist und ob
   es ein Chat-Modell ist, kein Embedding- oder OCR-Modell.
 - **Ein `opencode`-Modell beantwortet jede Anfrage mit 500 oder 404** – prüfen Sie, ob das SDK

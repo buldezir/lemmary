@@ -3,12 +3,18 @@ package worker
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/ocr"
+	"lemmary/backend/internal/pdftool"
 	"lemmary/backend/internal/preview"
 	"lemmary/backend/internal/textextract"
 )
@@ -125,10 +131,11 @@ func resolveOCRText(ctx context.Context, state *StepState, provider ocr.Provider
 		return text, "native", nil
 	}
 
-	ocrCtx, cancel := context.WithTimeout(ctx, state.Cfg.OCRTimeout)
-	defer cancel()
-
-	text, err = provider.ExtractText(ocrCtx, state.TmpPath, state.MimeType)
+	if state.MimeType == "application/pdf" {
+		text, err = ocrPDF(ctx, state, provider)
+	} else {
+		text, err = extractWithTimeout(ctx, provider, state.TmpPath, state.MimeType, state.Cfg.OCRTimeout)
+	}
 	if err != nil {
 		return "", "", err
 	}
@@ -136,3 +143,101 @@ func resolveOCRText(ctx context.Context, state *StepState, provider ocr.Provider
 	metrics.OCRPages(max(1, int64(state.Document.GetFloat("page_count"))))
 	return text, provider.Name(), nil
 }
+
+func extractWithTimeout(ctx context.Context, provider ocr.Provider, path, mimeType string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return provider.ExtractText(ctx, path, mimeType)
+}
+
+// ocrPDF reads a PDF whole, or in parts when OCRPageMode says so: always is
+// one page per request, auto halves only what the provider refused as too
+// large or over its rate limit. Parts go one after another, never in parallel,
+// since parallel requests are what a per-minute limit counts.
+func ocrPDF(ctx context.Context, state *StepState, provider ocr.Provider) (string, error) {
+	mode := state.Cfg.OCRPageMode
+	whole := func() (string, error) {
+		return extractWithTimeout(ctx, provider, state.TmpPath, state.MimeType, state.Cfg.OCRTimeout)
+	}
+	var wholeErr error
+	if mode != config.OCRPageModeAlways {
+		text, err := whole()
+		if mode != config.OCRPageModeAuto || !ocr.TooLarge(err) {
+			return text, err
+		}
+		wholeErr = err
+	}
+
+	pages, err := pdftool.PageCount(ctx, state.TmpPath)
+	if err != nil {
+		state.Logger.Warn("ocr: cannot count pages, not splitting", "error", err)
+	}
+	if err != nil || pages <= 1 {
+		if wholeErr != nil {
+			return "", wholeErr
+		}
+		return whole()
+	}
+	if wholeErr != nil {
+		state.Logger.Warn("ocr: provider refused the whole document, splitting it", "pages", pages, "error", wholeErr)
+	}
+	dir, err := os.MkdirTemp("", "lemmary-ocr-pages-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+
+	var ranges [][2]int
+	if mode == config.OCRPageModeAlways {
+		for page := 1; page <= pages; page++ {
+			ranges = append(ranges, [2]int{page, page})
+		}
+	} else {
+		ranges = halves(1, pages)
+	}
+	var texts []string
+	for len(ranges) > 0 {
+		from, to := ranges[0][0], ranges[0][1]
+		ranges = ranges[1:]
+		text, err := readPages(ctx, state, provider, dir, from, to)
+		if err == nil {
+			texts = append(texts, text)
+			continue
+		}
+		if !ocr.TooLarge(err) || from == to {
+			return "", err
+		}
+		ranges = append(halves(from, to), ranges...)
+	}
+	return strings.Join(texts, "\n\n"), nil
+}
+
+func halves(from, to int) [][2]int {
+	mid := (from + to) / 2
+	return [][2]int{{from, mid}, {mid + 1, to}}
+}
+
+// readPages sends pages from..to as one request. After a rate-limit refusal it
+// waits as long as the provider asked and sends the same part once more: by
+// then the per-minute budget the parts before it spent has come back.
+func readPages(ctx context.Context, state *StepState, provider ocr.Provider, dir string, from, to int) (string, error) {
+	path := filepath.Join(dir, fmt.Sprintf("pages-%d-%d.pdf", from, to))
+	if err := pdftool.ExtractRange(ctx, state.TmpPath, from, to, path); err != nil {
+		return "", err
+	}
+	text, err := extractWithTimeout(ctx, provider, path, "application/pdf", state.Cfg.OCRTimeout)
+	if wait, limited := ocr.RetryAfter(err); limited {
+		if ocrRateLimitSleep(ctx, wait); ctx.Err() == nil {
+			text, err = extractWithTimeout(ctx, provider, path, "application/pdf", state.Cfg.OCRTimeout)
+		}
+	}
+	if err != nil && from == to {
+		return "", fmt.Errorf("page %d: %w", from, err)
+	}
+	if err != nil {
+		return "", fmt.Errorf("pages %d-%d: %w", from, to, err)
+	}
+	return strings.TrimSpace(text), nil
+}
+
+var ocrRateLimitSleep = ai.SleepCtx
