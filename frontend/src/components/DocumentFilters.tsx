@@ -1,3 +1,4 @@
+import { useId, useState } from 'react'
 import { t } from '../i18n'
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import type { OptionRecord } from '../lib/api/documents'
@@ -50,33 +51,60 @@ export function DocumentFilters({
   // rather than inside TagFilter because the search box shares the row and
   // has to know whether it is sharing it.
   const showTags = tags.length > 0 || chosenTags.length > 0 || query.untagged
+  const [open, setOpen] = useState(false)
+  const filtersId = useId()
+  const activeCount =
+    chosenTags.length +
+    [
+      query.untagged,
+      query.from,
+      query.to,
+      query.type !== 'all',
+      query.correspondent !== 'all',
+      status !== undefined && status !== 'all',
+    ].filter(Boolean).length
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
         <div className="flex w-full min-w-0 flex-col gap-1 sm:flex-1">
-          <input
-            type="search"
-            placeholder={t('documentFilters.searchPlaceholder')}
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            aria-describedby={tooShort ? 'search-too-short' : undefined}
-            className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood"
-          />
+          <div className="flex gap-2">
+            <input
+              type="search"
+              placeholder={t('documentFilters.searchPlaceholder')}
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              aria-describedby={tooShort ? 'search-too-short' : undefined}
+              className="w-full min-w-0 rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood"
+            />
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={`${filtersId}-row ${filtersId}-grid`}
+              onClick={() => setOpen((shown) => !shown)}
+              className="shrink-0 rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-ink transition-colors hover:border-ink hover:bg-bright sm:hidden"
+            >
+              {activeCount > 0
+                ? t('documentFilters.toggleCount', { count: activeCount })
+                : t('documentFilters.toggle')}
+            </button>
+          </div>
           {tooShort && (
             <p id="search-too-short" role="status" className="text-xs text-ink-soft">
               {t('documentFilters.tooShort', { count: MIN_SEARCH_LENGTH })}
             </p>
           )}
         </div>
-        {showTags && (
-          <TagFilter
-            value={chosenTags}
-            untagged={query.untagged}
-            options={tags}
-            onChange={(next, untagged) => updateQuery({ tags: next.join(','), untagged })}
-          />
-        )}
+        <div id={`${filtersId}-row`} className={open ? 'contents' : 'hidden sm:contents'}>
+          {showTags && (
+            <TagFilter
+              value={chosenTags}
+              untagged={query.untagged}
+              options={tags}
+              onChange={(next, untagged) => updateQuery({ tags: next.join(','), untagged })}
+            />
+          )}
+        </div>
         {owner && (
           <OwnerMenu query={query} updateQuery={updateQuery} className="hidden sm:block" />
         )}
@@ -90,13 +118,16 @@ export function DocumentFilters({
             placeholder={t('documentFilters.allStatuses')}
             ariaLabel={t('documentFilters.status')}
             bgClassName="bg-surface"
-            className="shrink-0 sm:w-48"
+            className={`shrink-0 sm:block sm:w-48 ${open ? '' : 'hidden'}`}
             onChange={(next) => updateQuery({ status: next })}
           />
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)]">
+      <div
+        id={`${filtersId}-grid`}
+        className={`${open ? 'grid' : 'hidden'} grid-cols-1 gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)]`}
+      >
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-ink-soft">{t('documentFilters.from')}</span>
           <input

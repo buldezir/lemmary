@@ -504,6 +504,8 @@ export const de: Catalog = {
   'documentFilters.allTypes': 'Alle Typen',
   'documentFilters.correspondent': 'Korrespondent',
   'documentFilters.allCorrespondents': 'Alle Korrespondenten',
+  'documentFilters.toggle': 'Filter',
+  'documentFilters.toggleCount': 'Filter ({count})',
 
   'chatGPTSignIn.expired': 'Der Code ist abgelaufen. Starten Sie neu, um einen neuen zu erhalten.',
   'chatGPTSignIn.failed': 'ChatGPT-Anmeldung fehlgeschlagen',

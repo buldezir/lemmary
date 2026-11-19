@@ -482,6 +482,8 @@ export const en = {
   'documentFilters.allTypes': 'All types',
   'documentFilters.correspondent': 'Correspondent',
   'documentFilters.allCorrespondents': 'All correspondents',
+  'documentFilters.toggle': 'Filters',
+  'documentFilters.toggleCount': 'Filters ({count})',
 
   'chatGPTSignIn.expired': 'That code expired. Start again to get a new one.',
   'chatGPTSignIn.failed': 'ChatGPT sign-in failed',

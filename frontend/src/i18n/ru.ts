@@ -553,6 +553,8 @@ export const ru: Catalog = {
   'documentFilters.allTypes': 'Все типы',
   'documentFilters.correspondent': 'Корреспондент',
   'documentFilters.allCorrespondents': 'Все корреспонденты',
+  'documentFilters.toggle': 'Фильтры',
+  'documentFilters.toggleCount': 'Фильтры ({count})',
 
   'chatGPTSignIn.expired': 'Срок действия кода истёк. Начните заново, чтобы получить новый.',
   'chatGPTSignIn.failed': 'Не удалось войти в ChatGPT',
