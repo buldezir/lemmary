@@ -343,7 +343,7 @@ func TestBackoffEndsWithTheCallersContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	start := time.Now()
-	sleepCtx(ctx, time.Hour)
+	SleepCtx(ctx, time.Hour)
 	if waited := time.Since(start); waited > time.Second {
 		t.Fatalf("slept %v after the context ended", waited)
 	}

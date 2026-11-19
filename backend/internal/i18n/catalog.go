@@ -1073,6 +1073,10 @@ var catalog = map[string]map[string]string{
 		"de": "near_duplicate_threshold muss zwischen 0 und 1 liegen",
 		"ru": "near_duplicate_threshold должен быть от 0 до 1",
 	},
+	"ocr_page_mode must be off, auto or always": {
+		"de": "ocr_page_mode muss off, auto oder always sein",
+		"ru": "ocr_page_mode должен быть off, auto или always",
+	},
 	"ocr_model is required for this OCR provider": {
 		"de": "ocr_model ist für diesen OCR-Anbieter erforderlich",
 		"ru": "для этого OCR-провайдера требуется ocr_model",

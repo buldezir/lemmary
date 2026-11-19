@@ -91,7 +91,7 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 
 	text := strings.TrimSpace(chatResp.Choices[0].Message.Content)
 	if text == "" {
-		return "", fmt.Errorf("LLM OCR returned empty text")
+		return "", fmt.Errorf("LLM OCR %w", ErrEmptyText)
 	}
 	p.logger.Info("llm ocr complete",
 		"file", filepath.Base(filePath),
@@ -122,8 +122,6 @@ func filePartRefused(err error) bool {
 		strings.Contains(strings.ToLower(apiErr.RawJSON()), "file_id")
 }
 
-// ponytail: every page in one request; split into per-page calls if a long PDF
-// outgrows a model's image limit.
 func (p *LLMProvider) completeRendered(ctx context.Context, pdfPath string) (*openai.ChatCompletion, error) {
 	pages, err := pdftool.PageCount(ctx, pdfPath)
 	if err != nil {

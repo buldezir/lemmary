@@ -264,7 +264,7 @@ func (p *DoclingProvider) convert(ctx context.Context, fileName, mimeType string
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("docling OCR: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return "", newHTTPError(resp, "docling OCR: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	var out doclingResponse
@@ -280,7 +280,7 @@ func (p *DoclingProvider) convert(ctx context.Context, fileName, mimeType string
 		if detail := doclingErrorDetail(out.Errors); detail != "" {
 			return "", fmt.Errorf("docling OCR: %s", detail)
 		}
-		return "", fmt.Errorf("docling OCR returned empty text")
+		return "", fmt.Errorf("docling OCR %w", ErrEmptyText)
 	}
 	return text, nil
 }

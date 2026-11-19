@@ -3,13 +3,21 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/ocr"
+	"lemmary/backend/internal/pdftool"
+	"lemmary/backend/internal/pdftool/testpdf"
 	"lemmary/backend/internal/textextract"
 )
 
@@ -199,6 +207,188 @@ func TestResolveOCRTextNativeBypassesProvider(t *testing.T) {
 	}
 	if !strings.Contains(text, "Paper") {
 		t.Fatalf("unexpected text %q", text)
+	}
+}
+
+// pageLimitedOCR answers with each page's text layer. It refuses a part
+// longer than limit pages, and, with a budget, a part that would take the
+// pages read since the last wait over it, like a per-minute token limit.
+// Pages whose text is in blank read as no text at all.
+type pageLimitedOCR struct {
+	limit, budget, used int
+	err                 error
+	blank               []string
+	sent                []int
+}
+
+func (p *pageLimitedOCR) Name() string { return "limited" }
+
+func (p *pageLimitedOCR) ExtractText(ctx context.Context, path, _ string) (string, error) {
+	n, err := pdftool.PageCount(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	p.sent = append(p.sent, n)
+	if n > p.limit || (p.budget > 0 && p.used+n > p.budget) {
+		return "", p.err
+	}
+	p.used += n
+	texts, err := pdftool.AllPagesText(ctx, path, n)
+	if err != nil {
+		return "", err
+	}
+	texts = slices.DeleteFunc(texts, func(text string) bool { return slices.Contains(p.blank, text) })
+	if len(texts) == 0 {
+		return "", fmt.Errorf("limited OCR %w", ocr.ErrEmptyText)
+	}
+	return strings.Join(texts, " | "), nil
+}
+
+var errRateLimited = errors.New(`429 Too Many Requests {"message":"request rejected: your request would exceed the configured rate limit"}`)
+
+func pageModeState(t *testing.T, pages int, mode string) *StepState {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "scan.pdf")
+	if err := os.WriteFile(path, testpdf.Multipage(pages), 0o600); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	return &StepState{
+		Document: core.NewRecord(coreTestDocumentsCollection()),
+		TmpPath:  path,
+		MimeType: "application/pdf",
+		Logger:   slog.New(slog.DiscardHandler),
+		Cfg:      config.Config{OCRPageMode: mode, OCRTimeout: 10 * time.Second},
+	}
+}
+
+var errContextLength = errors.New("This model's maximum context length is 128000 tokens")
+
+func TestResolveOCRTextPageModes(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mode      string
+		limit     int
+		budget    int
+		spent     int
+		blank     []string
+		err       error
+		wantSent  []int
+		wantWaits int
+		wantText  string
+		wantErr   bool
+		wantErrIn string
+	}{
+		{name: "auto sends a document that fits whole", mode: config.OCRPageModeAuto, limit: 5,
+			wantSent: []int{5}, wantText: "Page 1 | Page 2 | Page 3 | Page 4 | Page 5"},
+		{name: "auto halves only what is refused", mode: config.OCRPageModeAuto, limit: 2, err: errContextLength,
+			wantSent: []int{5, 3, 2, 1, 2}, wantText: "Page 1 | Page 2\n\nPage 3\n\nPage 4 | Page 5"},
+		{name: "auto retries a rate-limited request after waiting before halving it", mode: config.OCRPageModeAuto, limit: 2, err: errRateLimited,
+			wantSent: []int{5, 5, 3, 3, 2, 1, 2}, wantWaits: 2, wantText: "Page 1 | Page 2\n\nPage 3\n\nPage 4 | Page 5"},
+		{name: "auto waits out a spent per-minute budget", mode: config.OCRPageModeAuto, limit: 5, budget: 4, err: errRateLimited,
+			wantSent: []int{5, 5, 3, 2, 2}, wantWaits: 2, wantText: "Page 1 | Page 2 | Page 3\n\nPage 4 | Page 5"},
+		{name: "auto reads a document that fits whole once the rate limit has passed", mode: config.OCRPageModeAuto, limit: 5, budget: 5, spent: 1, err: errRateLimited,
+			wantSent: []int{5, 5}, wantWaits: 1, wantText: "Page 1 | Page 2 | Page 3 | Page 4 | Page 5"},
+		{name: "auto keeps going past a blank part", mode: config.OCRPageModeAuto, limit: 2, err: errContextLength, blank: []string{"Page 3"},
+			wantSent: []int{5, 3, 2, 1, 2}, wantText: "Page 1 | Page 2\n\nPage 4 | Page 5"},
+		{name: "auto does not split on other errors", mode: config.OCRPageModeAuto, limit: 2, err: errors.New("invalid api key"),
+			wantSent: []int{5}, wantErr: true},
+		{name: "auto halves a part too large for the per-minute limit without waiting", mode: config.OCRPageModeAuto, limit: 2,
+			err:      errors.New("429 Too Many Requests: Request too large for gpt-4o on tokens per min (TPM): Limit 30000, Requested 50000."),
+			wantSent: []int{5, 3, 2, 1, 2}, wantText: "Page 1 | Page 2\n\nPage 3\n\nPage 4 | Page 5"},
+		{name: "auto fails when a single page is refused", mode: config.OCRPageModeAuto, limit: 0, err: errContextLength,
+			wantSent: []int{5, 3, 2, 1}, wantErr: true, wantErrIn: "page 1: "},
+		{name: "auto does not split on a spent quota", mode: config.OCRPageModeAuto, limit: 2,
+			err:      errors.New(`429 Too Many Requests {"message":"You exceeded your current quota"}`),
+			wantSent: []int{5}, wantErr: true},
+		{name: "off never splits", mode: config.OCRPageModeOff, limit: 2, err: errRateLimited,
+			wantSent: []int{5}, wantErr: true},
+		{name: "always sends one page per request", mode: config.OCRPageModeAlways, limit: 1,
+			wantSent: []int{1, 1, 1, 1, 1}, wantText: "Page 1\n\nPage 2\n\nPage 3\n\nPage 4\n\nPage 5"},
+		{name: "always skips a blank page", mode: config.OCRPageModeAlways, limit: 1, blank: []string{"Page 2"},
+			wantSent: []int{1, 1, 1, 1, 1}, wantText: "Page 1\n\nPage 3\n\nPage 4\n\nPage 5"},
+		{name: "always fails when no page has text", mode: config.OCRPageModeAlways, limit: 1,
+			blank:    []string{"Page 1", "Page 2", "Page 3", "Page 4", "Page 5"},
+			wantSent: []int{1, 1, 1, 1, 1}, wantErr: true, wantErrIn: "empty text"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := &pageLimitedOCR{limit: tc.limit, budget: tc.budget, used: tc.spent, err: tc.err, blank: tc.blank}
+			waits := 0
+			stubRateLimitSleep(t, func() { waits++; provider.used = 0 })
+			text, _, err := resolveOCRText(context.Background(), pageModeState(t, 5, tc.mode), provider)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErrIn != "" && !strings.Contains(err.Error(), tc.wantErrIn) {
+				t.Errorf("err = %v, want it to name %q", err, tc.wantErrIn)
+			}
+			if !slices.Equal(provider.sent, tc.wantSent) {
+				t.Errorf("pages per request = %v, want %v", provider.sent, tc.wantSent)
+			}
+			if text != tc.wantText {
+				t.Errorf("text = %q, want %q", text, tc.wantText)
+			}
+			if waits != tc.wantWaits {
+				t.Errorf("waited %d times, want %d", waits, tc.wantWaits)
+			}
+		})
+	}
+}
+
+func stubRateLimitSleep(t *testing.T, onWait func()) {
+	t.Helper()
+	saved := ocrRateLimitSleep
+	ocrRateLimitSleep = func(context.Context, time.Duration) { onWait() }
+	t.Cleanup(func() { ocrRateLimitSleep = saved })
+}
+
+type fixedOCR struct {
+	text  string
+	err   error
+	calls int
+}
+
+func (f *fixedOCR) Name() string { return "fixed" }
+
+func (f *fixedOCR) ExtractText(context.Context, string, string) (string, error) {
+	f.calls++
+	return f.text, f.err
+}
+
+// Without a page count nothing can be split: the document goes whole, and a
+// refusal of it is reported as the provider worded it.
+func TestResolveOCRTextWithoutAPageCount(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scan.pdf")
+	if err := os.WriteFile(path, []byte("not a pdf"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	state := pageModeState(t, 1, config.OCRPageModeAlways)
+	state.TmpPath = path
+
+	provider := &fixedOCR{text: "whole"}
+	if text, _, err := resolveOCRText(context.Background(), state, provider); err != nil || text != "whole" {
+		t.Fatalf("always: text = %q, err = %v; want the whole document read", text, err)
+	}
+
+	state.Cfg.OCRPageMode = config.OCRPageModeAuto
+	provider = &fixedOCR{err: errRateLimited}
+	stubRateLimitSleep(t, func() {})
+	if _, _, err := resolveOCRText(context.Background(), state, provider); !errors.Is(err, errRateLimited) || provider.calls != 2 {
+		t.Fatalf("auto: err = %v after %d calls; want the provider's refusal after a wait and one retry", err, provider.calls)
+	}
+}
+
+// A job that ends during a rate-limit wait stops there, rather than reading
+// the refusal it waited on as a reason to halve.
+func TestResolveOCRTextStopsWhenTheJobEndsDuringAWait(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stubRateLimitSleep(t, cancel)
+	provider := &pageLimitedOCR{limit: 2, err: errRateLimited}
+	if _, _, err := resolveOCRText(ctx, pageModeState(t, 5, config.OCRPageModeAuto), provider); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if !slices.Equal(provider.sent, []int{5}) {
+		t.Errorf("pages per request = %v, want only the first", provider.sent)
 	}
 }
 

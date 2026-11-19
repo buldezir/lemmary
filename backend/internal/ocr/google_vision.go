@@ -194,7 +194,7 @@ func (p *GoogleVisionProvider) extractFileText(ctx context.Context, content []by
 
 	text := strings.Join(parts, "\n\n")
 	if text == "" {
-		return "", fmt.Errorf("google vision returned empty text for mime type %s", mimeType)
+		return "", fmt.Errorf("google vision %w for mime type %s", ErrEmptyText, mimeType)
 	}
 
 	return text, nil
@@ -298,7 +298,7 @@ func (p *GoogleVisionProvider) extractImageText(ctx context.Context, content []b
 
 	text := imageResp.GetFullTextAnnotation().GetText()
 	if text == "" {
-		return "", fmt.Errorf("google vision returned empty text for mime type %s", mimeType)
+		return "", fmt.Errorf("google vision %w for mime type %s", ErrEmptyText, mimeType)
 	}
 
 	p.logger.Info("google vision BatchAnnotateImages",

@@ -71,12 +71,13 @@ type openAIEmbedder struct {
 	mu   sync.RWMutex
 	dims int
 
-	// sleep is sleepCtx in production; tests replace it so the backoff
+	// sleep is SleepCtx in production; tests replace it so the backoff
 	// schedule can be asserted without waiting for it.
 	sleep func(context.Context, time.Duration)
 }
 
-func sleepCtx(ctx context.Context, d time.Duration) {
+// SleepCtx waits d, or until ctx is done.
+func SleepCtx(ctx context.Context, d time.Duration) {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
@@ -130,7 +131,7 @@ func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Dura
 		client:  openai.NewClient(opts...),
 		logger:  logger,
 		dims:    dims,
-		sleep:   sleepCtx,
+		sleep:   SleepCtx,
 	}
 }
 
