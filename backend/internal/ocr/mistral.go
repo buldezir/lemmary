@@ -198,7 +198,7 @@ func (p *MistralProvider) requestOCR(ctx context.Context, docType, dataURL strin
 
 	text := strings.Join(parts, "\n\n")
 	if text == "" {
-		return "", fmt.Errorf("mistral OCR returned empty text")
+		return "", fmt.Errorf("mistral OCR %w", ErrEmptyText)
 	}
 
 	return text, nil

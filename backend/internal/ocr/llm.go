@@ -91,7 +91,7 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 
 	text := strings.TrimSpace(chatResp.Choices[0].Message.Content)
 	if text == "" {
-		return "", fmt.Errorf("LLM OCR returned empty text")
+		return "", fmt.Errorf("LLM OCR %w", ErrEmptyText)
 	}
 	p.logger.Info("llm ocr complete",
 		"file", filepath.Base(filePath),

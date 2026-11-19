@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/ocr"
 	"lemmary/backend/internal/pdftool"
 	"lemmary/backend/internal/pdftool/testpdf"
 	"lemmary/backend/internal/textextract"
@@ -211,9 +213,11 @@ func TestResolveOCRTextNativeBypassesProvider(t *testing.T) {
 // pageLimitedOCR answers with each page's text layer. It refuses a part
 // longer than limit pages, and, with a budget, a part that would take the
 // pages read since the last wait over it, like a per-minute token limit.
+// Pages whose text is in blank read as no text at all.
 type pageLimitedOCR struct {
 	limit, budget, used int
 	err                 error
+	blank               []string
 	sent                []int
 }
 
@@ -230,7 +234,14 @@ func (p *pageLimitedOCR) ExtractText(ctx context.Context, path, _ string) (strin
 	}
 	p.used += n
 	texts, err := pdftool.AllPagesText(ctx, path, n)
-	return strings.Join(texts, " | "), err
+	if err != nil {
+		return "", err
+	}
+	texts = slices.DeleteFunc(texts, func(text string) bool { return slices.Contains(p.blank, text) })
+	if len(texts) == 0 {
+		return "", fmt.Errorf("limited OCR %w", ocr.ErrEmptyText)
+	}
+	return strings.Join(texts, " | "), nil
 }
 
 var errRateLimited = errors.New(`429 Too Many Requests {"message":"request rejected: your request would exceed the configured rate limit"}`)
@@ -258,6 +269,8 @@ func TestResolveOCRTextPageModes(t *testing.T) {
 		mode      string
 		limit     int
 		budget    int
+		spent     int
+		blank     []string
 		err       error
 		wantSent  []int
 		wantWaits int
@@ -269,10 +282,14 @@ func TestResolveOCRTextPageModes(t *testing.T) {
 			wantSent: []int{5}, wantText: "Page 1 | Page 2 | Page 3 | Page 4 | Page 5"},
 		{name: "auto halves only what is refused", mode: config.OCRPageModeAuto, limit: 2, err: errContextLength,
 			wantSent: []int{5, 3, 2, 1, 2}, wantText: "Page 1 | Page 2\n\nPage 3\n\nPage 4 | Page 5"},
-		{name: "auto retries a rate-limited part after waiting before halving it", mode: config.OCRPageModeAuto, limit: 2, err: errRateLimited,
-			wantSent: []int{5, 3, 3, 2, 1, 2}, wantWaits: 1, wantText: "Page 1 | Page 2\n\nPage 3\n\nPage 4 | Page 5"},
+		{name: "auto retries a rate-limited request after waiting before halving it", mode: config.OCRPageModeAuto, limit: 2, err: errRateLimited,
+			wantSent: []int{5, 5, 3, 3, 2, 1, 2}, wantWaits: 2, wantText: "Page 1 | Page 2\n\nPage 3\n\nPage 4 | Page 5"},
 		{name: "auto waits out a spent per-minute budget", mode: config.OCRPageModeAuto, limit: 5, budget: 4, err: errRateLimited,
-			wantSent: []int{5, 3, 2, 2}, wantWaits: 1, wantText: "Page 1 | Page 2 | Page 3\n\nPage 4 | Page 5"},
+			wantSent: []int{5, 5, 3, 2, 2}, wantWaits: 2, wantText: "Page 1 | Page 2 | Page 3\n\nPage 4 | Page 5"},
+		{name: "auto reads a document that fits whole once the rate limit has passed", mode: config.OCRPageModeAuto, limit: 5, budget: 5, spent: 1, err: errRateLimited,
+			wantSent: []int{5, 5}, wantWaits: 1, wantText: "Page 1 | Page 2 | Page 3 | Page 4 | Page 5"},
+		{name: "auto keeps going past a blank part", mode: config.OCRPageModeAuto, limit: 2, err: errContextLength, blank: []string{"Page 3"},
+			wantSent: []int{5, 3, 2, 1, 2}, wantText: "Page 1 | Page 2\n\nPage 4 | Page 5"},
 		{name: "auto does not split on other errors", mode: config.OCRPageModeAuto, limit: 2, err: errors.New("invalid api key"),
 			wantSent: []int{5}, wantErr: true},
 		{name: "auto halves a part too large for the per-minute limit without waiting", mode: config.OCRPageModeAuto, limit: 2,
@@ -287,9 +304,14 @@ func TestResolveOCRTextPageModes(t *testing.T) {
 			wantSent: []int{5}, wantErr: true},
 		{name: "always sends one page per request", mode: config.OCRPageModeAlways, limit: 1,
 			wantSent: []int{1, 1, 1, 1, 1}, wantText: "Page 1\n\nPage 2\n\nPage 3\n\nPage 4\n\nPage 5"},
+		{name: "always skips a blank page", mode: config.OCRPageModeAlways, limit: 1, blank: []string{"Page 2"},
+			wantSent: []int{1, 1, 1, 1, 1}, wantText: "Page 1\n\nPage 3\n\nPage 4\n\nPage 5"},
+		{name: "always fails when no page has text", mode: config.OCRPageModeAlways, limit: 1,
+			blank:    []string{"Page 1", "Page 2", "Page 3", "Page 4", "Page 5"},
+			wantSent: []int{1, 1, 1, 1, 1}, wantErr: true, wantErrIn: "empty text"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			provider := &pageLimitedOCR{limit: tc.limit, budget: tc.budget, err: tc.err}
+			provider := &pageLimitedOCR{limit: tc.limit, budget: tc.budget, used: tc.spent, err: tc.err, blank: tc.blank}
 			waits := 0
 			stubRateLimitSleep(t, func() { waits++; provider.used = 0 })
 			text, _, err := resolveOCRText(context.Background(), pageModeState(t, 5, tc.mode), provider)
@@ -349,8 +371,24 @@ func TestResolveOCRTextWithoutAPageCount(t *testing.T) {
 
 	state.Cfg.OCRPageMode = config.OCRPageModeAuto
 	provider = &fixedOCR{err: errRateLimited}
-	if _, _, err := resolveOCRText(context.Background(), state, provider); !errors.Is(err, errRateLimited) || provider.calls != 1 {
-		t.Fatalf("auto: err = %v after %d calls; want the provider's refusal after one", err, provider.calls)
+	stubRateLimitSleep(t, func() {})
+	if _, _, err := resolveOCRText(context.Background(), state, provider); !errors.Is(err, errRateLimited) || provider.calls != 2 {
+		t.Fatalf("auto: err = %v after %d calls; want the provider's refusal after a wait and one retry", err, provider.calls)
+	}
+}
+
+// A job that ends during a rate-limit wait stops there, rather than reading
+// the refusal it waited on as a reason to halve.
+func TestResolveOCRTextStopsWhenTheJobEndsDuringAWait(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stubRateLimitSleep(t, cancel)
+	provider := &pageLimitedOCR{limit: 2, err: errRateLimited}
+	if _, _, err := resolveOCRText(ctx, pageModeState(t, 5, config.OCRPageModeAuto), provider); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if !slices.Equal(provider.sent, []int{5}) {
+		t.Errorf("pages per request = %v, want only the first", provider.sent)
 	}
 }
 

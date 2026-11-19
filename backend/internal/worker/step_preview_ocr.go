@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -156,13 +157,13 @@ func extractWithTimeout(ctx context.Context, provider ocr.Provider, path, mimeTy
 // since parallel requests are what a per-minute limit counts.
 func ocrPDF(ctx context.Context, state *StepState, provider ocr.Provider) (string, error) {
 	mode := state.Cfg.OCRPageMode
-	whole := func() (string, error) {
-		return extractWithTimeout(ctx, provider, state.TmpPath, state.MimeType, state.Cfg.OCRTimeout)
-	}
 	var wholeErr error
 	if mode != config.OCRPageModeAlways {
-		text, err := whole()
-		if mode != config.OCRPageModeAuto || !ocr.TooLarge(err) {
+		if mode != config.OCRPageModeAuto {
+			return extractWithTimeout(ctx, provider, state.TmpPath, state.MimeType, state.Cfg.OCRTimeout)
+		}
+		text, err := extractWaitingOnce(ctx, state, provider, state.TmpPath)
+		if !ocr.TooLarge(err) {
 			return text, err
 		}
 		wholeErr = err
@@ -176,7 +177,7 @@ func ocrPDF(ctx context.Context, state *StepState, provider ocr.Provider) (strin
 		if wholeErr != nil {
 			return "", wholeErr
 		}
-		return whole()
+		return extractWaitingOnce(ctx, state, provider, state.TmpPath)
 	}
 	if wholeErr != nil {
 		state.Logger.Warn("ocr: provider refused the whole document, splitting it", "pages", pages, "error", wholeErr)
@@ -196,18 +197,24 @@ func ocrPDF(ctx context.Context, state *StepState, provider ocr.Provider) (strin
 		ranges = halves(1, pages)
 	}
 	var texts []string
+	var emptyErr error
 	for len(ranges) > 0 {
 		from, to := ranges[0][0], ranges[0][1]
 		ranges = ranges[1:]
 		text, err := readPages(ctx, state, provider, dir, from, to)
-		if err == nil {
+		switch {
+		case err == nil:
 			texts = append(texts, text)
-			continue
-		}
-		if !ocr.TooLarge(err) || from == to {
+		case errors.Is(err, ocr.ErrEmptyText):
+			emptyErr = err
+		case !ocr.TooLarge(err) || from == to:
 			return "", err
+		default:
+			ranges = append(halves(from, to), ranges...)
 		}
-		ranges = append(halves(from, to), ranges...)
+	}
+	if len(texts) == 0 {
+		return "", emptyErr
 	}
 	return strings.Join(texts, "\n\n"), nil
 }
@@ -217,20 +224,28 @@ func halves(from, to int) [][2]int {
 	return [][2]int{{from, mid}, {mid + 1, to}}
 }
 
-// readPages sends pages from..to as one request. After a rate-limit refusal it
-// waits as long as the provider asked and sends the same part once more: by
-// then the per-minute budget the parts before it spent has come back.
+// extractWaitingOnce sends a PDF and, after a rate-limit refusal, waits as long
+// as the provider asked and sends it once more: by then the per-minute budget
+// spent before it has come back.
+func extractWaitingOnce(ctx context.Context, state *StepState, provider ocr.Provider, path string) (string, error) {
+	text, err := extractWithTimeout(ctx, provider, path, "application/pdf", state.Cfg.OCRTimeout)
+	wait, limited := ocr.RetryAfter(err)
+	if !limited {
+		return text, err
+	}
+	if ocrRateLimitSleep(ctx, wait); ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	return extractWithTimeout(ctx, provider, path, "application/pdf", state.Cfg.OCRTimeout)
+}
+
+// readPages sends pages from..to as one request.
 func readPages(ctx context.Context, state *StepState, provider ocr.Provider, dir string, from, to int) (string, error) {
 	path := filepath.Join(dir, fmt.Sprintf("pages-%d-%d.pdf", from, to))
 	if err := pdftool.ExtractRange(ctx, state.TmpPath, from, to, path); err != nil {
 		return "", err
 	}
-	text, err := extractWithTimeout(ctx, provider, path, "application/pdf", state.Cfg.OCRTimeout)
-	if wait, limited := ocr.RetryAfter(err); limited {
-		if ocrRateLimitSleep(ctx, wait); ctx.Err() == nil {
-			text, err = extractWithTimeout(ctx, provider, path, "application/pdf", state.Cfg.OCRTimeout)
-		}
-	}
+	text, err := extractWaitingOnce(ctx, state, provider, path)
 	if err != nil && from == to {
 		return "", fmt.Errorf("page %d: %w", from, err)
 	}

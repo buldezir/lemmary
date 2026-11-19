@@ -2,6 +2,7 @@ package ocr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -17,6 +18,9 @@ type Provider interface {
 	Name() string
 	ExtractText(ctx context.Context, filePath string, mimeType string) (string, error)
 }
+
+// ErrEmptyText is wrapped by every provider that read a file and found no text.
+var ErrEmptyText = errors.New("returned empty text")
 
 // LimitedConcurrency is implemented by providers that cannot usefully serve
 // several requests at once.

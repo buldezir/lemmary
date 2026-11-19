@@ -500,10 +500,12 @@ liest Sekunden statt Millisekunden pro Seite.
   unter **Admin → Verarbeitung** fängt das ab: Bei *Automatisch*, der Voreinstellung, wird
   ein PDF, das der Anbieter als zu groß oder über seinem Ratenlimit ablehnt, erneut in
   Hälften geschickt, und jede weiter abgelehnte Hälfte wieder in Hälften, bis hinunter zu
-  einzelnen Seiten, eine Anfrage nach der anderen. Ein wegen des Ratenlimits abgelehnter
-  Teil wird zuerst einmal erneut versucht, nach der Wartezeit, die der Anbieter verlangt
-  (`Retry-After`, höchstens fünf Minuten, sonst eine Minute), da die Teile davor das Budget der Minute verbraucht
-  haben können. Ein aufgebrauchtes Kontingent wird nicht aufgeteilt. *Immer* schickt von Anfang an eine Seite
+  einzelnen Seiten, eine Anfrage nach der anderen. Jede wegen des Ratenlimits abgelehnte
+  Anfrage, auch die erste für das ganze PDF, wird vor dem Halbieren einmal erneut versucht,
+  nach der Wartezeit, die der Anbieter verlangt (`Retry-After`, höchstens fünf Minuten,
+  sonst eine Minute), da das Budget der Minute womöglich nur vorerst verbraucht ist. Ein
+  aufgebrauchtes Kontingent wird nicht aufgeteilt. Eine leere Seite bleibt ohne Text; der
+  Schritt schlägt nur fehl, wenn keine Seite Text hat. *Immer* schickt von Anfang an eine Seite
   pro Anfrage; *Nie* schickt das Dokument ganz und lässt es fehlschlagen. Das OCR-Zeitlimit
   gilt pro Anfrage, und die Wartezeiten kommen hinzu, sodass ein aufgeteiltes langes Dokument `WORKER_TIMEOUT_SEC`
   überschreiten kann; erhöhen Sie diesen Wert in dem Fall. Wird eine einzelne Seite

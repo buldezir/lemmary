@@ -475,9 +475,11 @@ rather than milliseconds a page.
   under **Admin → Processing** handles this: on *Automatic*, the default, a PDF
   the provider refuses as too large or over its rate limit is sent again in
   halves, and any half still refused in halves again, down to single pages, one
-  request after another. A part refused for the rate limit is first retried once,
-  after the wait the provider asks for (`Retry-After`, at most five minutes, else a minute), since the
-  parts before it may have spent the minute's budget. A spent quota is not split.
+  request after another. Any request refused for the rate limit, the first one
+  for the whole PDF included, is retried once before it is halved, after the wait
+  the provider asks for (`Retry-After`, at most five minutes, else a minute), since
+  the minute's budget may only have been spent for now. A spent quota is not split.
+  A blank page is kept as no text; the step fails only if no page has any.
   *Always* sends one page per request from the start;
   *Never* sends the document whole and lets it fail. The OCR timeout applies to
   each request, and those waits add to it, so a long split document can outlast `WORKER_TIMEOUT_SEC`; raise
