@@ -121,9 +121,10 @@ export function useDocumentList({
   // URL -> box. Adjusted during render rather than in an effect, so the box
   // never paints one frame of the old term. syncedSearch makes this fire on a
   // URL change only, so typing is not overwritten before the debounce publishes.
+  // A too-short term publishes as no term; that must not wipe the letters typed.
   if (syncedSearch !== debouncedSearch) {
     setSyncedSearch(debouncedSearch)
-    setSearch(debouncedSearch)
+    if (searchableTerm(search) !== debouncedSearch) setSearch(debouncedSearch)
   }
 
   /**
