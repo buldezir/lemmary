@@ -137,6 +137,7 @@ func Register(
 			g.GET("/tags/assign", bindAuth(handleGetTagAssignPreview(app)))
 			g.POST("/tags/assign", bindAuth(handlePostTagAssign(app, rt)))
 			g.GET("/tags/assign/status", bindAuth(handleGetTagAssignStatus(app)))
+			g.POST("/options/{id}/merge", bindAuth(handlePostOptionMerge(app)))
 			registerImportRoutes(g, app, lim)
 			registerSplitRoutes(g, app, rt, lim)
 			registerScanRoutes(g, app, rt, lim)

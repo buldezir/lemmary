@@ -92,6 +92,7 @@ export type TaxonomyPruneResult = {
   tags: number
   correspondents: number
   document_types: number
+  options: number
 }
 
 export function pruneStaleTaxonomy() {

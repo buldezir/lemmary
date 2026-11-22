@@ -25,6 +25,7 @@ export const de: Catalog = {
   'nav.deepResearch': 'Deep Research',
   'nav.account': 'Konto',
   'nav.tags': 'Tags',
+  'nav.fieldOptions': 'Feldoptionen',
   'nav.rules': 'Regeln',
   'nav.bulkActions': 'Massenaktionen',
   'nav.ocrTest': 'OCR-Test',
@@ -1098,6 +1099,32 @@ export const de: Catalog = {
   'rulesPage.webhookHint':
     'Ein POST mit dem Dokument als JSON. Mit Geheimnis trägt der Header X-Lemmary-Signature sha256= und den HMAC-SHA256 des Bodys. Ein fehlgeschlagener Aufruf wird am Dokument angezeigt und nicht wiederholt.',
 
+  'optionsPage.title': 'Feldoptionen',
+  'optionsPage.intro':
+    'Ihre eigenen Werte für Felder wie Korrespondent und Dokumenttyp. Die Extraktion verwendet diese Namen wieder und legt nur dann einen neuen an, wenn keiner passt. Benennen Sie einen um, um die Schreibweise zu korrigieren, führen Sie zwei zusammen, die dasselbe meinen, oder legen Sie einen an, um ihn an einem Dokument oder in einer Regel auszuwählen.',
+  'optionsPage.loading': 'Wird geladen...',
+  'optionsPage.empty': 'Noch keine.',
+  'optionsPage.name': 'Name',
+  'optionsPage.new': 'Neu: {field}',
+  'optionsPage.add': 'Hinzufügen',
+  'optionsPage.added': '„{name}“ hinzugefügt.',
+  'optionsPage.rename': 'Umbenennen',
+  'optionsPage.renamed': 'Umbenannt in „{name}“.',
+  'optionsPage.merge': 'Zusammenführen',
+  'optionsPage.mergeInto': '„{name}“ zusammenführen mit',
+  'optionsPage.mergeTarget': 'Zusammenführen mit',
+  'optionsPage.pickTarget': 'Auswählen',
+  'optionsPage.confirmMerge':
+    '„{from}“ mit „{into}“ zusammenführen? Seine Dokumente und Regeln gehen an „{into}“, und „{from}“ wird gelöscht.',
+  'optionsPage.merged': {
+    one: '„{from}“ mit „{into}“ zusammengeführt; {count} Dokument verschoben.',
+    other: '„{from}“ mit „{into}“ zusammengeführt; {count} Dokumente verschoben.',
+  },
+  'optionsPage.mergeError': 'Zusammenführen fehlgeschlagen',
+  'optionsPage.confirmDelete': '„{name}“ löschen? Dokumente, die ihn haben, bleiben ohne.',
+  'optionsPage.deleted': '„{name}“ gelöscht.',
+  'optionsPage.saveError': 'Die Änderung konnte nicht gespeichert werden',
+  'optionsPage.duplicateName': '„{name}“ gibt es bereits.',
   'tagsPage.title': 'Tags',
   'tagsPage.intro':
     'Ihr Tag-Vokabular. Die Verarbeitung weist Tags aus dieser Liste zu und erfindet nie neue, ein Tag existiert also erst, wenn Sie ihn hier anlegen.',
@@ -1415,6 +1442,9 @@ export const de: Catalog = {
   'settingsFields.typeNumber': 'Zahl',
   'settingsFields.typeDate': 'Datum',
   'settingsFields.typeChoice': 'Auswahl',
+  'settingsFields.typeOption': 'Offene Liste',
+  'settingsFields.optionHint':
+    'Jeder Benutzer hat eine eigene Werteliste, die die Extraktion wiederverwendet und ergänzt, wie beim Korrespondenten. Benutzer benennen sie unter Mehr → Feldoptionen um und führen sie zusammen.',
   'settingsFields.typeFixed':
     'Steht nach dem Speichern fest: Die Werte des Felds werden in diesem Typ gespeichert.',
   'settingsFields.typeLocked': 'fest: Die Werte werden in diesem Typ gespeichert',
@@ -2061,6 +2091,10 @@ export const de: Catalog = {
   'maintenance.prunedCorrespondents': {
     one: '{count} Korrespondent',
     other: '{count} Korrespondenten',
+  },
+  'maintenance.prunedOptions': {
+    one: 'Außerdem {count} Wert anderer Felder.',
+    other: 'Außerdem {count} Werte anderer Felder.',
   },
   'maintenance.prunedTypes': { one: '{count} Dokumenttyp', other: '{count} Dokumenttypen' },
   'maintenance.reprocessConfirm': {

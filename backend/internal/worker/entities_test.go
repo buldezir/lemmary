@@ -65,6 +65,12 @@ func TestNormalizeNamedEntityKey(t *testing.T) {
 	if branch == base {
 		t.Fatalf("German Branch should stay distinct, both %q", branch)
 	}
+	if normalizeNamedEntityKey("H&M") == normalizeNamedEntityKey("H.M") {
+		t.Fatal("& should stay distinct from other punctuation")
+	}
+	if normalizeNamedEntityKey("H & M") != normalizeNamedEntityKey("H&M") {
+		t.Fatal("spacing around & should not matter")
+	}
 	if normalizeNamedEntityKey("...") != "" {
 		t.Fatal("punctuation-only names should normalize empty")
 	}

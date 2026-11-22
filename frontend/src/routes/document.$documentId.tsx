@@ -95,6 +95,11 @@ export function DocumentDetailPage() {
     [documentId],
   )
   const [documentTypes, correspondents] = options.data ?? [[], []]
+  const customOptions = useAsync(async () => {
+    const optionFields = (customFields ?? []).filter((field) => field.type === 'option')
+    const lists = await Promise.all(optionFields.map((field) => listOptions(field.id)))
+    return new Map(optionFields.map((field, i) => [field.id, lists[i].map((option) => option.name)]))
+  }, [documentId, customFields])
   const [documentTypeInput, setDocumentTypeInput] = useState('')
   const [correspondentInput, setCorrespondentInput] = useState('')
   // Only the fields edited since the document loaded; the rest read from it.
@@ -611,6 +616,7 @@ export function DocumentDetailPage() {
       })
       applyLoadedDocument(refreshed)
       void options.reload()
+      void customOptions.reload()
       setMessage(t('documentPage.saved'))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('documentPage.saveError'))
@@ -978,7 +984,19 @@ export function DocumentDetailPage() {
             />
 
             {customFields?.map((field) =>
-              field.type === 'choice' && editing ? (
+              field.type === 'option' ? (
+                <OptionField
+                  key={field.id}
+                  id={`custom-field-${field.id}`}
+                  label={field.name}
+                  editing={editing}
+                  value={customInputs[field.id] ?? fieldInputValue(document, field)}
+                  names={customOptions.data?.get(field.id) ?? []}
+                  loading={customOptions.loading}
+                  error={customOptions.error}
+                  onChange={(next) => setCustomInputs({ ...customInputs, [field.id]: next })}
+                />
+              ) : field.type === 'choice' && editing ? (
                 <div key={field.id} className={labelClass}>
                   <label htmlFor={`custom-field-${field.id}`}>{field.name}</label>
                   <Combobox

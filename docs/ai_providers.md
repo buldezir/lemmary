@@ -235,10 +235,11 @@ paces spending rather than describing the instance:
 | `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the scheduled backfill, so only newly processed documents are embedded and an existing archive is left alone — **Admin → Maintenance → Embeddings** still embeds it on demand. |
 
 The **result language** has no variable at all. It decides what language a
-document's title, summary, type and correspondent are stored in, which is a
+document's title, summary and type are stored in, which is a
 reader's preference rather than an operator's, so it is set in **Admin**. Tags
 are exempt: they are assigned from a list the user writes, so they are already in
-the language that user chose.
+the language that user chose. So is the correspondent: a name is kept as the
+document spells it, `&` included, so H&M stays H&M.
 
 ## Binding models in Settings
 

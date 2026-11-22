@@ -47,3 +47,15 @@ func TestSearchFindsADocumentByItsCustomFieldValue(t *testing.T) {
 		}
 	}
 }
+
+// An admin's option field is searched by its value's name; the predefined
+// ones have keyword fields of their own instead.
+func TestCustomFieldsTextIncludesOnlyTheAdminsOptions(t *testing.T) {
+	got := customFieldsText(models.FieldValues{
+		"fproject":                  {Type: models.CustomFieldOption, OptionName: "Apollo"},
+		models.CorrespondentFieldID: {Type: models.CustomFieldOption, OptionName: "Acme"},
+	})
+	if got != "Apollo" {
+		t.Fatalf("customFieldsText = %q, want Apollo", got)
+	}
+}

@@ -171,13 +171,16 @@ func lookupName(app core.App, collection, id string) string {
 }
 
 // customFieldsText is FieldCustomFields: a value typed by hand is often the
-// one thing about a document its OCR text does not say. Options are indexed on
-// their own fields above.
+// one thing about a document its OCR text does not say. The predefined fields
+// are indexed on their own fields above.
 func customFieldsText(values models.FieldValues) string {
 	parts := make([]string, 0, len(values))
-	for _, v := range values {
+	for id, v := range values {
 		switch v.Type {
 		case models.CustomFieldOption:
+			if !models.IsPredefinedField(id) {
+				parts = append(parts, v.OptionName)
+			}
 		case models.CustomFieldChoice:
 			parts = append(parts, v.ChoiceName)
 		case models.CustomFieldNumber:

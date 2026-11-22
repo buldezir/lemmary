@@ -1,6 +1,10 @@
 package i18n
 
 var catalog = map[string]map[string]string{
+	"%s is limited to %d characters.": {
+		"de": "%s ist auf %d Zeichen begrenzt.",
+		"ru": "%s: не более %d символов.",
+	},
 	"%s must be a time such as 22:00": {
 		"de": "%s muss eine Uhrzeit wie 22:00 sein",
 		"ru": "%s должно быть временем, например 22:00",
@@ -96,6 +100,18 @@ var catalog = map[string]map[string]string{
 	"An action's value does not fit its field.": {
 		"de": "Der Wert einer Aktion passt nicht zu ihrem Feld.",
 		"ru": "Значение в действии не подходит к его полю.",
+	},
+	"Merging failed.": {
+		"de": "Zusammenführen fehlgeschlagen.",
+		"ru": "Не удалось объединить.",
+	},
+	"Option not found.": {
+		"de": "Eintrag nicht gefunden.",
+		"ru": "Запись не найдена.",
+	},
+	"Pick another entry of the same kind to merge into.": {
+		"de": "Wählen Sie einen anderen Eintrag derselben Art als Ziel.",
+		"ru": "Выберите другую запись того же вида, в которую нужно объединить.",
 	},
 	"The pattern %q is not a valid regular expression.": {
 		"de": "Das Muster %q ist kein gültiger regulärer Ausdruck.",

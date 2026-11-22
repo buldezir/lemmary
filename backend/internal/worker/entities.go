@@ -43,7 +43,7 @@ func tagScope(userID string) namedScope {
 
 // EnsureOption finds the owner's option of an option field by name, or creates
 // it. Lookup prefers the exact name, then a punctuation/accent-insensitive
-// match. An existing option is reused as it is, so a user rename survives.
+// match that still tells & apart, so "H&M" never lands on "H.M". An existing option is reused as it is, so a user rename survives.
 func EnsureOption(app core.App, fieldID, userID, name string) (id string, created bool, err error) {
 	// ponytail: one process-wide lock over lookup-then-insert. Only (field,
 	// user, name) is unique in the schema, so the normalized tier below is
@@ -159,7 +159,7 @@ func normalizeNamedEntityKey(s string) string {
 		if unicode.Is(unicode.Mn, r) {
 			continue
 		}
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '&' {
 			b.WriteRune(r)
 		}
 	}

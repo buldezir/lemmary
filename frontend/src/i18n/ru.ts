@@ -30,6 +30,7 @@ export const ru: Catalog = {
   'nav.deepResearch': 'Deep Research',
   'nav.account': 'Аккаунт',
   'nav.tags': 'Теги',
+  'nav.fieldOptions': 'Варианты полей',
   'nav.rules': 'Правила',
   'nav.bulkActions': 'Массовые действия',
   'nav.ocrTest': 'Тест OCR',
@@ -1217,6 +1218,34 @@ export const ru: Catalog = {
   'rulesPage.webhookHint':
     'POST с документом в JSON. С секретом заголовок X-Lemmary-Signature содержит sha256= и HMAC-SHA256 тела запроса. Неудачный вызов показывается у документа и не повторяется.',
 
+  'optionsPage.title': 'Варианты полей',
+  'optionsPage.intro':
+    'Ваши собственные значения для таких полей, как «Корреспондент» и «Тип документа». Извлечение использует эти названия повторно и добавляет новое, только если ни одно не подходит. Переименуйте вариант, чтобы исправить написание, объедините два, если они означают одно и то же, или добавьте новый, чтобы выбрать его в документе или правиле.',
+  'optionsPage.loading': 'Загрузка...',
+  'optionsPage.empty': 'Пока нет.',
+  'optionsPage.name': 'Название',
+  'optionsPage.new': 'Новый вариант: {field}',
+  'optionsPage.add': 'Добавить',
+  'optionsPage.added': 'Добавлено «{name}».',
+  'optionsPage.rename': 'Переименовать',
+  'optionsPage.renamed': 'Переименовано в «{name}».',
+  'optionsPage.merge': 'Объединить',
+  'optionsPage.mergeInto': 'Объединить «{name}» с',
+  'optionsPage.mergeTarget': 'Объединить с',
+  'optionsPage.pickTarget': 'Выберите',
+  'optionsPage.confirmMerge':
+    'Объединить «{from}» с «{into}»? Документы и правила перейдут к «{into}», а «{from}» будет удалено.',
+  'optionsPage.merged': {
+    one: '«{from}» объединено с «{into}»; перенесён {count} документ.',
+    few: '«{from}» объединено с «{into}»; перенесено {count} документа.',
+    many: '«{from}» объединено с «{into}»; перенесено {count} документов.',
+    other: '«{from}» объединено с «{into}»; перенесено {count} документа.',
+  },
+  'optionsPage.mergeError': 'Не удалось объединить',
+  'optionsPage.confirmDelete': 'Удалить «{name}»? У документов с этим значением поле останется пустым.',
+  'optionsPage.deleted': 'Удалено «{name}».',
+  'optionsPage.saveError': 'Не удалось сохранить изменение',
+  'optionsPage.duplicateName': '«{name}» уже существует.',
   'tagsPage.title': 'Теги',
   'tagsPage.intro':
     'Ваш словарь тегов. При обработке теги назначаются из этого списка, и новые никогда не придумываются, поэтому тег появляется, только когда вы создаёте его здесь.',
@@ -1550,6 +1579,9 @@ export const ru: Catalog = {
   'settingsFields.typeNumber': 'Число',
   'settingsFields.typeDate': 'Дата',
   'settingsFields.typeChoice': 'Выбор из списка',
+  'settingsFields.typeOption': 'Открытый список',
+  'settingsFields.optionHint':
+    'У каждого пользователя свой список значений, который извлечение использует повторно и пополняет, как для корреспондента. Пользователи переименовывают и объединяют их в Ещё → Варианты полей.',
   'settingsFields.typeFixed':
     'После сохранения тип не меняется: значения поля хранятся в этом типе.',
   'settingsFields.typeLocked': 'не меняется: значения хранятся в этом типе',
@@ -2260,6 +2292,12 @@ export const ru: Catalog = {
     few: '{count} корреспондента',
     many: '{count} корреспондентов',
     other: '{count} корреспондента',
+  },
+  'maintenance.prunedOptions': {
+    one: 'А также {count} значение других полей.',
+    few: 'А также {count} значения других полей.',
+    many: 'А также {count} значений других полей.',
+    other: 'А также {count} значения других полей.',
   },
   'maintenance.prunedTypes': {
     one: '{count} тип документа',

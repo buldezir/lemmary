@@ -198,11 +198,11 @@ export async function assignTagsWithAI(tagIds: string[]): Promise<TagAssignResul
  * validation code, whose message ("Value must be unique.") never says which
  * value. Exported for its test.
  */
-export function duplicateNameError(err: unknown, name: string): Error {
+export function duplicateNameError(err: unknown, name: string, duplicate?: string): Error {
   if (err instanceof ClientResponseError) {
     const field = (err.response?.data as Record<string, { code?: string }> | undefined)?.name
     if (field?.code === 'validation_not_unique') {
-      return new Error(t('tagsApi.duplicateName', { name }))
+      return new Error(duplicate ?? t('tagsApi.duplicateName', { name }))
     }
   }
   return err instanceof Error ? err : new Error(t('tagsApi.saveFailed'))

@@ -45,6 +45,7 @@ type ExtractionCatalog struct {
 	ExtractReferences bool
 	// CustomFields are the admin's own document fields, asked for by name.
 	CustomFields []models.CustomField
+	FieldOptions map[string][]string
 }
 
 type Extractor interface {
@@ -53,7 +54,7 @@ type Extractor interface {
 	ExtractMetadata(ctx context.Context, ocrText string, catalog ExtractionCatalog) (*models.ExtractedMetadata, error)
 	// ExtractFields fills only the given fields, following a rule's own
 	// instructions. Answers are keyed by field name, as in ExtractMetadata.
-	ExtractFields(ctx context.Context, ocrText, instructions string, fields []models.CustomField) (map[string]any, error)
+	ExtractFields(ctx context.Context, ocrText, instructions string, fields []models.CustomField, options map[string][]string) (map[string]any, error)
 	// AnswerYesNo answers a rule's question about a document: its metadata
 	// and text, as one block the caller prepared.
 	AnswerYesNo(ctx context.Context, document, question string) (bool, error)
@@ -75,10 +76,11 @@ Return ONLY valid JSON with these fields:
 `
 
 	if resultLanguage != "" {
-		prompt += fmt.Sprintf("Always write title, summary, document_type, and correspondent in %s, whatever language the source document is in; write people_or_organizations as the document spells them.", resultLanguage)
+		prompt += fmt.Sprintf("Always write title, summary, and document_type in %s, whatever language the source document is in.", resultLanguage)
 	} else {
 		prompt += "Always write title, summary, and people_or_organizations in the same language as the source document."
 	}
+	prompt += " Write correspondent and people_or_organizations as the document spells them: a name is never translated, and characters such as & + / ' are kept, so H&M stays H&M."
 	prompt += " Tags are the exception: they are copied verbatim from the list below, whatever language it is in."
 
 	prompt += formatExistingCorrespondentsPrompt(catalog.Correspondents)
@@ -95,6 +97,7 @@ Also return suggested_tags (array of strings): up to 3 short new tag names that 
 Also return references (array of strings): identifiers printed on the document that tie it to other documents about the same matter, such as invoice, order, contract, policy, claim, case, ticket or booking numbers, copied exactly as printed. Leave out customer and account numbers, tax and VAT ids, IBANs, phone numbers and dates. Return an empty array when there are none.`
 	}
 	prompt += formatCustomFieldsPrompt(catalog.CustomFields)
+	prompt += formatFieldOptionsPrompt(catalog.CustomFields, catalog.FieldOptions)
 	prompt += formatExtractionRulesPrompt(rules)
 
 	// Last on purpose: the rules above are the admin's, but the JSON contract
@@ -152,8 +155,9 @@ func formatCustomFieldsPrompt(fields []models.CustomField) string {
 // the document owner's, for their own document, so they are trusted as the
 // admin's extraction rules are, and fenced the same way: they may not change
 // the shape of the answer.
-func buildFieldsSystemPrompt(instructions string, fields []models.CustomField) string {
-	prompt := "You extract field values from OCR document text.\nReturn ONLY valid JSON with one key, " + customFieldsSpec(fields)
+func buildFieldsSystemPrompt(instructions string, fields []models.CustomField, options map[string][]string) string {
+	prompt := "You extract field values from OCR document text.\nReturn ONLY valid JSON with one key, " + customFieldsSpec(fields) +
+		formatFieldOptionsPrompt(fields, options)
 	if instructions = strings.TrimSpace(instructions); instructions != "" {
 		prompt += fmt.Sprintf(`
 
@@ -186,7 +190,7 @@ func customFieldsSpec(fields []models.CustomField) string {
 	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf(`custom_fields (object): the archive's own fields, listed in the JSON array below. Use each field's name exactly as its key and fill it only with a value the document states; leave a field out rather than guess. Format by type: text is a string as written on the document, number is a JSON number with "." as the decimal separator and no currency symbol or thousands separator, date is a complete YYYY-MM-DD date, choice is exactly one of the field's choices, copied as written, left out when none fits. A description says what the field means or where it appears:
+	return fmt.Sprintf(`custom_fields (object): the archive's own fields, listed in the JSON array below. Use each field's name exactly as its key and fill it only with a value the document states; leave a field out rather than guess. Format by type: text is a string as written on the document, number is a JSON number with "." as the decimal separator and no currency symbol or thousands separator, date is a complete YYYY-MM-DD date, choice is exactly one of the field's choices, copied as written, left out when none fits, option is a short name such as an organization, project or person, written as the document spells it. A description says what the field means or where it appears:
 %s`, payload)
 }
 
@@ -197,6 +201,22 @@ func formatExistingCorrespondentsPrompt(names []string) string {
 		"the sender or issuer is the same organization or person, even if spelling, punctuation, accents, abbreviations, or legal suffixes differ",
 		names,
 	)
+}
+
+func formatFieldOptionsPrompt(fields []models.CustomField, options map[string][]string) string {
+	var out strings.Builder
+	for _, field := range fields {
+		if field.Type != models.CustomFieldOption || len(options[field.ID]) == 0 {
+			continue
+		}
+		out.WriteString(formatExistingNamedListPrompt(
+			fmt.Sprintf("values of the custom field %q", field.Name),
+			fmt.Sprintf("%q value", field.Name),
+			"it means the same, even if spelling, punctuation, accents, abbreviations, or casing differ",
+			options[field.ID],
+		))
+	}
+	return out.String()
 }
 
 func formatExistingDocumentTypesPrompt(names []string) string {
@@ -393,7 +413,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	return metadata, nil
 }
 
-func (c *OpenAIClient) ExtractFields(ctx context.Context, ocrText, instructions string, fields []models.CustomField) (map[string]any, error) {
+func (c *OpenAIClient) ExtractFields(ctx context.Context, ocrText, instructions string, fields []models.CustomField, options map[string][]string) (map[string]any, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("AI API key is not configured")
 	}
@@ -406,7 +426,7 @@ func (c *OpenAIClient) ExtractFields(ctx context.Context, ocrText, instructions 
 	chatResp, err := c.Complete(ctx, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(buildFieldsSystemPrompt(instructions, fields)),
+			openai.SystemMessage(buildFieldsSystemPrompt(instructions, fields, options)),
 			openai.UserMessage(fmt.Sprintf("Extract the fields from this OCR text:\n\n%s", strutil.Truncate(ocrText, maxExtractionBytes))),
 		},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{

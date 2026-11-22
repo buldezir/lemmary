@@ -423,11 +423,10 @@ func remapIDs(idByExported map[string]string, newID string, exportedIDs []string
 // documents sharing a handful of tags does one lookup per tag rather than one
 // per document.
 type taxonomyResolver struct {
-	app            core.App
-	ownerUserID    string
-	tags           map[string]string
-	correspondents map[string]string
-	documentTypes  map[string]string
+	app         core.App
+	ownerUserID string
+	tags        map[string]string
+	options     map[string]map[string]string
 	// This instance's definitions: a value is restored only onto a field the
 	// admin here has defined under the same name.
 	customFields []models.CustomField
@@ -436,12 +435,11 @@ type taxonomyResolver struct {
 
 func newTaxonomyResolver(app core.App, ownerUserID string, result *Result) *taxonomyResolver {
 	return &taxonomyResolver{
-		app:            app,
-		ownerUserID:    ownerUserID,
-		tags:           map[string]string{},
-		correspondents: map[string]string{},
-		documentTypes:  map[string]string{},
-		result:         result,
+		app:         app,
+		ownerUserID: ownerUserID,
+		tags:        map[string]string{},
+		options:     map[string]map[string]string{},
+		result:      result,
 	}
 }
 
@@ -490,22 +488,23 @@ func (r *taxonomyResolver) option(fieldID, name string) (string, error) {
 	if name == "" {
 		return "", nil
 	}
-	cache := r.correspondents
-	counter := &r.result.CorrespondentsUpserted
-	if fieldID == models.DocumentTypeFieldID {
-		cache = r.documentTypes
-		counter = &r.result.DocumentTypesUpserted
-	}
-	if id, ok := cache[name]; ok {
+	if id, ok := r.options[fieldID][name]; ok {
 		return id, nil
 	}
 	id, created, err := worker.EnsureOption(r.app, fieldID, r.ownerUserID, name)
 	if err != nil {
 		return "", err
 	}
-	cache[name] = id
-	if created {
-		*counter++
+	if r.options[fieldID] == nil {
+		r.options[fieldID] = map[string]string{}
+	}
+	r.options[fieldID][name] = id
+	switch {
+	case !created:
+	case fieldID == models.CorrespondentFieldID:
+		r.result.CorrespondentsUpserted++
+	case fieldID == models.DocumentTypeFieldID:
+		r.result.DocumentTypesUpserted++
 	}
 	return id, nil
 }

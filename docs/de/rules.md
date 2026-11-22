@@ -58,6 +58,8 @@ die Regel nicht, und **Regeln ausführen** zeigt den Grund.
 
 - **Tag hinzufügen / Tag entfernen**
 - **Setzen** – einen Dokumenttyp, einen Korrespondenten oder ein anderes Feld auf einen Wert.
+  Die Werte von Korrespondent, Dokumenttyp und anderen Feldern mit eigenen Werten werden unter
+  **Mehr → Feldoptionen** angelegt, umbenannt und zusammengeführt.
 - **Zur Prüfung in den Eingang legen** – das Dokument wartet, bis jemand es als geprüft markiert.
 - **Felder mit KI ausfüllen** – eine zusätzliche Anfrage an das Extraktionsmodell, die nur nach den
   angehakten Feldern fragt, mit Ihren Anweisungen. Felder, die schon einen Wert haben, behalten

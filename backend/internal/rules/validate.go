@@ -243,9 +243,9 @@ func validateAIExtract(a Action, cat Catalog) error {
 		return i18n.Errorf("An AI action's instructions are limited to %d characters.", MaxPromptRunes)
 	}
 	for _, id := range a.Fields {
-		// The predefined option fields are extraction's own answer, not one
-		// an instruction can be scoped to.
-		if field, ok := cat.Fields[id]; !ok || field.Type == models.CustomFieldOption {
+		// The predefined fields are extraction's own answer, not one an
+		// instruction can be scoped to.
+		if _, ok := cat.Fields[id]; !ok || models.IsPredefinedField(id) {
 			return i18n.Errorf("An action refers to a field, tag or value that does not exist.")
 		}
 	}

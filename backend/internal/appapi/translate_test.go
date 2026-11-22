@@ -25,7 +25,7 @@ func (f *fakeTranslator) Model() string { return "fake-model" }
 func (f *fakeTranslator) ExtractMetadata(context.Context, string, ai.ExtractionCatalog) (*models.ExtractedMetadata, error) {
 	return nil, nil
 }
-func (f *fakeTranslator) ExtractFields(context.Context, string, string, []models.CustomField) (map[string]any, error) {
+func (f *fakeTranslator) ExtractFields(context.Context, string, string, []models.CustomField, map[string][]string) (map[string]any, error) {
 	return nil, nil
 }
 func (f *fakeTranslator) AnswerYesNo(context.Context, string, string) (bool, error) {

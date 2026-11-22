@@ -248,11 +248,12 @@ das Ausgabentempo steuert, statt die Instanz zu beschreiben:
 | `EMBEDDING_BACKFILL_BATCH` | `20` | Anzahl der Dokumente, die ein Backfill-Durchlauf einbettet, gemäß `WORKER_CRON_EXPR`. `0` deaktiviert den geplanten Backfill, sodass nur neu verarbeitete Dokumente eingebettet werden und ein bestehendes Archiv unangetastet bleibt – **Admin → Wartung → Embeddings** bettet es weiterhin auf Anforderung ein. |
 
 Die **Ergebnissprache** hat überhaupt keine Variable. Sie bestimmt, in welcher Sprache Titel,
-Zusammenfassung, Typ und Korrespondent eines Dokuments gespeichert werden, und das ist eine
+Zusammenfassung und Typ eines Dokuments gespeichert werden, und das ist eine
 Vorliebe des Lesers, nicht des Betreibers; daher wird sie unter **Admin** festgelegt.
 Tags sind ausgenommen: Sie werden aus einer Liste
 zugewiesen, die der Benutzer schreibt, und sind daher bereits in der Sprache, die dieser
-Benutzer gewählt hat.
+Benutzer gewählt hat. Ebenso der Korrespondent: Ein Name bleibt so geschrieben wie im
+Dokument, `&` eingeschlossen, sodass H&M H&M bleibt.
 
 ## Modelle in den Einstellungen zuweisen {#binding-models-in-settings}
 

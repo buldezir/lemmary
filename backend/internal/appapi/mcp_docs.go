@@ -398,13 +398,13 @@ func expandedOptionName(record *core.Record, fieldID string) string {
 }
 
 // expandedFieldValues reads the admin-defined fields' values, by field name,
-// off a record expanded by expandMCPDocuments. The option fields are left out:
-// document_type and correspondent carry them.
+// off a record expanded by expandMCPDocuments. The predefined fields are left
+// out: document_type and correspondent carry them.
 func expandedFieldValues(record *core.Record) map[string]any {
 	out := map[string]any{}
 	for _, value := range record.ExpandedAll(fieldValuesVia) {
 		field := value.ExpandedOne("field")
-		if field == nil || field.GetString("type") == models.CustomFieldOption {
+		if field == nil || models.IsPredefinedField(field.Id) {
 			continue
 		}
 		stored := models.FieldValue{
@@ -415,6 +415,9 @@ func expandedFieldValues(record *core.Record) map[string]any {
 		}
 		if choice := value.ExpandedOne("choice"); choice != nil {
 			stored.ChoiceName = choice.GetString("name")
+		}
+		if option := value.ExpandedOne("option"); option != nil {
+			stored.OptionName = option.GetString("name")
 		}
 		if name := strings.TrimSpace(field.GetString("name")); name != "" {
 			out[name] = stored.Value()
