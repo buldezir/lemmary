@@ -243,8 +243,9 @@ func TestStepFailureWhileHeldRequeuesWithoutSpendingARetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runs) != 1 || runs[0].Attempts != 0 || runs[0].Status != models.StepStatusPending || runs[0].Error != "" || !runs[0].Held {
-		t.Fatalf("step runs %+v, want one pending OCR run, held, with no attempt spent", runs)
+	// unlock comes first, skipped for an image.
+	if len(runs) != 2 || runs[1].Attempts != 0 || runs[1].Status != models.StepStatusPending || runs[1].Error != "" || !runs[1].Held {
+		t.Fatalf("step runs %+v, want a pending OCR run after unlock, held, with no attempt spent", runs)
 	}
 	document, err := app.FindRecordById("documents", reloaded.GetString("document"))
 	if err != nil {

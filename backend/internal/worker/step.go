@@ -48,6 +48,7 @@ func (s *StepState) forced(stepName string) bool {
 // extractor are rebuilt whenever an admin changes the settings.
 func buildRegistry(ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder ai.Embedder, linking RelatedLinking) map[string]Step {
 	steps := []Step{
+		&UnlockStep{},
 		&PreviewStep{},
 		&OCRStep{Provider: ocrProvider},
 		&DetectDuplicatesStep{},

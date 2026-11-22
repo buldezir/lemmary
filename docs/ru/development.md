@@ -12,9 +12,11 @@
 - [poppler-utils](https://poppler.freedesktop.org/) для всей работы с PDF: `pdftoppm`
   (превью и миниатюры страниц), `pdfinfo` (число страниц), `pdftotext` (текст
   страниц), `pdfseparate` и `pdfunite` (разделение документов)
+- [qpdf](https://qpdf.readthedocs.io/), чтобы снять пароль с защищённого PDF,
+  когда владелец его введёт
 
-В macOS выполните `brew install poppler`. В Debian или Ubuntu выполните
-`apt install poppler-utils`.
+В macOS выполните `brew install poppler qpdf`. В Debian или Ubuntu выполните
+`apt install poppler-utils qpdf`.
 
 Эти зависимости хоста намеренно не являются требованиями для обычного
 самостоятельного хостинга: они уже включены в образ Docker.

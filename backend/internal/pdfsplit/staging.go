@@ -2,6 +2,7 @@ package pdfsplit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -143,6 +144,9 @@ func savePDF(path string, src io.Reader) (int, int64, error) {
 		return 0, 0, ErrNotPDF
 	}
 	pageCount, err := pdftool.PageCount(context.Background(), path)
+	if errors.Is(err, pdftool.ErrPasswordRequired) {
+		return 0, 0, ErrPasswordProtected
+	}
 	if err != nil {
 		return 0, 0, ErrNotPDF
 	}

@@ -71,6 +71,19 @@ func TestSavePDFRejectsUnsplittableUploads(t *testing.T) {
 	}
 }
 
+func TestSavePDFNamesAPasswordProtectedUpload(t *testing.T) {
+	if _, err := exec.LookPath("qpdf"); err != nil {
+		t.Skip("qpdf not installed")
+	}
+	locked, err := testpdf.Encrypt(testpdf.Multipage(3), "secret", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := savePDF(filepath.Join(t.TempDir(), "locked.pdf"), bytes.NewReader(locked)); !errors.Is(err, ErrPasswordProtected) {
+		t.Fatalf("err=%v want ErrPasswordProtected", err)
+	}
+}
+
 func TestSavePDFAcceptsAMultiPagePDF(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "source.pdf")
 	source := testpdf.Multipage(4)

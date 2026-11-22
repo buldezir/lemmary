@@ -9,6 +9,9 @@ package testpdf
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 )
 
 // Multipage returns an uncompressed PDF with pageCount pages, each carrying the
@@ -172,4 +175,24 @@ func MixedText(pageCount, textPages int) []byte {
 		}
 	}
 	return assemble(objects)
+}
+
+// Encrypt returns pdf encrypted with AES-256 through qpdf, which a test must
+// have on PATH. An empty user password leaves only the owner's restrictions,
+// and the file opens without a prompt.
+func Encrypt(pdf []byte, userPassword, ownerPassword string) ([]byte, error) {
+	dir, err := os.MkdirTemp("", "lemmary-testpdf-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	in, out := filepath.Join(dir, "in.pdf"), filepath.Join(dir, "out.pdf")
+	if err := os.WriteFile(in, pdf, 0o600); err != nil {
+		return nil, err
+	}
+	cmd := exec.Command("qpdf", "--encrypt", userPassword, ownerPassword, "256", "--", in, out)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("qpdf --encrypt: %w: %s", err, output)
+	}
+	return os.ReadFile(out)
 }

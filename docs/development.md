@@ -12,9 +12,11 @@ or run Lemmary directly on the host.
 - [poppler-utils](https://poppler.freedesktop.org/) for all PDF work: `pdftoppm`
   (previews and page thumbnails), `pdfinfo` (page counts), `pdftotext` (page
   text), `pdfseparate` and `pdfunite` (document splitting)
+- [qpdf](https://qpdf.readthedocs.io/) to remove the password from a protected
+  PDF once its owner enters it
 
-On macOS, run `brew install poppler`. On Debian or Ubuntu, run
-`apt install poppler-utils`.
+On macOS, run `brew install poppler qpdf`. On Debian or Ubuntu, run
+`apt install poppler-utils qpdf`.
 
 These host dependencies are intentionally not prerequisites for ordinary
 self-hosting: they are already included in the Docker image.

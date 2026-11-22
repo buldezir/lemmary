@@ -10,6 +10,7 @@ package pdftool
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -45,6 +46,10 @@ const pageSeparator = "\f"
 // ErrNotPDF is returned for a path that does not carry a .pdf extension.
 var ErrNotPDF = fmt.Errorf("pdftool: not a PDF file")
 
+// ErrPasswordRequired is returned by every poppler call on a PDF that needs a
+// user password to open. One with only an owner password opens as any other.
+var ErrPasswordRequired = errors.New("pdftool: the PDF needs a password to open")
+
 // lookPath resolves a poppler binary, reporting the package to install.
 func lookPath(binary string) (string, error) {
 	path, err := exec.LookPath(binary)
@@ -71,6 +76,9 @@ func run(ctx context.Context, binary string, args ...string) ([]byte, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if strings.Contains(stderr.String(), "Incorrect password") {
+			return stdout.Bytes(), fmt.Errorf("pdftool: %s: %w", binary, ErrPasswordRequired)
+		}
 		return stdout.Bytes(), fmt.Errorf("pdftool: %s: %w: %s", binary, err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil

@@ -52,7 +52,7 @@ type mcpListArgs struct {
 	DocumentType  string   `json:"document_type,omitempty" jsonschema:"Document type name filter (substring match)."`
 	Correspondent string   `json:"correspondent,omitempty" jsonschema:"Correspondent name filter (substring match)."`
 	Tags          []string `json:"tags,omitempty" jsonschema:"Exact tag names; documents with any of them match."`
-	Status        string   `json:"status,omitempty" jsonschema:"processing_status filter: pending, processing, completed, failed, cancelled, needs_review, or unfinished for everything but completed."`
+	Status        string   `json:"status,omitempty" jsonschema:"processing_status filter: pending, processing, completed, failed, cancelled, needs_review, password_required, or unfinished for everything but completed."`
 	Sort          string   `json:"sort,omitempty" jsonschema:"One of date_desc (default), date_asc, added_desc, added_asc."`
 	Limit         int      `json:"limit,omitempty" jsonschema:"Page size, 1-200, default 50."`
 	Offset        int      `json:"offset,omitempty" jsonschema:"Documents to skip, for paging."`
@@ -176,10 +176,10 @@ func mcpStatuses(status string) ([]string, error) {
 	case models.StatusFilterUnfinished:
 		return models.UnfinishedDocStatuses, nil
 	case models.DocStatusPending, models.DocStatusProcessing, models.DocStatusCompleted,
-		models.DocStatusFailed, models.DocStatusCancelled, models.DocStatusNeedsReview:
+		models.DocStatusFailed, models.DocStatusCancelled, models.DocStatusNeedsReview, models.DocStatusPasswordRequired:
 		return []string{status}, nil
 	}
-	return nil, fmt.Errorf("unknown status %q; use pending, processing, completed, failed, cancelled, needs_review or unfinished", status)
+	return nil, fmt.Errorf("unknown status %q; use pending, processing, completed, failed, cancelled, needs_review, password_required or unfinished", status)
 }
 
 func listMCPDocuments(ctx context.Context, app core.App, retriever *agentRetriever, args mcpListArgs) (mcpListResult, error) {

@@ -120,7 +120,7 @@ func TestStepsForCopiesPipelineConstants(t *testing.T) {
 	steps, _ := StepsFor(newTestDocument(""), ModeFull)
 	steps[0] = "mutated"
 
-	if models.FullPipelineSteps[0] != models.StepPreview {
+	if models.FullPipelineSteps[0] != models.StepUnlock {
 		t.Fatalf("FullPipelineSteps was mutated: %v", models.FullPipelineSteps)
 	}
 }

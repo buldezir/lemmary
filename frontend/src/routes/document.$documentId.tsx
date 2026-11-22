@@ -49,6 +49,7 @@ import {
 import { ProcessingStatus } from '../components/ProcessingStatus'
 import { ProcessingSteps } from '../components/ProcessingSteps'
 import { Button } from '../components/ui'
+import { UnlockDialog } from '../components/UnlockDialog'
 import { ShareDialog, ShareSummary } from '../components/ShareDialog'
 import { RelatedDocuments } from '../components/RelatedDocuments'
 import { DocumentPreview } from '../components/DocumentPreview'
@@ -245,6 +246,11 @@ export function DocumentDetailPage() {
   // write, so offering the controls would only produce 403s.
   const owned = Boolean(document) && document?.user === pb.authStore.record?.id
   const [sharing, setSharing] = useState(false)
+  // Opens on its own for a locked document; Cancel holds it shut for that
+  // document until the banner's button asks again.
+  const lockedDocumentId = owned && document?.processing_status === 'password_required' ? document.id : ''
+  const [unlockDismissedFor, setUnlockDismissedFor] = useState('')
+  const unlockOpen = lockedDocumentId !== '' && unlockDismissedFor !== lockedDocumentId
   const [shareVersion, setShareVersion] = useState(0)
   const back = backTarget(document, owned)
 
@@ -426,6 +432,18 @@ export function DocumentDetailPage() {
     }
   }
 
+  async function reloadDocumentAndJob() {
+    const doc = await pb.collection('documents').getOne<DocumentRecord>(documentId, {
+      expand: DOCUMENT_EXPAND,
+    })
+    const jobs = await pb.collection('processing_jobs').getList<ProcessingJobRecord>(1, 1, {
+      filter: pb.filter('document = {:documentId}', { documentId }),
+      sort: '-created',
+    })
+    applyLoadedDocument(doc)
+    setJob(jobs.items[0] ?? null)
+  }
+
   async function onReprocess() {
     if (!document || !canReprocess || reprocessSteps.length === 0) {
       return
@@ -454,16 +472,7 @@ export function DocumentDetailPage() {
         }),
       )
 
-      const doc = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
-        expand: DOCUMENT_EXPAND,
-      })
-      const jobs = await pb.collection('processing_jobs').getList<ProcessingJobRecord>(1, 1, {
-        filter: pb.filter('document = {:documentId}', { documentId: document.id }),
-        sort: '-created',
-      })
-
-      applyLoadedDocument(doc)
-      setJob(jobs.items[0] ?? null)
+      await reloadDocumentAndJob()
     } catch (err) {
       // An autocancel means the refresh above lost a race it did not need to
       // win: the surviving load() has the fresh document and the new job.
@@ -636,6 +645,21 @@ export function DocumentDetailPage() {
 
   return (
     <section className="flex flex-col gap-5">
+      {lockedDocumentId && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xs border border-madder/40 bg-bright px-4 py-3 text-sm text-ink">
+          <span>{t('unlock.banner')}</span>
+          <Button size="xs" onClick={() => setUnlockDismissedFor('')}>
+            {t('unlock.title')}
+          </Button>
+        </div>
+      )}
+      {unlockOpen && (
+        <UnlockDialog
+          documentId={lockedDocumentId}
+          onClose={() => setUnlockDismissedFor(lockedDocumentId)}
+          onUnlocked={() => void reloadDocumentAndJob().catch(() => {})}
+        />
+      )}
       {document.duplicate_of && (
         <div className="rounded-xs border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {tNode('documentPage.duplicateOf', {

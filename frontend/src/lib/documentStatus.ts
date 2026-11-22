@@ -12,6 +12,7 @@ export const DOCUMENT_STATUSES = [
   'failed',
   'cancelled',
   'needs_review',
+  'password_required',
 ] as const
 
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number]
@@ -27,6 +28,7 @@ export const DOCUMENT_STATUS_STYLES: Record<DocumentStatus, { badge: string; bor
   failed: { badge: 'bg-madder text-paper', border: 'border-madder' },
   cancelled: { badge: 'bg-ink-muted text-paper', border: 'border-ink-muted' },
   needs_review: { badge: 'bg-amber-800 text-paper', border: 'border-amber-800' },
+  password_required: { badge: 'bg-madder text-paper', border: 'border-madder' },
 }
 
 export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
@@ -36,6 +38,7 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
   failed: t('documentStatus.failed'),
   cancelled: t('documentStatus.cancelled'),
   needs_review: t('documentStatus.needsReview'),
+  password_required: t('documentStatus.passwordRequired'),
 }
 
 /**

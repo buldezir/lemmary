@@ -12,9 +12,11 @@ direkt auf dem Host bauen oder ausführen möchten.
 - [poppler-utils](https://poppler.freedesktop.org/) für alle PDF-Arbeiten: `pdftoppm`
   (Vorschauen und Seitenminiaturen), `pdfinfo` (Seitenzahlen), `pdftotext`
   (Seitentext), `pdfseparate` und `pdfunite` (Aufteilen von Dokumenten)
+- [qpdf](https://qpdf.readthedocs.io/), um das Passwort von einer geschützten PDF
+  zu entfernen, sobald ihr Eigentümer es eingibt
 
-Führen Sie unter macOS `brew install poppler` aus. Unter Debian oder Ubuntu führen Sie
-`apt install poppler-utils` aus.
+Führen Sie unter macOS `brew install poppler qpdf` aus. Unter Debian oder Ubuntu führen Sie
+`apt install poppler-utils qpdf` aus.
 
 Diese Host-Abhängigkeiten sind bewusst keine Voraussetzungen für das gewöhnliche
 Self-Hosting: Sie sind bereits im Docker-Image enthalten.

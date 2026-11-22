@@ -1,6 +1,7 @@
 import { lang, t } from '../i18n'
 
 export type ProcessingStep =
+  | 'unlock'
   | 'preview'
   | 'ocr'
   | 'detect_duplicates'
@@ -54,6 +55,7 @@ export type ProcessingJobRecord = {
 }
 
 export const FULL_PIPELINE_STEPS: ProcessingStep[] = [
+  'unlock',
   'preview',
   'ocr',
   'detect_duplicates',
@@ -73,6 +75,7 @@ export const EXTRACTION_PIPELINE_STEPS: ProcessingStep[] = [
 ]
 
 export const PROCESSING_STEP_LABELS: Record<ProcessingStep, string> = {
+  unlock: t('processing.stepUnlock'),
   preview: t('processing.stepPreview'),
   ocr: 'OCR',
   detect_duplicates: t('processing.stepDetectDuplicates'),
@@ -84,6 +87,7 @@ export const PROCESSING_STEP_LABELS: Record<ProcessingStep, string> = {
 }
 
 export const PROCESSING_STEP_DESCRIPTIONS: Record<ProcessingStep, string> = {
+  unlock: t('processing.descUnlock'),
   preview: t('processing.descPreview'),
   ocr: t('processing.descOcr'),
   detect_duplicates: t('processing.descDetectDuplicates'),

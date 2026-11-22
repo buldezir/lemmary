@@ -39,12 +39,15 @@ export const de: Catalog = {
   'documentStatus.failed': 'Fehlgeschlagen',
   'documentStatus.cancelled': 'Abgebrochen',
   'documentStatus.needsReview': 'Prüfung nötig',
+  'documentStatus.passwordRequired': 'Passwort erforderlich',
 
+  'processing.stepUnlock': 'Passwortprüfung',
   'processing.stepPreview': 'Vorschau',
   'processing.stepDetectDuplicates': 'Duplikate erkennen',
   'processing.stepExtractMetadata': 'Metadaten extrahieren',
   'processing.stepApplyMetadata': 'Metadaten übernehmen',
   'processing.stepEmbed': 'Suchvektoren erstellen',
+  'processing.descUnlock': 'Ein PDF, das ein Passwort braucht, anhalten, bevor etwas es liest',
   'processing.descPreview': 'Vorschaubild der ersten Seite neu erzeugen (nur PDF)',
   'processing.descOcr': 'Texterkennung auf der Originaldatei erneut ausführen',
   'processing.descDetectDuplicates':
@@ -2178,4 +2181,11 @@ export const de: Catalog = {
   'maintenance.statsPassages': { one: '{n} Passage', other: '{n} Passagen' },
   'maintenance.statsStale': '{n} veraltet',
   'maintenance.statsFailed': '{n} fehlgeschlagen',
+  'unlock.title': 'Passwort eingeben',
+  'unlock.description': 'Dieses PDF ist passwortgeschützt. Geben Sie sein Passwort einmal ein: Lemmary behält eine Kopie ohne Passwort und verarbeitet sie. Das Passwort selbst wird nicht gespeichert.',
+  'unlock.password': 'Passwort',
+  'unlock.submit': 'Entsperren',
+  'unlock.submitting': 'Wird entsperrt…',
+  'unlock.failed': 'Entsperren fehlgeschlagen.',
+  'unlock.banner': 'Dieses PDF braucht sein Passwort, bevor es verarbeitet werden kann.',
 }

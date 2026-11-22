@@ -14,6 +14,9 @@ const (
 	DocStatusFailed      = "failed"
 	DocStatusCancelled   = "cancelled"
 	DocStatusNeedsReview = "needs_review"
+	// DocStatusPasswordRequired is a PDF that needs its user password to open.
+	// It waits here until its owner unlocks it.
+	DocStatusPasswordRequired = "password_required"
 
 	MetadataSourceUser = "user"
 )
@@ -38,4 +41,5 @@ var UnfinishedDocStatuses = []string{
 	DocStatusFailed,
 	DocStatusCancelled,
 	DocStatusNeedsReview,
+	DocStatusPasswordRequired,
 }

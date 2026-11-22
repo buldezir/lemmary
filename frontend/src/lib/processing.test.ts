@@ -38,6 +38,7 @@ describe('orderedProcessingSteps', () => {
 describe('forceStepsForReprocess', () => {
   it('excludes apply_metadata, which is never forced', () => {
     expect(forceStepsForReprocess([...FULL_PIPELINE_STEPS])).toEqual([
+      'unlock',
       'preview',
       'ocr',
       'detect_duplicates',

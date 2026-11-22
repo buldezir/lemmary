@@ -23,6 +23,7 @@ describe('document statuses', () => {
       'failed',
       'cancelled',
       'needs_review',
+      'password_required',
     ])
   })
 

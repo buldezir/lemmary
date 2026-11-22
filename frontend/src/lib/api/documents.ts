@@ -781,6 +781,31 @@ export async function saveDocumentMetadata(
   return saved
 }
 
+/** Throws the server's message, "Incorrect password." among them, so a dialog can show it. */
+export async function unlockDocument(documentId: string, password: string): Promise<void> {
+  await apiFetch(`/api/app/documents/${encodeURIComponent(documentId)}/unlock`, {
+    method: 'POST',
+    body: { password },
+    fallbackError: t('unlock.failed'),
+  })
+  notifyDocumentsChanged()
+}
+
+/** The caller's own: only an owner can unlock a document. */
+export async function listPasswordRequiredDocuments(): Promise<
+  { id: string; title: string; file: string }[]
+> {
+  await ensureAuth()
+  const user = pb.authStore.record?.id ?? ''
+  const result = await pb.collection('documents').getList(1, 100, {
+    filter: pb.filter('processing_status = "password_required" && user = {:user}', { user }),
+    sort: '-created',
+    fields: 'id,title,file',
+    requestKey: null,
+  })
+  return result.items.map((item) => ({ id: item.id, title: item.title ?? '', file: item.file ?? '' }))
+}
+
 /** The OCR text in the result language: translated and stored on first request, or again with `force`. */
 export async function translateOcrText(documentId: string, force = false): Promise<string> {
   const data = await apiFetch<{ text?: string }>(

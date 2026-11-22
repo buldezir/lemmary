@@ -33,6 +33,10 @@ var catalog = map[string]map[string]string{
 		"de": "Zum Einrichten dieser Instanz ist ein Passwort erforderlich.",
 		"ru": "Для настройки этого экземпляра требуется пароль.",
 	},
+	"A password is required.": {
+		"de": "Ein Passwort ist erforderlich.",
+		"ru": "Требуется пароль.",
+	},
 	"A reprocess job can only override the ocr, extract and embedding bindings.": {
 		"de": "Ein Neuverarbeitungsauftrag kann nur die Zuordnungen ocr, extract und embedding überschreiben.",
 		"ru": "Задание повторной обработки может переопределять только привязки ocr, extract и embedding.",
@@ -96,6 +100,10 @@ var catalog = map[string]map[string]string{
 	"An action's value does not fit its field.": {
 		"de": "Der Wert einer Aktion passt nicht zu ihrem Feld.",
 		"ru": "Значение в действии не подходит к его полю.",
+	},
+	"Incorrect password.": {
+		"de": "Falsches Passwort.",
+		"ru": "Неверный пароль.",
 	},
 	"The pattern %q is not a valid regular expression.": {
 		"de": "Das Muster %q ist kein gültiger regulärer Ausdruck.",
@@ -413,9 +421,21 @@ var catalog = map[string]map[string]string{
 		"de": "Die Nachricht darf höchstens %d Zeichen lang sein.",
 		"ru": "Сообщение должно быть не длиннее %d символов.",
 	},
+	"This PDF is password-protected. Upload it on the Files tab and unlock it there.": {
+		"de": "Dieses PDF ist passwortgeschützt. Laden Sie es über den Tab „Dateien“ hoch und entsperren Sie es dort.",
+		"ru": "Этот PDF защищён паролем. Загрузите его на вкладке «Файлы» и разблокируйте там.",
+	},
+	"This document is not waiting for a password.": {
+		"de": "Dieses Dokument wartet nicht auf ein Passwort.",
+		"ru": "Этот документ не ожидает пароля.",
+	},
 	"Too much feedback from this install. Try again in an hour.": {
 		"de": "Zu viel Feedback von dieser Installation. Versuchen Sie es in einer Stunde noch einmal.",
 		"ru": "Слишком много отзывов с этой установки. Повторите попытку через час.",
+	},
+	"Unlocking failed.": {
+		"de": "Entsperren fehlgeschlagen.",
+		"ru": "Не удалось разблокировать.",
 	},
 	"unknown custom field %q": {
 		"de": "Unbekanntes eigenes Feld %q",

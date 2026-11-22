@@ -127,7 +127,7 @@ LABEL org.opencontainers.image.title="Lemmary" \
       org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-         poppler-utils libopenblas0-pthread libgomp1 wget ca-certificates \
+         poppler-utils qpdf libopenblas0-pthread libgomp1 wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 # FAISS is only ever loaded by the binary next to it, so the two libraries go to
 # /usr/local/lib and ldconfig makes them findable without an rpath. faiss.ref

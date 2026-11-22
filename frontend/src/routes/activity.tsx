@@ -7,6 +7,7 @@ import {
   confirmReprocessFailed,
   countDocumentsWithStatus,
   countFailedDocuments,
+  listPasswordRequiredDocuments,
   reprocessDocuments,
   reprocessFailedBatch,
   reprocessFailedLabel,
@@ -26,6 +27,7 @@ import {
 } from '../lib/processing'
 import { ProcessingStatus } from '../components/ProcessingStatus'
 import { ProcessingSteps } from '../components/ProcessingSteps'
+import { UnlockDialog } from '../components/UnlockDialog'
 import { Button, sectionClassName, sectionTitleClassName } from '../components/ui'
 import { t } from '../i18n'
 
@@ -50,6 +52,7 @@ export function ActivityPage() {
         countFailedDocuments(),
         // The queue is worth showing without it.
         getQueueHold().catch(() => null),
+        listPasswordRequiredDocuments(),
       ]),
     [],
   )
@@ -57,6 +60,8 @@ export function ActivityPage() {
   const total = data?.[0].total ?? 0
   const failedCount = data?.[1] ?? 0
   const hold = data?.[2]?.hold ? data[2] : null
+  const locked = data?.[3] ?? []
+  const [unlocking, setUnlocking] = useState('')
 
   const reloadRef = useRef(reload)
   useEffect(() => {
@@ -244,6 +249,37 @@ export function ActivityPage() {
       {notice ? <p className="mb-3 text-sm text-ink-soft">{notice}</p> : null}
       {actionError ? <p className="mb-3 text-sm text-madder">{actionError}</p> : null}
       {error ? <p className="mb-3 text-sm text-madder">{error}</p> : null}
+
+      {locked.length > 0 ? (
+        <div className="mb-6">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">
+            {t('documentStatus.passwordRequired')} ({locked.length})
+          </h3>
+          <ul className="flex flex-col divide-y divide-line border-y border-line">
+            {locked.map((document) => (
+              <li key={document.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-3">
+                <Link
+                  to="/document/$documentId"
+                  params={{ documentId: document.id }}
+                  className="font-medium text-ink hover:text-oxblood"
+                >
+                  {document.title.trim() || document.file || t('common.untitledDocument')}
+                </Link>
+                <Button variant="secondary" size="xs" onClick={() => setUnlocking(document.id)}>
+                  {t('unlock.title')}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {unlocking ? (
+        <UnlockDialog
+          documentId={unlocking}
+          onClose={() => setUnlocking('')}
+          onUnlocked={() => void reload()}
+        />
+      ) : null}
 
       {loading && jobs.length === 0 ? (
         <p className="text-sm text-ink-soft">{t('activity.loading')}</p>
