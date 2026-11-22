@@ -57,7 +57,22 @@ var (
 	// ErrIncorrectPassword is returned by Decrypt for a password that does not
 	// open the file.
 	ErrIncorrectPassword = errors.New("pdftool: incorrect password")
+	// ErrUnreadable wraps PDFium's own verdict that a file is not a PDF it can
+	// read: empty, damaged, or not a PDF at all. Every other failure (a worker
+	// that did not start or was killed) says nothing about the file.
+	ErrUnreadable = errors.New("pdftool: not a readable PDF")
 )
+
+// documentErrors are the open failures that describe the file itself.
+var documentErrors = []error{pdfiumerrors.ErrUnknown, pdfiumerrors.ErrFile, pdfiumerrors.ErrFormat, pdfiumerrors.ErrSecurity}
+
+// pdfiumSaid reports whether err carries target. The worker's errors arrive
+// over gRPC as plain text, so errors.Is cannot recognize go-pdfium's sentinels;
+// their messages are the stable part, matched anywhere in err so a wrapped one
+// still counts.
+func pdfiumSaid(err, target error) bool {
+	return err != nil && strings.Contains(err.Error(), target.Error())
+}
 
 // workerArg is the argument a worker process is started with.
 const workerArg = "__lemmary_pdfium_worker"
@@ -186,25 +201,28 @@ func openDocument(instance pdfium.Pdfium, pdfPath, password string) (references.
 		return "", fmt.Errorf("pdftool: %w", err)
 	}
 	if info.Size() == 0 {
-		return "", errors.New("pdftool: document is empty")
+		return "", fmt.Errorf("%w: the file is empty", ErrUnreadable)
 	}
 	request := &requests.OpenDocument{FilePath: &pdfPath}
 	if password != "" {
 		request.Password = &password
 	}
 	doc, err := instance.OpenDocument(request)
-	// The worker's errors arrive over gRPC as plain text, so errors.Is cannot
-	// recognize go-pdfium's ErrPassword; its message is the stable part.
-	if err != nil && err.Error() == pdfiumerrors.ErrPassword.Error() {
+	if err == nil {
+		return doc.Document, nil
+	}
+	if pdfiumSaid(err, pdfiumerrors.ErrPassword) {
 		if password != "" {
 			return "", ErrIncorrectPassword
 		}
 		return "", ErrPasswordRequired
 	}
-	if err != nil {
-		return "", fmt.Errorf("pdftool: open %s: %w", filepath.Base(pdfPath), err)
+	for _, documentErr := range documentErrors {
+		if pdfiumSaid(err, documentErr) {
+			return "", fmt.Errorf("%w: %s: %w", ErrUnreadable, filepath.Base(pdfPath), err)
+		}
 	}
-	return doc.Document, nil
+	return "", fmt.Errorf("pdftool: open %s: %w", filepath.Base(pdfPath), err)
 }
 
 // closeDocument releases a document handle. A failure is not worth reporting:
@@ -231,7 +249,7 @@ func countPages(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT) (int, erro
 		return 0, fmt.Errorf("pdftool: page count: %w", err)
 	}
 	if result.PageCount <= 0 {
-		return 0, fmt.Errorf("pdftool: document reports %d pages", result.PageCount)
+		return 0, fmt.Errorf("%w: document reports %d pages", ErrUnreadable, result.PageCount)
 	}
 	return result.PageCount, nil
 }
@@ -423,7 +441,7 @@ func ExtractRange(ctx context.Context, pdfPath string, from, to int, outPath str
 	if err != nil {
 		return err
 	}
-	return canonicalizeFileID(ctx, outPath)
+	return canonicalizeFileID(ctx, outPath, true)
 }
 
 // Merge concatenates inputs into a single PDF at outPath.
@@ -452,7 +470,7 @@ func Merge(ctx context.Context, outPath string, inputs ...string) error {
 	if err != nil {
 		return err
 	}
-	return canonicalizeFileID(ctx, outPath)
+	return canonicalizeFileID(ctx, outPath, true)
 }
 
 // pageSource is a file and the pages to take from it; a nil pageRange takes

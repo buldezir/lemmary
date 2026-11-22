@@ -18,14 +18,18 @@ func (s *UnlockStep) ShouldSkip(state *StepState) (bool, error) {
 	return state.MimeType != "application/pdf", nil
 }
 
-// Any other failure to open the file is left for preview to report, as before
-// this step.
+// The check passes only when the file opened, or when PDFium itself rejected
+// it as damaged, which is left for preview to report as before this step. Any
+// other failure -- a worker that did not start, a timeout -- says nothing
+// about the password, so it fails the step for a retry rather than letting the
+// steps after it read a file that may be locked.
 func (s *UnlockStep) Run(ctx context.Context, state *StepState) error {
 	if err := ensureTempFile(state); err != nil {
 		return err
 	}
-	if _, err := pdftool.PageCount(ctx, state.TmpPath); errors.Is(err, pdftool.ErrPasswordRequired) {
-		return err
+	_, err := pdftool.PageCount(ctx, state.TmpPath)
+	if err == nil || errors.Is(err, pdftool.ErrUnreadable) {
+		return nil
 	}
-	return nil
+	return err
 }

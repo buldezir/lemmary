@@ -26,11 +26,15 @@ var canonicalID = []byte("[(AAAAAAAAAAAAAAAA) (AAAAAAAAAAAAAAAA)]")
 // new document. Same length as what it replaces, so no offset moves.
 const canonicalDate = "19700101000000"
 
-var creationDate = regexp.MustCompile(`/CreationDate\s*\(D:(\d{14})`)
+var (
+	creationDate = regexp.MustCompile(`/CreationDate\s*\(D:(\d{14})`)
+	trailerInfo  = regexp.MustCompile(`/Info\s+(\d+)\s+0\s+R`)
+)
 
 // canonicalizeFileID rewrites the parts of a PDFium-written PDF that change on
-// every run -- the trailer /ID and the Info dictionary's /CreationDate -- to
-// fixed values.
+// every run to fixed values: the trailer /ID always, and with newDocument the
+// /CreationDate PDFium stamps into the Info dictionary of a document it
+// created. A saved existing document (Decrypt) keeps its own Info as it was.
 //
 // Without it, extracting the same pages twice yields different bytes and the
 // app's exact-duplicate check never fires: re-splitting a scan would silently
@@ -40,19 +44,21 @@ var creationDate = regexp.MustCompile(`/CreationDate\s*\(D:(\d{14})`)
 // the trailer sits after the cross-reference table. That is checked, not
 // assumed: the rewrite is skipped unless the /ID lies beyond the offset
 // startxref names, and the result is verified and the original bytes restored
-// if it does not open. The date keeps its length, so it can sit anywhere.
+// if it does not open. The date keeps its length, so no offset moves.
 //
 // Falling back is logged rather than returned as an error: the file is still
 // usable, but it will not deduplicate against a later split of the same source.
-func canonicalizeFileID(ctx context.Context, path string) error {
+func canonicalizeFileID(ctx context.Context, path string, newDocument bool) error {
 	original, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("pdftool: read for canonicalization: %w", err)
 	}
 
 	rewritten, changed := canonicalizeTrailerID(original)
-	if dated, ok := canonicalizeCreationDate(rewritten); ok {
-		rewritten, changed = dated, true
+	if newDocument {
+		if dated, ok := canonicalizeCreationDate(rewritten); ok {
+			rewritten, changed = dated, true
+		}
 	}
 	if !changed {
 		// Either the file is already canonical (nothing to do) or its trailer is
@@ -87,23 +93,46 @@ func canonicalizeFileID(ctx context.Context, path string) error {
 	return nil
 }
 
-// canonicalizeCreationDate pins every /CreationDate to canonicalDate, reporting
-// whether anything changed.
+// canonicalizeCreationDate pins the /CreationDate of the Info dictionary the
+// trailer names to canonicalDate, reporting whether anything changed. Dates
+// elsewhere -- an annotation's, say -- were copied from the source and are
+// already stable.
 func canonicalizeCreationDate(data []byte) ([]byte, bool) {
-	var out []byte
-	for _, m := range creationDate.FindAllSubmatchIndex(data, -1) {
-		if string(data[m[2]:m[3]]) == canonicalDate {
-			continue
-		}
-		if out == nil {
-			out = bytes.Clone(data)
-		}
-		copy(out[m[2]:m[3]], canonicalDate)
-	}
-	if out == nil {
+	xrefOffset, ok := startxrefOffset(data)
+	if !ok {
 		return data, false
 	}
+	info := trailerInfo.FindSubmatch(data[xrefOffset:])
+	if info == nil {
+		return data, false
+	}
+	start, end, ok := objectBounds(data[:xrefOffset], string(info[1]))
+	if !ok {
+		return data, false
+	}
+	m := creationDate.FindSubmatchIndex(data[start:end])
+	if m == nil || string(data[start+m[2]:start+m[3]]) == canonicalDate {
+		return data, false
+	}
+	out := bytes.Clone(data)
+	copy(out[start+m[2]:start+m[3]], canonicalDate)
 	return out, true
+}
+
+// objectBounds returns the byte range of the last "<number> 0 obj ... endobj"
+// in data, the copy a reader uses.
+func objectBounds(data []byte, number string) (start, end int, ok bool) {
+	header := regexp.MustCompile(`(?m)^` + number + `\s+0\s+obj\b`)
+	all := header.FindAllIndex(data, -1)
+	if all == nil {
+		return 0, 0, false
+	}
+	start = all[len(all)-1][0]
+	length := bytes.Index(data[start:], []byte("endobj"))
+	if length < 0 {
+		return 0, 0, false
+	}
+	return start, start + length, true
 }
 
 // canonicalizeTrailerID replaces the /ID array of the trailer with a fixed one,

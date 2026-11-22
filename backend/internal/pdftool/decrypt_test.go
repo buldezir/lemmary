@@ -2,6 +2,7 @@ package pdftool
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"os"
 	"os/exec"
@@ -79,6 +80,26 @@ func TestDecrypt(t *testing.T) {
 				t.Fatalf("decrypted page 3 text = %q, %v", text, err)
 			}
 		})
+	}
+}
+
+// The decrypted file becomes the stored original, so its checksum has to be
+// the same whenever the same file is unlocked.
+func TestDecryptIsByteStableAcrossRuns(t *testing.T) {
+	path := writeEncryptedPDF(t, 3, "secret", "secret")
+	digest := func() [32]byte {
+		out := filepath.Join(t.TempDir(), "open.pdf")
+		if err := Decrypt(context.Background(), path, out, "secret"); err != nil {
+			t.Fatalf("Decrypt: %v", err)
+		}
+		data, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sha256.Sum256(data)
+	}
+	if first, second := digest(), digest(); first != second {
+		t.Fatal("two decryptions of the same file differ")
 	}
 }
 

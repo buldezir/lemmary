@@ -55,6 +55,18 @@ func Unlock(ctx context.Context, app core.App, document *core.Record, password s
 		return err
 	}
 	document.Set("file", file)
+	if document.GetString("original_checksum") == "" {
+		locked, err := os.Open(lockedPath)
+		if err != nil {
+			return err
+		}
+		checksum, err := duplicates.SHA256Reader(locked)
+		locked.Close()
+		if err != nil {
+			return err
+		}
+		document.Set("original_checksum", checksum)
+	}
 	if err := duplicates.AssignChecksumFromUpload(app, document); err != nil {
 		return err
 	}

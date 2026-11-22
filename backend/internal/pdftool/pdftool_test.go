@@ -242,3 +242,44 @@ func TestCancelKillsTheWorkerMidCall(t *testing.T) {
 		t.Fatalf("PageCount() after a kill = %d, %v", count, err)
 	}
 }
+
+// Only PDFium's verdict on the file counts as unreadable: the unlock step lets
+// such a file through for preview to report, and fails on anything else.
+func TestUnreadableNamesADamagedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "notes.pdf")
+	if err := os.WriteFile(path, []byte("this is not a pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PageCount(context.Background(), path); !errors.Is(err, ErrUnreadable) {
+		t.Fatalf("PageCount() error = %v, want ErrUnreadable", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := PageCount(ctx, writePDF(t, 2)); err == nil || errors.Is(err, ErrUnreadable) {
+		t.Fatalf("PageCount() on a cancelled context = %v, want an error that is not ErrUnreadable", err)
+	}
+}
+
+// Page text follows the content order, so a two-column page reads column by
+// column; pdftotext -layout interleaved the columns line by line. Split
+// detection and the extraction prompt read this text, so the order is pinned.
+func TestPageTextReadsTwoColumnsOneAfterTheOther(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "columns.pdf")
+	left := []string{"Invoice INV-1001", "Acme Plumbing GmbH", "Total 120.00 EUR"}
+	right := []string{"Customer service", "Mon to Fri 9-17", "help@example.com"}
+	if err := os.WriteFile(path, testpdf.TwoColumns(left, right), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	text, err := PageText(context.Background(), path, 1)
+	if err != nil {
+		t.Fatalf("PageText() error: %v", err)
+	}
+	last := -1
+	for _, line := range append(left, right...) {
+		at := strings.Index(text, line)
+		if at < 0 || at < last {
+			t.Fatalf("%q missing or out of column order in %q", line, text)
+		}
+		last = at
+	}
+}

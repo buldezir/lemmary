@@ -45,13 +45,14 @@ func SHA256File(file *filesystem.File) (string, error) {
 	return SHA256Reader(r)
 }
 
-// The earliest document owned by userID with the same checksum.
+// The earliest document owned by userID with the same checksum, or whose file
+// had it before unlock replaced it with the decrypted copy.
 func FindByChecksum(app core.App, userID, checksum, excludeID string) (*core.Record, error) {
 	checksum = strings.TrimSpace(checksum)
 	if userID == "" || checksum == "" {
 		return nil, nil
 	}
-	filter := "user = {:user} && checksum = {:checksum}"
+	filter := "user = {:user} && (checksum = {:checksum} || original_checksum = {:checksum})"
 	params := map[string]any{"user": userID, "checksum": checksum}
 	if excludeID != "" {
 		filter += " && id != {:exclude}"

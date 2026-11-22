@@ -791,19 +791,21 @@ export async function unlockDocument(documentId: string, password: string): Prom
   notifyDocumentsChanged()
 }
 
-/** The caller's own: only an owner can unlock a document. */
+/** The caller's own, every one of them: only an owner can unlock a document. */
 export async function listPasswordRequiredDocuments(): Promise<
   { id: string; title: string; file: string }[]
 > {
   await ensureAuth()
   const user = pb.authStore.record?.id ?? ''
-  const result = await pb.collection('documents').getList(1, 100, {
+  // id breaks ties, so paging by offset cannot skip or repeat a row.
+  const items = await pb.collection('documents').getFullList({
+    batch: 200,
     filter: pb.filter('processing_status = "password_required" && user = {:user}', { user }),
-    sort: '-created',
+    sort: '-created,id',
     fields: 'id,title,file',
     requestKey: null,
   })
-  return result.items.map((item) => ({ id: item.id, title: item.title ?? '', file: item.file ?? '' }))
+  return items.map((item) => ({ id: item.id, title: item.title ?? '', file: item.file ?? '' }))
 }
 
 /** The OCR text in the result language: translated and stored on first request, or again with `force`. */

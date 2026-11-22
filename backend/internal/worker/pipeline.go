@@ -123,13 +123,14 @@ func (r *PipelineRunner) startRun(job *core.Record, logger *slog.Logger) (*pipel
 	if len(steps) == 0 {
 		return nil, failJob(r.App, job, nil, fmt.Errorf("job has no steps"))
 	}
-	steps = withUnlockStep(steps)
-	job.Set("steps", steps)
-
 	document, err := r.App.FindRecordById("documents", documentID)
 	if err != nil {
 		return nil, failJob(r.App, job, nil, fmt.Errorf("load document: %w", err))
 	}
+	// The claim in runJob has usually prepended unlock already; this covers a
+	// job run without one.
+	steps = withUnlockStep(steps, document.GetString("processing_status"))
+	job.Set("steps", steps)
 
 	logger = logger.With("document", documentID)
 	logger.Info("starting pipeline", "steps", steps)
@@ -170,10 +171,16 @@ func (r *PipelineRunner) startRun(job *core.Record, logger *slog.Logger) (*pipel
 
 // Whatever reads the file goes after unlock, whoever wrote the step list: a
 // job queued before the step existed, or a reprocess the owner picked steps
-// for, must not send a locked PDF to an OCR provider.
-func withUnlockStep(steps []string) []string {
-	if slices.Contains(steps, models.StepUnlock) ||
-		!slices.Contains(steps, models.StepPreview) && !slices.Contains(steps, models.StepOCR) {
+// for, must not send a locked PDF to an OCR provider. A document still waiting
+// for its password gets the check whatever the steps: an extraction-only
+// reprocess would otherwise fail on the missing text and turn
+// password_required into failed, which takes the unlock prompt away.
+func withUnlockStep(steps []string, status string) []string {
+	if slices.Contains(steps, models.StepUnlock) {
+		return steps
+	}
+	readsFile := slices.Contains(steps, models.StepPreview) || slices.Contains(steps, models.StepOCR)
+	if !readsFile && status != models.DocStatusPasswordRequired {
 		return steps
 	}
 	return append([]string{models.StepUnlock}, steps...)

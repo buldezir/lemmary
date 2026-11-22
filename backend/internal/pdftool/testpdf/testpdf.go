@@ -54,6 +54,27 @@ func Multipage(pageCount int, extraLines ...string) []byte {
 	return assemble(objects)
 }
 
+// TwoColumns returns a one-page PDF with left and right side by side, the left
+// column written first: the layout of a letter with a sidebar, or of a paper.
+// Line i of each column shares a baseline with line i of the other.
+func TwoColumns(left, right []string) []byte {
+	body := &bytes.Buffer{}
+	for column, lines := range [][]string{left, right} {
+		fmt.Fprintf(body, "BT /F1 12 Tf %d 760 Td 16 TL\n", 72+column*260)
+		for _, line := range lines {
+			fmt.Fprintf(body, "(%s) Tj T*\n", escapeText(line))
+		}
+		body.WriteString("ET\n")
+	}
+	return assemble([]string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [4 0 R] /Count 1 >>",
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", body.Len(), body.String()),
+	})
+}
+
 func pageText(page int, extraLines []string) []string {
 	lines := make([]string, 0, len(extraLines)+1)
 	lines = append(lines, fmt.Sprintf("Page %d", page))

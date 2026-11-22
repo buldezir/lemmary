@@ -2,8 +2,12 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +15,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
+	"lemmary/backend/internal/duplicates"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/pdftool"
@@ -63,6 +68,17 @@ func TestUnlockStepStopsAPasswordProtectedPDF(t *testing.T) {
 	openDoc, openJob := makePDFDocumentWithJob(t, app, userID, ownerOnly, steps)
 	// A job queued before the unlock step existed gets it all the same.
 	oldDoc, oldJob := makePDFDocumentWithJob(t, app, userID, locked, []string{models.StepOCR})
+	// So does an extraction-only reprocess of a document already waiting for
+	// its password, which would otherwise fail on the missing text.
+	waitingDoc, waitingJob := makePDFDocumentWithJob(t, app, userID, locked, models.ExtractionPipelineSteps)
+	waiting, err := app.FindRecordById("documents", waitingDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting.Set("processing_status", models.DocStatusPasswordRequired)
+	if err := app.Save(waiting); err != nil {
+		t.Fatal(err)
+	}
 
 	provider := &slowOCR{}
 	newDrainProcessor(app, 1, provider).fanOut()
@@ -73,6 +89,7 @@ func TestUnlockStepStopsAPasswordProtectedPDF(t *testing.T) {
 	for _, c := range []struct{ doc, job, docStatus, jobStatus string }{
 		{lockedDoc, lockedJob, models.DocStatusPasswordRequired, models.JobStatusFailed},
 		{oldDoc, oldJob, models.DocStatusPasswordRequired, models.JobStatusFailed},
+		{waitingDoc, waitingJob, models.DocStatusPasswordRequired, models.JobStatusFailed},
 		{openDoc, openJob, models.DocStatusCompleted, models.JobStatusCompleted},
 	} {
 		document, err := app.FindRecordById("documents", c.doc)
@@ -84,7 +101,7 @@ func TestUnlockStepStopsAPasswordProtectedPDF(t *testing.T) {
 			t.Fatal(err)
 		}
 		if got := document.GetString("processing_status"); got != c.docStatus {
-			t.Errorf("document status = %q, want %q", got, c.docStatus)
+			t.Errorf("document status = %q, want %q (job error %q, runs %s)", got, c.docStatus, job.GetString("error"), job.GetString("step_runs"))
 		}
 		if got := job.GetString("status"); got != c.jobStatus {
 			t.Errorf("job status = %q, want %q (error %q, runs %s)", got, c.jobStatus, job.GetString("error"), job.GetString("step_runs"))
@@ -103,6 +120,31 @@ func TestUnlockStepStopsAPasswordProtectedPDF(t *testing.T) {
 	}
 }
 
+// Only an open that worked, or PDFium calling the file damaged, passes the
+// check: a worker that never answered says nothing about the password.
+func TestUnlockStepFailsWhenTheCheckCannotRun(t *testing.T) {
+	dir := t.TempDir()
+	open := filepath.Join(dir, "open.pdf")
+	damaged := filepath.Join(dir, "damaged.pdf")
+	if err := os.WriteFile(open, testpdf.Multipage(2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(damaged, []byte("not a pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	step := &UnlockStep{}
+	for _, path := range []string{open, damaged} {
+		if err := step.Run(context.Background(), &StepState{TmpPath: path}); err != nil {
+			t.Errorf("Run(%s) = %v, want nil", filepath.Base(path), err)
+		}
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := step.Run(cancelled, &StepState{TmpPath: open}); err == nil {
+		t.Error("Run with a cancelled context = nil, want the step to fail")
+	}
+}
+
 func mustFindJob(t *testing.T, app core.App, id string) *core.Record {
 	t.Helper()
 	job, err := app.FindRecordById("processing_jobs", id)
@@ -113,14 +155,22 @@ func mustFindJob(t *testing.T, app core.App, id string) *core.Record {
 }
 
 func TestWithUnlockStep(t *testing.T) {
-	for _, c := range []struct{ in, want []string }{
-		{[]string{models.StepOCR, models.StepEmbed}, []string{models.StepUnlock, models.StepOCR, models.StepEmbed}},
-		{[]string{models.StepPreview}, []string{models.StepUnlock, models.StepPreview}},
-		{models.FullPipelineSteps, models.FullPipelineSteps},
-		{models.ExtractionPipelineSteps, models.ExtractionPipelineSteps},
+	locked := append([]string{models.StepUnlock}, models.ExtractionPipelineSteps...)
+	for _, c := range []struct {
+		in     []string
+		status string
+		want   []string
+	}{
+		{[]string{models.StepOCR, models.StepEmbed}, models.DocStatusPending, []string{models.StepUnlock, models.StepOCR, models.StepEmbed}},
+		{[]string{models.StepPreview}, models.DocStatusPending, []string{models.StepUnlock, models.StepPreview}},
+		{models.FullPipelineSteps, models.DocStatusPending, models.FullPipelineSteps},
+		{models.ExtractionPipelineSteps, models.DocStatusPending, models.ExtractionPipelineSteps},
+		// An extraction-only reprocess of a locked document must find the
+		// password again rather than fail on the missing text.
+		{models.ExtractionPipelineSteps, models.DocStatusPasswordRequired, locked},
 	} {
-		if got := withUnlockStep(c.in); !slices.Equal(got, c.want) {
-			t.Errorf("withUnlockStep(%v) = %v, want %v", c.in, got, c.want)
+		if got := withUnlockStep(c.in, c.status); !slices.Equal(got, c.want) {
+			t.Errorf("withUnlockStep(%v, %q) = %v, want %v", c.in, c.status, got, c.want)
 		}
 	}
 }
@@ -152,6 +202,7 @@ func TestUnlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	storedName, checksum := document.GetString("file"), document.GetString("checksum")
+	lockedSum := fmt.Sprintf("%x", sha256.Sum256(locked))
 	if got := document.GetInt("page_count"); got != 1 {
 		t.Fatalf("page_count of the locked upload = %d, want the one-page fallback", got)
 	}
@@ -179,6 +230,13 @@ func TestUnlock(t *testing.T) {
 	}
 	if document.GetString("checksum") == checksum || document.GetString("file") == storedName {
 		t.Fatal("the stored file and its checksum were not replaced")
+	}
+	// The locked file the owner still has must keep matching this document.
+	if document.GetString("original_checksum") != lockedSum {
+		t.Fatalf("original_checksum = %q, want the locked file's %q", document.GetString("original_checksum"), lockedSum)
+	}
+	if again, err := duplicates.FindByChecksum(app, userID, lockedSum, ""); err != nil || again == nil || again.Id != documentID {
+		t.Fatalf("FindByChecksum(locked file) = %v, %v; want the unlocked document", again, err)
 	}
 	if strings.Count(document.GetString("file"), "_") != strings.Count(storedName, "_") {
 		t.Fatalf("file name %q stacked another suffix onto %q", document.GetString("file"), storedName)
