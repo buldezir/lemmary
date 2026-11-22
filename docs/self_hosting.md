@@ -5,7 +5,7 @@ description: "Run Lemmary with Docker: the published image, volumes, reverse pro
 # Self-hosting with Docker
 
 The published image carries everything Lemmary needs — the Go binary, the built
-SPA and these docs, poppler for PDF work, and the FAISS build its vector search
+SPA and these docs, PDFium for PDF work, and the FAISS build its vector search
 links against. Nothing has to be installed on the host but Docker.
 
 To run from source instead, see [Development environment](/development).
@@ -58,7 +58,7 @@ text is stored in the row, and embeddings add roughly 30–60 KB per document.
 
 The container starts as root only long enough to adopt a volume an older
 root-running image created, then drops to the unprivileged `app` user
-(uid/gid 1000) for good — it renders untrusted PDFs through poppler, and an
+(uid/gid 1000) for good — it renders untrusted PDFs through PDFium, and an
 exploit there should not be root.
 
 ## Ports and reverse proxies

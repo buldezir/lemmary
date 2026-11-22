@@ -9,14 +9,7 @@ or run Lemmary directly on the host.
 - Go 1.27+ with cgo enabled (a C toolchain: `gcc` or `clang`)
 - Node.js 20+
 - [pnpm](https://pnpm.io/installation) 11+ (`npm install -g pnpm`)
-- [poppler-utils](https://poppler.freedesktop.org/) for all PDF work: `pdftoppm`
-  (previews and page thumbnails), `pdfinfo` (page counts), `pdftotext` (page
-  text), `pdfseparate` and `pdfunite` (document splitting)
-- [qpdf](https://qpdf.readthedocs.io/) to remove the password from a protected
-  PDF once its owner enters it
-
-On macOS, run `brew install poppler qpdf`. On Debian or Ubuntu, run
-`apt install poppler-utils qpdf`.
+- PDFium for all PDF work (see [PDFium](#pdfium) below)
 
 These host dependencies are intentionally not prerequisites for ordinary
 self-hosting: they are already included in the Docker image.
@@ -74,6 +67,41 @@ runs in Docker, where it is already installed.
 
 On macOS, run `brew install cmake ninja libomp openblas`, then use option 1 or
 2; the build script discovers Homebrew's libomp automatically.
+
+## PDFium
+
+All PDF work — page counts, previews and thumbnails, page text, splitting and
+merging, removing a password — goes through [PDFium](https://pdfium.googlesource.com/pdfium/), linked
+through cgo with [go-pdfium](https://github.com/klippa-app/go-pdfium). The
+backend runs it in worker processes started from its own binary, one per call,
+so a crash or a hang inside PDFium costs that call rather than the server.
+
+There is no distribution package to install. `scripts/pdfium-fetch.sh` downloads
+the prebuilt library from
+[bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) at the
+release it pins, verifies the checksum, and installs it with the pkg-config file
+cgo finds it through. The Docker build runs the same script.
+
+```bash
+# System-wide: nothing to set afterwards (on macOS, skip ldconfig).
+sudo scripts/pdfium-fetch.sh --prefix /usr/local && sudo ldconfig
+
+# In your home directory, no root.
+scripts/pdfium-fetch.sh --prefix "$HOME/.local/pdfium"
+```
+
+The home-directory install is outside the compiler and loader's normal paths.
+The repository's `.envrc` sets both when `~/.local/pdfium` exists; without
+direnv, export them yourself:
+
+```bash
+export PKG_CONFIG_PATH=$HOME/.local/pdfium/lib/pkgconfig
+export LD_LIBRARY_PATH=$HOME/.local/pdfium/lib   # DYLD_LIBRARY_PATH on macOS
+```
+
+PDFium cannot encrypt, so the tests that need a password-protected PDF build it
+with [qpdf](https://qpdf.readthedocs.io/) (`apt install qpdf`,
+`brew install qpdf`) and are skipped without it. The app itself does not use it.
 
 ## Run from source
 

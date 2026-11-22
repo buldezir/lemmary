@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
 )
@@ -16,24 +17,30 @@ import (
 // check out and hand back a randomly-identified file.
 const canonicalVerifyTimeout = 15 * time.Second
 
-// canonicalID is the fixed trailer /ID written in place of poppler's random one.
+// canonicalID is the fixed trailer /ID written in place of PDFium's random one.
 // The letters never need escaping inside a PDF literal string, so the array is
 // always exactly this many bytes.
 var canonicalID = []byte("[(AAAAAAAAAAAAAAAA) (AAAAAAAAAAAAAAAA)]")
 
-// canonicalizeFileID rewrites the trailer /ID of a poppler-produced PDF to a
-// fixed value.
+// canonicalDate replaces the digits of the /CreationDate PDFium stamps into a
+// new document. Same length as what it replaces, so no offset moves.
+const canonicalDate = "19700101000000"
+
+var creationDate = regexp.MustCompile(`/CreationDate\s*\(D:(\d{14})`)
+
+// canonicalizeFileID rewrites the parts of a PDFium-written PDF that change on
+// every run -- the trailer /ID and the Info dictionary's /CreationDate -- to
+// fixed values.
 //
-// pdfseparate and pdfunite stamp a fresh random /ID into every file they write,
-// so extracting the same pages twice yields different bytes and the app's
-// exact-duplicate check never fires: re-splitting a scan would silently create
-// a second copy of every part.
+// Without it, extracting the same pages twice yields different bytes and the
+// app's exact-duplicate check never fires: re-splitting a scan would silently
+// create a second copy of every part.
 //
-// The rewrite changes the length of the trailer, which is only safe because the
-// trailer sits after the cross-reference table. That is checked, not assumed:
-// the rewrite is skipped unless the /ID lies beyond the offset startxref names,
-// and the result is verified and the original bytes restored if it does not
-// open.
+// The /ID rewrite changes the length of the trailer, which is only safe because
+// the trailer sits after the cross-reference table. That is checked, not
+// assumed: the rewrite is skipped unless the /ID lies beyond the offset
+// startxref names, and the result is verified and the original bytes restored
+// if it does not open. The date keeps its length, so it can sit anywhere.
 //
 // Falling back is logged rather than returned as an error: the file is still
 // usable, but it will not deduplicate against a later split of the same source.
@@ -44,12 +51,15 @@ func canonicalizeFileID(ctx context.Context, path string) error {
 	}
 
 	rewritten, changed := canonicalizeTrailerID(original)
+	if dated, ok := canonicalizeCreationDate(rewritten); ok {
+		rewritten, changed = dated, true
+	}
 	if !changed {
 		// Either the file is already canonical (nothing to do) or its trailer is
 		// not the shape the rewrite understands, which is worth knowing about:
 		// this part will not deduplicate against a later split of the same scan.
 		if !bytes.Contains(original, canonicalID) {
-			slog.Default().Warn("pdf file id left as poppler wrote it",
+			slog.Default().Warn("pdf file id left as pdfium wrote it",
 				"component", "pdftool",
 				"path", path,
 				"reason", "no rewritable trailer /ID",
@@ -75,6 +85,25 @@ func canonicalizeFileID(ctx context.Context, path string) error {
 		}
 	}
 	return nil
+}
+
+// canonicalizeCreationDate pins every /CreationDate to canonicalDate, reporting
+// whether anything changed.
+func canonicalizeCreationDate(data []byte) ([]byte, bool) {
+	var out []byte
+	for _, m := range creationDate.FindAllSubmatchIndex(data, -1) {
+		if string(data[m[2]:m[3]]) == canonicalDate {
+			continue
+		}
+		if out == nil {
+			out = bytes.Clone(data)
+		}
+		copy(out[m[2]:m[3]], canonicalDate)
+	}
+	if out == nil {
+		return data, false
+	}
+	return out, true
 }
 
 // canonicalizeTrailerID replaces the /ID array of the trailer with a fixed one,

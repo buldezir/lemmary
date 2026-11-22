@@ -42,12 +42,10 @@ func makePDFDocumentWithJob(t *testing.T, app core.App, userID string, pdf []byt
 }
 
 // The provider is never called and the job is not retried: the document waits
-// in password_required with the step naming why, not a raw poppler error.
+// in password_required with the step naming why, not a raw PDFium error.
 func TestUnlockStepStopsAPasswordProtectedPDF(t *testing.T) {
-	for _, binary := range []string{"qpdf", "pdfinfo"} {
-		if _, err := exec.LookPath(binary); err != nil {
-			t.Skipf("%s not installed", binary)
-		}
+	if _, err := exec.LookPath("qpdf"); err != nil {
+		t.Skip("qpdf not installed")
 	}
 	locked, err := testpdf.Encrypt(testpdf.Multipage(2), "secret", "secret")
 	if err != nil {
@@ -128,10 +126,8 @@ func TestWithUnlockStep(t *testing.T) {
 }
 
 func TestUnlock(t *testing.T) {
-	for _, binary := range []string{"qpdf", "pdfinfo"} {
-		if _, err := exec.LookPath(binary); err != nil {
-			t.Skipf("%s not installed", binary)
-		}
+	if _, err := exec.LookPath("qpdf"); err != nil {
+		t.Skip("qpdf not installed")
 	}
 	locked, err := testpdf.Encrypt(testpdf.Multipage(3), "pässwörd", "owner")
 	if err != nil {

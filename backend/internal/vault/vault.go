@@ -609,7 +609,7 @@ func (c *atomicCounter) reset() {
 // pdftool, appapi and limits call os.CreateTemp with an empty dir argument, and
 // in the container image /tmp is the writable overlay. os.TempDir consults the
 // environment on every call and exec'd children inherit it, so one assignment
-// covers all of them, poppler included.
+// covers all of them, PDFium workers included.
 // packages.
 func (v *Vault) InstallTempDir() error {
 	if !v.Enabled() {

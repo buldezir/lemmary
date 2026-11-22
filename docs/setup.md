@@ -160,9 +160,9 @@ for and then discarded.
 
 Consequences worth knowing:
 
-- Every PDF upload has its pages counted with `pdfinfo`; other file types cost a
+- Every PDF upload has its pages counted with PDFium; other file types cost a
   five-byte header read. A PDF whose page count cannot be read counts as one
-  page, so on a host without poppler this ceiling is not enforced at upload — the
+  page, so for such a file this ceiling is not enforced at upload — the
   OCR step refuses an over-long result there instead, which fails the document
   rather than the upload.
 - A restore or a Paperless-ngx or Papra import that brings a document's text with it skips
@@ -206,7 +206,7 @@ A staged archive and a running import are one per account across both zip flows,
 3. `GET /api/app/scan/pdf?upload_id=...` streams the document so far, for the preview. `DELETE /api/app/scan?upload_id=...` discards it.
 4. `POST /api/app/scan/document` with `{ "upload_id" }` saves it as a `pending` document and returns `{ "document_id" }`, so it goes through the normal OCR + AI [processing flow](#processing-flow). A re-scan of something already in the library comes back as `400` with `duplicate_of`.
 
-The scan itself is three requests to the device: `POST {base}/ScanJobs` with a PWG ScanSettings document (A4, 300 dpi, RGB24, `application/pdf`), then `GET {job}/NextDocument` until it answers `404`, then `DELETE {job}` — the delete always runs, including after a failure, because a device left holding an open job refuses the next one. Pages are merged with `pdfunite` into `<data dir>/temp/scan/<upload id>.pdf`, which expires after 30 minutes like any other staged upload.
+The scan itself is three requests to the device: `POST {base}/ScanJobs` with a PWG ScanSettings document (A4, 300 dpi, RGB24, `application/pdf`), then `GET {job}/NextDocument` until it answers `404`, then `DELETE {job}` — the delete always runs, including after a failure, because a device left holding an open job refuses the next one. Pages are merged into `<data dir>/temp/scan/<upload id>.pdf`, which expires after 30 minutes like any other staged upload.
 
 Because the address comes from whoever is signed in, every request goes through a dial-time guard that allows only RFC1918 and IPv6 ULA addresses: public addresses, `localhost` and link-local `169.254.x` (the cloud metadata service) are refused, redirects are not followed, and a `Location` header pointing at another host is rejected. The staged document is capped at the `documents.file` field's own 47 MB, checked before each scan so a full document is reported while there is still something to do about it.
 
@@ -216,23 +216,23 @@ Because the address comes from whoever is signed in, every request goes through 
 
 Uploading and splitting are two steps, so nothing is created before the user has decided where the cuts go:
 
-1. `POST /api/app/split/upload` (multipart, field `file`) streams the PDF to `<data dir>/temp/split_upload/<upload id>/source.pdf` and renders one thumbnail per page next to it at 900 px on the longest edge — larger than the 400 px document-card preview, because deciding where a document ends means reading the letterhead of a page (a single `pdftoppm` run; `pdftoppm` zero-pads its own output, so the files are renamed to `page-<n>.png`). The response carries `upload_id`, `file_name`, `page_count`, `size_bytes` and `expires_at`.
+1. `POST /api/app/split/upload` (multipart, field `file`) streams the PDF to `<data dir>/temp/split_upload/<upload id>/source.pdf` and renders one thumbnail per page next to it at 900 px on the longest edge — larger than the 400 px document-card preview, because deciding where a document ends means reading the letterhead of a page (each page is rendered the first time the UI asks for it and kept as `page-<n>.png`). The response carries `upload_id`, `file_name`, `page_count`, `size_bytes` and `expires_at`.
 2. `GET /api/app/split/page?upload_id=...&page=n` serves one cached thumbnail as `image/png`. The endpoint needs the session token, which an `<img src>` cannot carry, so the SPA fetches each page and wraps it in a blob URL.
 3. `POST /api/app/split` with `{ "upload_id": "...", "parts": [{ "from": 1, "to": 2 }, …] }` starts the split and returns `202 Accepted` with `{ "job_id", "status": "running" }`. Poll `GET /api/app/split/status?job_id=...` for `progress` (`{ done, total }`) until `status` is `completed` (with `result`) or `failed` (with `error`). The `result` counts `created`, `skipped_duplicates`, `skipped_oversized` and `failed`, plus up to 25 per-part error messages and the `document_ids` created. Each part is saved as `pending`, so it goes through the normal OCR + AI [processing flow](#processing-flow).
 
 `parts` must cover every page exactly once, in order — that is all the cut-marking UI can express, so a gap, an overlap, an unsorted list or a range outside the file comes back as `400` with a message naming the page it went wrong at. A rejected request leaves the upload staged, so a corrected request can follow.
 
-Parts are named after the pages they hold (`scan-page-1.pdf`, `scan-pages-2-5.pdf`) from a sanitized form of the uploaded file name. `pdfseparate` and `pdfunite` copy the original page objects rather than re-rasterizing, so the text layer and image quality survive; both stamp a random trailer `/ID` into what they write, which is rewritten to a fixed value so extracting the same pages twice produces the same bytes. Without that, the exact-duplicate check could never recognize a re-split part and splitting the same scan twice would silently create a second copy of everything. The rewrite only happens when the `/ID` sits past the offset `startxref` names (so no cross-reference offset can shift) and is reverted if the result does not open.
+Parts are named after the pages they hold (`scan-page-1.pdf`, `scan-pages-2-5.pdf`) from a sanitized form of the uploaded file name. PDFium copies the original page objects rather than re-rasterizing, so the text layer and image quality survive. It stamps a random trailer `/ID` and the current time as `/CreationDate` into what it writes; both are rewritten to fixed values so extracting the same pages twice produces the same bytes. Without that, the exact-duplicate check could never recognize a re-split part and splitting the same scan twice would silently create a second copy of everything. The rewrite only happens when the `/ID` sits past the offset `startxref` names (so no cross-reference offset can shift), the date keeps its length, and the rewrite is reverted if the result does not open.
 
 `DELETE /api/app/split/upload?upload_id=...` discards a staged PDF the user chose not to split. Staged uploads expire after 30 minutes and are swept on the next upload, including directories left behind by an earlier process — the staging registry and the job state are in memory, so both are lost on restart. Confirming consumes the upload id: the same PDF cannot be split twice, and one split may run at a time per user (a second start returns `409`).
 
-Rejections come back as `400` at upload time: not a readable PDF (the `%PDF-` header and `pdfinfo` decide, not the declared content type), a one-page PDF (nothing to split), more than 100 pages, or an upload over 100 MiB. A part over the 47 MB `documents.file` limit is not fatal — it is counted as `skipped_oversized`.
+Rejections come back as `400` at upload time: not a readable PDF (the `%PDF-` header and PDFium decide, not the declared content type), a one-page PDF (nothing to split), more than 100 pages, or an upload over 100 MiB. A part over the 47 MB `documents.file` limit is not fatal — it is counted as `skipped_oversized`.
 
 #### Automatic detection
 
 `POST /api/app/split/detect` with `{ "upload_id": "..." }` proposes the cuts and returns `202 Accepted` with a `job_id`; poll `GET /api/app/split/detect/status?job_id=...` the same way. The `result` is `{ "parts": [{ "from", "to", "title" }], "text_source" }`. Detection does not consume the upload: it can be repeated, and the user still confirms the split.
 
-Page text comes from `pdftotext` per page first (`text_source: "pdf"`). A page counts as having a text layer at 16 characters or more; when fewer than half the pages clear that bar the file is treated as a scan and every page is read by the configured OCR provider instead (`text_source: "ocr"`) — counted per page rather than averaged, since one born-digital cover sheet in front of thirty scanned pages would otherwise lift an average over any threshold. The OCR fallback extracts each page to its own PDF and is capped at 40 pages; beyond that the job fails with a message telling the user to mark the cuts by hand. Detection needs an extraction model (`400` otherwise) and, for a scan, an OCR provider.
+Page text comes from the PDF's own text layer first (`text_source: "pdf"`), read by PDFium in content order, so a two-column page reads column by column. A page counts as having a text layer at 16 characters or more; when fewer than half the pages clear that bar the file is treated as a scan and every page is read by the configured OCR provider instead (`text_source: "ocr"`) — counted per page rather than averaged, since one born-digital cover sheet in front of thirty scanned pages would otherwise lift an average over any threshold. The OCR fallback extracts each page to its own PDF and is capped at 40 pages; beyond that the job fails with a message telling the user to mark the cuts by hand. Detection needs an extraction model (`400` otherwise) and, for a scan, an OCR provider.
 
 The page texts go to the extraction provider and model in one request asking for `{"parts":[{"from","to","title"}]}`, with a per-page character budget of `max(200, 30000 / pages)` so even a 100-page file arrives whole rather than truncated to its first pages. The answer is then normalized server-side into a contiguous cover of every page: only the cut positions it implies are kept and the parts are rebuilt from them, so an unsorted, gapped, overlapping or out-of-range proposal still yields something `POST /api/app/split` accepts, and an unusable one degrades to a single whole-file part.
 
@@ -305,7 +305,7 @@ Exact duplicates (same checksum) are skipped, so running it twice is safe. The A
 1. User uploads a document from `/upload`
 2. PocketBase stores the file and creates a `processing_jobs` record via Go hook
 3. An `OnRecordAfterCreateSuccess` hook dispatches the job immediately; a cron job (`process_pending_jobs`) sweeps any stuck pending jobs
-4. Worker generates a PNG preview from the first PDF page (via `pdftoppm`), then extracts text, optionally checks for near-duplicates, and runs AI metadata extraction
+4. Worker generates a PNG preview from the first PDF page (via PDFium), then extracts text, optionally checks for near-duplicates, and runs AI metadata extraction
 5. Extracted metadata is saved on the document
 6. UI shows status on list and detail pages, and anything awaiting a human appears in the [review Inbox](#review-inbox)
 
@@ -313,7 +313,7 @@ Metadata extraction sends the current document's OCR text **and** up to 500 of t
 
 ### Password-protected PDFs
 
-A PDF that needs a password to open, as bank statements and payslips often do, stops before anything reads it: the document shows **Password required**, and no OCR or AI provider is called. This happens however the file arrived, IMAP, imports, MCP and the API included. Its owner enters the password on the document page or in the *Password required* section of Activity. The file is then decrypted with `qpdf`, the stored file is replaced by the copy without a password, its pages are counted again for the limits, and the full pipeline runs. A wrong password leaves the file as it was. The password is used for that one decryption and is not stored or logged. A PDF with only an owner password (printing or copying restricted) opens without one and is processed as usual. A PDF that failed with `Incorrect password` before this existed asks for the password after **Reprocess**. API: `POST /api/app/documents/{id}/unlock` with `{ "password" }`, owner only; a wrong password returns `400`.
+A PDF that needs a password to open, as bank statements and payslips often do, stops before anything reads it: the document shows **Password required**, and no OCR or AI provider is called. This happens however the file arrived, IMAP, imports, MCP and the API included. Its owner enters the password on the document page or in the *Password required* section of Activity. The file is then decrypted with PDFium, losslessly, the stored file is replaced by the copy without a password, its pages are counted again for the limits, and the full pipeline runs. A wrong password leaves the file as it was. The password is used for that one decryption and is not stored or logged. A PDF with only an owner password (printing or copying restricted) opens without one and is processed as usual. A PDF that failed with `Incorrect password` before this existed asks for the password after **Reprocess**. API: `POST /api/app/documents/{id}/unlock` with `{ "password" }`, owner only; a wrong password returns `400`.
 
 ### Custom fields
 

@@ -14,16 +14,6 @@ import (
 	"lemmary/backend/internal/pdftool/testpdf"
 )
 
-// requirePoppler skips when a poppler binary the test needs is absent.
-func requirePoppler(t *testing.T, binaries ...string) {
-	t.Helper()
-	for _, binary := range binaries {
-		if _, err := exec.LookPath(binary); err != nil {
-			t.Skipf("%s not installed", binary)
-		}
-	}
-}
-
 // resetStaging isolates the package-level registry between tests.
 func resetStaging(t *testing.T) {
 	t.Helper()
@@ -203,7 +193,6 @@ func TestSweepKeepsAHeldUpload(t *testing.T) {
 
 func TestLookupAndPageThumbAreOwnerScoped(t *testing.T) {
 	resetStaging(t)
-	requirePoppler(t, "pdftoppm")
 	root := t.TempDir()
 	item := stageDir(t, root, "upload-1", "owner-a", 3, time.Now().UTC().Add(time.Hour))
 

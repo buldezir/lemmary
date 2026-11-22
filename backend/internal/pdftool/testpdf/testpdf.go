@@ -1,7 +1,7 @@
 // Package testpdf builds small, valid PDF files in memory for tests.
 //
-// The PDF work in this repo shells out to poppler, so its tests need real PDFs
-// rather than fixtures poppler would reject. Generating them keeps the page
+// The PDF work in this repo goes through PDFium, so its tests need real PDFs
+// rather than fixtures PDFium would reject. Generating them keeps the page
 // count and the per-page text under the test's control and avoids committing
 // binary fixtures for every shape a test needs.
 package testpdf
@@ -85,7 +85,7 @@ func escapeText(s string) string {
 
 // assemble writes the objects with a cross-reference table whose offsets are
 // computed from the bytes actually emitted, which is what makes the result a
-// PDF poppler will open.
+// PDF PDFium will open.
 func assemble(objects []string) []byte {
 	buf := &bytes.Buffer{}
 	buf.WriteString("%PDF-1.4\n")

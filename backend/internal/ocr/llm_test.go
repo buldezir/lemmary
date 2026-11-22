@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -248,11 +247,6 @@ func TestExtractTextSendsSessionHeaderToOpenCode(t *testing.T) {
 // OpenCode Go forwards a chat file part to models that cannot take one, and the
 // upstream refusal comes back as a 400; the pages rendered as images can be read.
 func TestExtractTextRendersPagesWhenTheFilePartIsRefused(t *testing.T) {
-	for _, binary := range []string{"pdfinfo", "pdftoppm"} {
-		if _, err := exec.LookPath(binary); err != nil {
-			t.Skipf("%s not installed", binary)
-		}
-	}
 	var bodies []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)

@@ -1,90 +1,178 @@
-// Package pdftool wraps the poppler-utils command line tools the app relies on
-// for PDF inspection, rendering and page extraction.
+// Package pdftool does the app's PDF inspection, rendering and page extraction
+// through PDFium (github.com/klippa-app/go-pdfium).
 //
-// poppler-utils is the only native runtime dependency (see the Dockerfile), so
-// PDF work shells out instead of pulling in a Go PDF library. Every wrapper
-// looks the binary up first and reports the missing-package hint, because a
-// deployment without poppler is the common cause of failure here.
+// PDFium runs in worker processes, not in the server: it parses untrusted
+// uploads, and a crash, a runaway allocation or a hang there has to cost one
+// worker rather than the server. A worker is this same binary re-executed (see
+// init), started per call and gone when the call returns, so an idle server
+// holds no PDFium memory. A call that outlives its timeout has its worker
+// killed, which is what bounds a document PDFium never finishes with.
 package pdftool
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"image/png"
+	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"sort"
-	"strconv"
+	"runtime"
 	"strings"
 	"time"
+
+	"github.com/klippa-app/go-pdfium"
+	"github.com/klippa-app/go-pdfium/enums"
+	pdfiumerrors "github.com/klippa-app/go-pdfium/errors"
+	"github.com/klippa-app/go-pdfium/multi_threaded"
+	"github.com/klippa-app/go-pdfium/multi_threaded/worker"
+	"github.com/klippa-app/go-pdfium/references"
+	"github.com/klippa-app/go-pdfium/requests"
 )
 
 const (
-	// InfoTimeout bounds pdfinfo, which only reads the document catalog.
+	// InfoTimeout bounds opening a document to count its pages.
 	InfoTimeout = 15 * time.Second
-	// RenderTimeout bounds pdftoppm. Rendering every page of a long scan is the
+	// RenderTimeout bounds a render. Rendering every page of a long scan is the
 	// slowest thing here, so it gets the largest budget.
 	RenderTimeout = 5 * time.Minute
-	// TextTimeout bounds one pdftotext page extraction.
+	// TextTimeout bounds one page's text extraction.
 	TextTimeout = 30 * time.Second
-	// AllTextTimeout bounds one pdftotext run over a whole document, which costs
-	// far more than a single page.
+	// AllTextTimeout bounds extracting the text of a whole document.
 	AllTextTimeout = 2 * time.Minute
-	// ExtractTimeout bounds the pdfseparate + pdfunite pair for one page range.
+	// ExtractTimeout bounds copying one page range into a new file.
 	ExtractTimeout = 60 * time.Second
-	// MergeTimeout bounds one pdfunite run. Concatenation only rewrites the
-	// object tables, so it stays fast even over a long document.
+	// MergeTimeout bounds one concatenation. It copies page objects without
+	// re-rendering them, so it stays fast even over a long document.
 	MergeTimeout = 60 * time.Second
 )
 
-// pageSeparator is the form feed pdftotext writes after every page, which is how
-// a whole-file extraction is cut back into per-page text.
-const pageSeparator = "\f"
+var (
+	// ErrNotPDF is returned for a path that does not carry a .pdf extension.
+	ErrNotPDF = fmt.Errorf("pdftool: not a PDF file")
+	// ErrPasswordRequired is returned by every call on a PDF that needs a user
+	// password to open. One with only an owner password opens as any other.
+	ErrPasswordRequired = errors.New("pdftool: the PDF needs a password to open")
+	// ErrIncorrectPassword is returned by Decrypt for a password that does not
+	// open the file.
+	ErrIncorrectPassword = errors.New("pdftool: incorrect password")
+)
 
-// ErrNotPDF is returned for a path that does not carry a .pdf extension.
-var ErrNotPDF = fmt.Errorf("pdftool: not a PDF file")
+// workerArg is the argument a worker process is started with.
+const workerArg = "__lemmary_pdfium_worker"
 
-// ErrPasswordRequired is returned by every poppler call on a PDF that needs a
-// user password to open. One with only an owner password opens as any other.
-var ErrPasswordRequired = errors.New("pdftool: the PDF needs a password to open")
+var pool pdfium.Pool
 
-// lookPath resolves a poppler binary, reporting the package to install.
-func lookPath(binary string) (string, error) {
-	path, err := exec.LookPath(binary)
-	if err != nil {
-		return "", fmt.Errorf("pdftool: %s not found (install poppler-utils): %w", binary, err)
+// init turns this process into a PDFium worker when the pool started it as one,
+// and otherwise sets the pool up. Package init is the one place that runs in
+// every binary linking pdftool -- the server, its CLI commands and each test
+// binary -- before main or TestMain, which is what lets the pool re-execute
+// whichever of those is running without each one wiring a worker entry point.
+func init() {
+	// go-plugin sets BASIC_PLUGIN=hello (go-pdfium's handshake cookie) on the
+	// processes it starts; the argument alone could come from a user.
+	if len(os.Args) > 1 && os.Args[1] == workerArg && os.Getenv("BASIC_PLUGIN") == "hello" {
+		go exitWithParent(os.Getppid())
+		worker.StartWorker(nil)
+		os.Exit(0)
 	}
-	return path, nil
+
+	executable, err := os.Executable()
+	if err != nil {
+		executable = os.Args[0]
+	}
+	pool = withQuietStdout(func() pdfium.Pool {
+		return multi_threaded.Init(multi_threaded.Config{
+			MinIdle:  0,
+			MaxIdle:  0,
+			MaxTotal: max(1, min(4, runtime.GOMAXPROCS(0))),
+			Command: multi_threaded.Command{
+				BinPath:      executable,
+				Args:         []string{workerArg},
+				StartTimeout: InfoTimeout,
+			},
+		})
+	})
 }
 
-// run executes cmd and returns its standard output, folding standard error into
-// the error so a poppler message ("Syntax Error: ...") reaches the caller
-// instead of just an exit code.
-//
-// The two streams are kept apart on purpose: poppler prints warnings about
-// damaged files to standard error even on success, and counting those as
-// extracted page text is enough to make a scan look born-digital.
-func run(ctx context.Context, binary string, args ...string) ([]byte, error) {
-	path, err := lookPath(binary)
-	if err != nil {
-		return nil, err
-	}
-	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, path, args...)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if strings.Contains(stderr.String(), "Incorrect password") {
-			return stdout.Bytes(), fmt.Errorf("pdftool: %s: %w", binary, ErrPasswordRequired)
+// exitWithParent ends a worker whose parent is gone. go-plugin does not, and a
+// server killed mid-call would otherwise leave its worker running with
+// whatever document it held in memory.
+func exitWithParent(parent int) {
+	for range time.Tick(time.Second) {
+		if os.Getppid() != parent {
+			os.Exit(1)
 		}
-		return stdout.Bytes(), fmt.Errorf("pdftool: %s: %w: %s", binary, err, strings.TrimSpace(stderr.String()))
 	}
-	return stdout.Bytes(), nil
 }
 
-// RequirePDF rejects a path that is not a PDF before any binary is invoked.
+// withQuietStdout runs build with os.Stdout pointed at a pipe that forwards
+// only warnings and errors to slog.
+//
+// HACK: multi_threaded.Init creates a debug-level hclog logger on os.Stdout
+// with no option to change it, and it logs every worker start and exit -- a
+// few lines per PDF call with workers started per call. The logger keeps the
+// *os.File it was given, so swapping os.Stdout for the duration of Init
+// redirects it for good. Safe only because this runs during package init,
+// before main starts any goroutine that might print.
+func withQuietStdout(build func() pdfium.Pool) pdfium.Pool {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return build()
+	}
+	go forwardWorkerLog(reader)
+	stdout := os.Stdout
+	os.Stdout = writer
+	defer func() { os.Stdout = stdout }()
+	return build()
+}
+
+// forwardWorkerLog passes on warnings and errors, and whatever a worker itself
+// printed: go-plugin relays a worker's stderr under the logger name
+// "plugin.<binary>" at debug level, and that is where a worker that dies at
+// start says why. The lines a worker prints on every normal exit are not.
+func forwardWorkerLog(reader *os.File) {
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fromWorker := strings.Contains(line, "] plugin.") &&
+			!strings.Contains(line, "plugin address:") &&
+			!strings.Contains(line, "plugin server: accept") &&
+			!strings.Contains(line, "stream copy")
+		if fromWorker || strings.Contains(line, "[ERROR]") || strings.Contains(line, "[WARN]") {
+			slog.Default().Warn("pdfium worker", "component", "pdftool", "log", line)
+		}
+	}
+}
+
+// withInstance runs fn on a worker of its own and returns its error. When ctx
+// ends or timeout passes first, the worker is killed, which interrupts PDFium
+// mid-call, and the context error is returned.
+func withInstance(ctx context.Context, timeout time.Duration, fn func(pdfium.Pdfium) error) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	instance, err := pool.GetInstanceWithContext(ctx)
+	if err != nil {
+		return fmt.Errorf("pdftool: start pdfium worker: %w", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- fn(instance) }()
+	select {
+	case err := <-done:
+		instance.Close()
+		return err
+	case <-ctx.Done():
+		if err := instance.Kill(); err != nil {
+			slog.Default().Warn("pdfium worker did not stop cleanly", "component", "pdftool", "error", err)
+		}
+		<-done
+		return fmt.Errorf("pdftool: pdfium worker stopped: %w", ctx.Err())
+	}
+}
+
+// RequirePDF rejects a path that is not a PDF before a worker is started.
 func RequirePDF(pdfPath string) error {
 	if strings.ToLower(filepath.Ext(pdfPath)) != ".pdf" {
 		return ErrNotPDF
@@ -92,40 +180,99 @@ func RequirePDF(pdfPath string) error {
 	return nil
 }
 
-// PageCount reports how many pages pdfPath holds. A failure here also means the
-// file is not a PDF poppler can read, so callers use it as a validity check.
-func PageCount(ctx context.Context, pdfPath string) (int, error) {
-	ctx, cancel := context.WithTimeout(ctx, InfoTimeout)
-	defer cancel()
-
-	output, err := run(ctx, "pdfinfo", pdfPath)
+func openDocument(instance pdfium.Pdfium, pdfPath, password string) (references.FPDF_DOCUMENT, error) {
+	info, err := os.Stat(pdfPath)
 	if err != nil {
-		return 0, err
+		return "", fmt.Errorf("pdftool: %w", err)
 	}
-	for line := range strings.SplitSeq(string(output), "\n") {
-		rest, ok := strings.CutPrefix(line, "Pages:")
-		if !ok {
-			continue
-		}
-		count, convErr := strconv.Atoi(strings.TrimSpace(rest))
-		if convErr != nil {
-			return 0, fmt.Errorf("pdftool: unreadable page count %q: %w", strings.TrimSpace(rest), convErr)
-		}
-		if count <= 0 {
-			return 0, fmt.Errorf("pdftool: document reports %d pages", count)
-		}
-		return count, nil
+	if info.Size() == 0 {
+		return "", errors.New("pdftool: document is empty")
 	}
-	return 0, fmt.Errorf("pdftool: pdfinfo reported no page count")
+	request := &requests.OpenDocument{FilePath: &pdfPath}
+	if password != "" {
+		request.Password = &password
+	}
+	doc, err := instance.OpenDocument(request)
+	// The worker's errors arrive over gRPC as plain text, so errors.Is cannot
+	// recognize go-pdfium's ErrPassword; its message is the stable part.
+	if err != nil && err.Error() == pdfiumerrors.ErrPassword.Error() {
+		if password != "" {
+			return "", ErrIncorrectPassword
+		}
+		return "", ErrPasswordRequired
+	}
+	if err != nil {
+		return "", fmt.Errorf("pdftool: open %s: %w", filepath.Base(pdfPath), err)
+	}
+	return doc.Document, nil
+}
+
+// closeDocument releases a document handle. A failure is not worth reporting:
+// the worker exits at the end of the call and takes every handle with it.
+func closeDocument(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT) {
+	_, _ = instance.FPDF_CloseDocument(&requests.FPDF_CloseDocument{Document: doc})
+}
+
+// withDocument opens pdfPath on a worker and runs fn on it.
+func withDocument(ctx context.Context, timeout time.Duration, pdfPath string, fn func(pdfium.Pdfium, references.FPDF_DOCUMENT) error) error {
+	return withInstance(ctx, timeout, func(instance pdfium.Pdfium) error {
+		doc, err := openDocument(instance, pdfPath, "")
+		if err != nil {
+			return err
+		}
+		defer closeDocument(instance, doc)
+		return fn(instance, doc)
+	})
+}
+
+func countPages(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT) (int, error) {
+	result, err := instance.FPDF_GetPageCount(&requests.FPDF_GetPageCount{Document: doc})
+	if err != nil {
+		return 0, fmt.Errorf("pdftool: page count: %w", err)
+	}
+	if result.PageCount <= 0 {
+		return 0, fmt.Errorf("pdftool: document reports %d pages", result.PageCount)
+	}
+	return result.PageCount, nil
+}
+
+// PageCount reports how many pages pdfPath holds. A failure here also means the
+// file is not a PDF PDFium can read, so callers use it as a validity check.
+func PageCount(ctx context.Context, pdfPath string) (int, error) {
+	var count int
+	err := withDocument(ctx, InfoTimeout, pdfPath, func(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT) error {
+		var err error
+		count, err = countPages(instance, doc)
+		return err
+	})
+	return count, err
+}
+
+// renderPNG renders one page so its longest edge is maxEdge pixels. The worker
+// encodes and writes the PNG itself, so the bitmap never crosses into the
+// server. BestSpeed because a page image is read once, by a model or a browser:
+// encoding time, not file size, is what an OCR run of a long scan waits on.
+func renderPNG(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT, index, maxEdge int, outPath string) error {
+	_, err := instance.RenderToFile(&requests.RenderToFile{
+		RenderPageInPixels: &requests.RenderPageInPixels{
+			Page:        requests.Page{ByIndex: &requests.PageByIndex{Document: doc, Index: index}},
+			Width:       maxEdge,
+			Height:      maxEdge,
+			RenderFlags: enums.FPDF_RENDER_FLAG_ANNOT,
+		},
+		OutputFormat:        requests.RenderToFileOutputFormatPNG,
+		OutputTarget:        requests.RenderToFileOutputTargetFile,
+		TargetFilePath:      outPath,
+		PNGCompressionLevel: png.BestSpeed,
+	})
+	if err != nil {
+		return fmt.Errorf("pdftool: render page %d: %w", index+1, err)
+	}
+	return nil
 }
 
 // RenderPages renders every page of pdfPath into outDir as page-<n>.png, scaled
 // so the longest edge is maxEdge pixels, and returns the paths in page order.
-//
-// One pdftoppm call renders the whole file; invoking it per page would pay the
-// document parse cost again for every page. pdftoppm zero-pads the page suffix
-// to the width of the highest page number, so the outputs are read back in
-// sorted order and renamed to unpadded names callers can address by page number.
 func RenderPages(ctx context.Context, pdfPath, outDir string, maxEdge, pageCount int) ([]string, error) {
 	if err := RequirePDF(pdfPath); err != nil {
 		return nil, err
@@ -134,39 +281,29 @@ func RenderPages(ctx context.Context, pdfPath, outDir string, maxEdge, pageCount
 		return nil, fmt.Errorf("pdftool: prepare render dir: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, RenderTimeout)
-	defer cancel()
-
-	stagePrefix := filepath.Join(outDir, "raw")
-	if _, err := run(ctx, "pdftoppm",
-		"-png",
-		"-scale-to", strconv.Itoa(maxEdge),
-		pdfPath,
-		stagePrefix,
-	); err != nil {
-		return nil, err
-	}
-
-	rendered, err := filepath.Glob(stagePrefix + "-*.png")
+	paths := make([]string, 0, pageCount)
+	err := withDocument(ctx, RenderTimeout, pdfPath, func(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT) error {
+		count, err := countPages(instance, doc)
+		if err != nil {
+			return err
+		}
+		if count != pageCount {
+			return fmt.Errorf("pdftool: document has %d pages, expected %d", count, pageCount)
+		}
+		for i := range count {
+			path := PagePNGPath(outDir, i+1)
+			if err := renderPNG(instance, doc, i, maxEdge, path); err != nil {
+				return err
+			}
+			paths = append(paths, path)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("pdftool: list rendered pages: %w", err)
-	}
-	// Zero padding is uniform within one run, so a plain sort is page order.
-	sort.Strings(rendered)
-	if len(rendered) != pageCount {
-		for _, path := range rendered {
+		for _, path := range paths {
 			os.Remove(path)
 		}
-		return nil, fmt.Errorf("pdftool: rendered %d pages, expected %d", len(rendered), pageCount)
-	}
-
-	paths := make([]string, 0, len(rendered))
-	for i, src := range rendered {
-		dst := PagePNGPath(outDir, i+1)
-		if err := os.Rename(src, dst); err != nil {
-			return nil, fmt.Errorf("pdftool: name rendered page %d: %w", i+1, err)
-		}
-		paths = append(paths, dst)
+		return nil, err
 	}
 	return paths, nil
 }
@@ -180,28 +317,43 @@ func RenderPage(ctx context.Context, pdfPath, outPath string, maxEdge, page int)
 	if page < 1 {
 		return fmt.Errorf("pdftool: invalid page %d", page)
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, RenderTimeout)
-	defer cancel()
-
-	// -singlefile makes pdftoppm write exactly outPrefix+".png" with no page
-	// suffix, so the output path is known without listing the directory.
-	outPrefix := strings.TrimSuffix(outPath, ".png")
-	_, err := run(ctx, "pdftoppm",
-		"-png",
-		"-f", strconv.Itoa(page),
-		"-l", strconv.Itoa(page),
-		"-scale-to", strconv.Itoa(maxEdge),
-		"-singlefile",
-		pdfPath,
-		outPrefix,
-	)
-	return err
+	return withDocument(ctx, RenderTimeout, pdfPath, func(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT) error {
+		return renderPNG(instance, doc, page-1, maxEdge, outPath)
+	})
 }
 
 // PagePNGPath is where RenderPages puts the PNG for a 1-based page number.
 func PagePNGPath(outDir string, page int) string {
 	return filepath.Join(outDir, fmt.Sprintf("page-%d.png", page))
+}
+
+// pageText returns one page's text layer in content order, so a two-column page
+// reads column by column. It is "" for a scanned page.
+func pageText(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT, index int) (string, error) {
+	page, err := instance.FPDF_LoadPage(&requests.FPDF_LoadPage{Document: doc, Index: index})
+	if err != nil {
+		return "", fmt.Errorf("pdftool: load page %d: %w", index+1, err)
+	}
+	defer func() { _, _ = instance.FPDF_ClosePage(&requests.FPDF_ClosePage{Page: page.Page}) }()
+
+	textPage, err := instance.FPDFText_LoadPage(&requests.FPDFText_LoadPage{Page: requests.Page{ByReference: &page.Page}})
+	if err != nil {
+		return "", fmt.Errorf("pdftool: load text of page %d: %w", index+1, err)
+	}
+	defer func() { _, _ = instance.FPDFText_ClosePage(&requests.FPDFText_ClosePage{TextPage: textPage.TextPage}) }()
+
+	chars, err := instance.FPDFText_CountChars(&requests.FPDFText_CountChars{TextPage: textPage.TextPage})
+	if err != nil {
+		return "", fmt.Errorf("pdftool: count text of page %d: %w", index+1, err)
+	}
+	if chars.Count <= 0 {
+		return "", nil
+	}
+	text, err := instance.FPDFText_GetText(&requests.FPDFText_GetText{TextPage: textPage.TextPage, Count: chars.Count})
+	if err != nil {
+		return "", fmt.Errorf("pdftool: read text of page %d: %w", index+1, err)
+	}
+	return strings.TrimSpace(text.Text), nil
 }
 
 // PageText extracts the text layer of one page. It returns "" for a scanned
@@ -210,29 +362,23 @@ func PageText(ctx context.Context, pdfPath string, page int) (string, error) {
 	if err := RequirePDF(pdfPath); err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(ctx, TextTimeout)
-	defer cancel()
-
-	// -layout keeps columns readable, which matters when the text is fed to a
-	// model that has to recognize letterheads and totals.
-	output, err := run(ctx, "pdftotext",
-		"-f", strconv.Itoa(page),
-		"-l", strconv.Itoa(page),
-		"-layout",
-		pdfPath,
-		"-",
-	)
-	if err != nil {
-		return "", err
+	if page < 1 {
+		return "", fmt.Errorf("pdftool: invalid page %d", page)
 	}
-	return strings.TrimSpace(string(output)), nil
+	var text string
+	err := withDocument(ctx, TextTimeout, pdfPath, func(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT) error {
+		var err error
+		text, err = pageText(instance, doc, page-1)
+		return err
+	})
+	return text, err
 }
 
-// AllPagesText extracts the text layer of every page in one pdftotext run and
+// AllPagesText extracts the text layer of every page with one document open and
 // returns exactly pageCount entries, one per page in page order.
 //
-// One call rather than one per page: pdftotext re-parses the whole document
-// every time it starts, so a per-page loop pays that cost pageCount times.
+// A file with fewer pages than pageCount leaves the missing entries empty
+// rather than failing: callers index by page number.
 func AllPagesText(ctx context.Context, pdfPath string, pageCount int) ([]string, error) {
 	if err := RequirePDF(pdfPath); err != nil {
 		return nil, err
@@ -240,36 +386,29 @@ func AllPagesText(ctx context.Context, pdfPath string, pageCount int) ([]string,
 	if pageCount < 1 {
 		return nil, fmt.Errorf("pdftool: invalid page count %d", pageCount)
 	}
-	ctx, cancel := context.WithTimeout(ctx, AllTextTimeout)
-	defer cancel()
-
-	output, err := run(ctx, "pdftotext", "-layout", pdfPath, "-")
+	out := make([]string, pageCount)
+	err := withDocument(ctx, AllTextTimeout, pdfPath, func(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT) error {
+		count, err := countPages(instance, doc)
+		if err != nil {
+			return err
+		}
+		for i := range min(count, pageCount) {
+			if out[i], err = pageText(instance, doc, i); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	// The trailing separator after the last page would otherwise read as an
-	// extra empty page.
-	text := strings.TrimSuffix(string(output), pageSeparator)
-	pages := strings.Split(text, pageSeparator)
-
-	// A damaged file can yield fewer (or more) sections than it has pages, and
-	// callers index by page number, so the result is squared up either way
-	// instead of failing the whole extraction over a missing text layer.
-	out := make([]string, pageCount)
-	for i := range out {
-		if i < len(pages) {
-			out[i] = strings.TrimSpace(pages[i])
-		}
 	}
 	return out, nil
 }
 
 // ExtractRange writes pages from..to of pdfPath to outPath as a new PDF.
 //
-// pdfseparate copies the original page objects rather than re-rasterizing, so
-// the text layer and image quality survive; it only writes one page per file,
-// so a multi-page range is stitched back together with pdfunite.
+// The page objects are copied, not re-rasterized, so the text layer and image
+// quality survive.
 func ExtractRange(ctx context.Context, pdfPath string, from, to int, outPath string) error {
 	if err := RequirePDF(pdfPath); err != nil {
 		return err
@@ -277,43 +416,11 @@ func ExtractRange(ctx context.Context, pdfPath string, from, to int, outPath str
 	if from < 1 || to < from {
 		return fmt.Errorf("pdftool: invalid page range %d-%d", from, to)
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, ExtractTimeout)
-	defer cancel()
-
-	tmpDir, err := os.MkdirTemp("", "lemmary-pdfrange-*")
+	pageRange := fmt.Sprintf("%d-%d", from, to)
+	err := withInstance(ctx, ExtractTimeout, func(instance pdfium.Pdfium) error {
+		return writeNewDocument(instance, outPath, []pageSource{{path: pdfPath, pageRange: &pageRange}})
+	})
 	if err != nil {
-		return fmt.Errorf("pdftool: temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	if _, err := run(ctx, "pdfseparate",
-		"-f", strconv.Itoa(from),
-		"-l", strconv.Itoa(to),
-		pdfPath,
-		filepath.Join(tmpDir, "page-%d.pdf"),
-	); err != nil {
-		return err
-	}
-
-	pages, err := filepath.Glob(filepath.Join(tmpDir, "page-*.pdf"))
-	if err != nil {
-		return fmt.Errorf("pdftool: list extracted pages: %w", err)
-	}
-	if len(pages) == 0 {
-		return fmt.Errorf("pdftool: pdfseparate produced no pages for range %d-%d", from, to)
-	}
-	if len(pages) == 1 {
-		if err := movePDF(pages[0], outPath); err != nil {
-			return err
-		}
-		return canonicalizeFileID(ctx, outPath)
-	}
-
-	// pdfseparate names files by source page number, so sorting numerically
-	// keeps the parts in reading order before they are merged.
-	sortByPageNumber(pages)
-	if _, err := run(ctx, "pdfunite", append(pages, outPath)...); err != nil {
 		return err
 	}
 	return canonicalizeFileID(ctx, outPath)
@@ -321,9 +428,8 @@ func ExtractRange(ctx context.Context, pdfPath string, from, to int, outPath str
 
 // Merge concatenates inputs into a single PDF at outPath.
 //
-// outPath may name one of the inputs. pdfunite refuses to write over a file it
-// is reading, so the result goes to a temp file and is moved into place, which
-// also means a failed run leaves the old outPath untouched.
+// outPath may name one of the inputs: the result is written beside it and
+// moved into place, so a failed run also leaves the old outPath untouched.
 func Merge(ctx context.Context, outPath string, inputs ...string) error {
 	if len(inputs) < 2 {
 		return fmt.Errorf("pdftool: merge needs at least two inputs, got %d", len(inputs))
@@ -336,61 +442,76 @@ func Merge(ctx context.Context, outPath string, inputs ...string) error {
 	if err := RequirePDF(outPath); err != nil {
 		return err
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, MergeTimeout)
-	defer cancel()
-
-	tmpDir, err := os.MkdirTemp("", "lemmary-pdfmerge-*")
+	sources := make([]pageSource, len(inputs))
+	for i, input := range inputs {
+		sources[i] = pageSource{path: input}
+	}
+	err := withInstance(ctx, MergeTimeout, func(instance pdfium.Pdfium) error {
+		return writeNewDocument(instance, outPath, sources)
+	})
 	if err != nil {
-		return fmt.Errorf("pdftool: temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	merged := filepath.Join(tmpDir, "merged.pdf")
-	if _, err := run(ctx, "pdfunite", append(append([]string{}, inputs...), merged)...); err != nil {
 		return err
 	}
-	if err := movePDF(merged, outPath); err != nil {
-		return err
-	}
-	// pdfunite stamps a fresh random trailer /ID, which would give the same
-	// pages a different checksum every run; see canonicalizeFileID.
 	return canonicalizeFileID(ctx, outPath)
 }
 
-// movePDF relocates src to dst, falling back to a copy across filesystems
-// (the temp dir and the data dir are not always on the same device).
-func movePDF(src, dst string) error {
-	if err := os.Rename(src, dst); err == nil {
-		return nil
-	}
-	data, err := os.ReadFile(src)
+// pageSource is a file and the pages to take from it; a nil pageRange takes
+// them all.
+type pageSource struct {
+	path      string
+	pageRange *string
+}
+
+// writeNewDocument builds a new document from sources in order and saves it to
+// outPath through a temporary file next to it.
+func writeNewDocument(instance pdfium.Pdfium, outPath string, sources []pageSource) error {
+	created, err := instance.FPDF_CreateNewDocument(&requests.FPDF_CreateNewDocument{})
 	if err != nil {
-		return fmt.Errorf("pdftool: read extracted page: %w", err)
+		return fmt.Errorf("pdftool: new document: %w", err)
 	}
-	if err := os.WriteFile(dst, data, 0o600); err != nil {
-		return fmt.Errorf("pdftool: write extracted page: %w", err)
+	defer closeDocument(instance, created.Document)
+
+	next := 0
+	for _, source := range sources {
+		doc, err := openDocument(instance, source.path, "")
+		if err != nil {
+			return err
+		}
+		_, err = instance.FPDF_ImportPages(&requests.FPDF_ImportPages{
+			Source:      doc,
+			Destination: created.Document,
+			PageRange:   source.pageRange,
+			Index:       next,
+		})
+		closeDocument(instance, doc)
+		if err != nil {
+			return fmt.Errorf("pdftool: copy pages from %s: %w", filepath.Base(source.path), err)
+		}
+		count, err := countPages(instance, created.Document)
+		if err != nil {
+			return err
+		}
+		next = count
+	}
+
+	return saveAs(instance, created.Document, outPath, requests.SaveFlagNoIncremental)
+}
+
+// saveAs writes doc to outPath through a temporary file next to it, so a
+// failed save leaves whatever was at outPath untouched.
+func saveAs(instance pdfium.Pdfium, doc references.FPDF_DOCUMENT, outPath string, flags requests.SaveFlags) error {
+	tmpPath := outPath + ".tmp"
+	if _, err := instance.FPDF_SaveAsCopy(&requests.FPDF_SaveAsCopy{
+		Document: doc,
+		FilePath: &tmpPath,
+		Flags:    flags,
+	}); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("pdftool: save: %w", err)
+	}
+	if err := os.Rename(tmpPath, outPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("pdftool: move saved document: %w", err)
 	}
 	return nil
-}
-
-// sortByPageNumber orders page-<n>.pdf paths by n, so page-10 follows page-9
-// instead of page-1 as a lexical sort would have it.
-func sortByPageNumber(paths []string) {
-	sort.Slice(paths, func(i, j int) bool {
-		return pageNumberOf(paths[i]) < pageNumberOf(paths[j])
-	})
-}
-
-func pageNumberOf(path string) int {
-	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	_, digits, ok := strings.Cut(name, "-")
-	if !ok {
-		return 0
-	}
-	n, err := strconv.Atoi(digits)
-	if err != nil {
-		return 0
-	}
-	return n
 }

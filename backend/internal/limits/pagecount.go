@@ -21,7 +21,7 @@ const SinglePage int64 = 1
 // the PDF it is, so every page limit would fall to `mv`.
 //
 // Only an upload that passes the header is spooled to a temp file, which
-// pdfinfo needs because it takes a path. A PDF whose page count cannot be read
+// PDFium is handed by path. A PDF whose page count cannot be read
 // counts as SinglePage with a warning: refusing to store it would turn a bad
 // limit interaction into data loss, and an unreadable PDF is the pipeline's to
 // report against the stored document.

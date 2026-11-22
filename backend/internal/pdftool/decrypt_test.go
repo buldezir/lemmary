@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,9 +12,18 @@ import (
 	"lemmary/backend/internal/pdftool/testpdf"
 )
 
+// requireQPDF skips a test that needs an encrypted fixture: qpdf builds them
+// (testpdf.Encrypt), since PDFium cannot encrypt.
+func requireQPDF(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("qpdf"); err != nil {
+		t.Skip("qpdf not installed")
+	}
+}
+
 func writeEncryptedPDF(t *testing.T, pageCount int, userPassword, ownerPassword string) string {
 	t.Helper()
-	requirePoppler(t, "qpdf")
+	requireQPDF(t)
 	data, err := testpdf.Encrypt(testpdf.Multipage(pageCount), userPassword, ownerPassword)
 	if err != nil {
 		t.Fatal(err)
@@ -25,8 +35,7 @@ func writeEncryptedPDF(t *testing.T, pageCount int, userPassword, ownerPassword 
 	return path
 }
 
-func TestPopplerReportsAPasswordRequired(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdftoppm")
+func TestPasswordRequiredIsReported(t *testing.T) {
 	path := writeEncryptedPDF(t, 3, "secret", "secret")
 
 	if _, err := PageCount(context.Background(), path); !errors.Is(err, ErrPasswordRequired) {
@@ -39,7 +48,6 @@ func TestPopplerReportsAPasswordRequired(t *testing.T) {
 }
 
 func TestOwnerPasswordOnlyOpensWithoutPrompt(t *testing.T) {
-	requirePoppler(t, "pdfinfo")
 	count, err := PageCount(context.Background(), writeEncryptedPDF(t, 2, "", "owner"))
 	if err != nil || count != 2 {
 		t.Fatalf("PageCount = %d, %v; want 2 pages", count, err)
@@ -47,7 +55,6 @@ func TestOwnerPasswordOnlyOpensWithoutPrompt(t *testing.T) {
 }
 
 func TestDecrypt(t *testing.T) {
-	requirePoppler(t, "pdfinfo")
 	for _, password := range []string{"secret", "pässwörd"} {
 		t.Run(password, func(t *testing.T) {
 			path := writeEncryptedPDF(t, 4, password, password)
@@ -65,13 +72,18 @@ func TestDecrypt(t *testing.T) {
 			if err != nil || count != 4 {
 				t.Fatalf("decrypted PageCount = %d, %v; want 4", count, err)
 			}
+			// The text layer survives: the objects are written back, not
+			// re-rendered.
+			text, err := PageText(context.Background(), out, 3)
+			if err != nil || !strings.Contains(text, "Page 3") {
+				t.Fatalf("decrypted page 3 text = %q, %v", text, err)
+			}
 		})
 	}
 }
 
 func TestDecryptErrorNeverCarriesThePassword(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "broken.pdf")
-	requirePoppler(t, "qpdf")
 	if err := os.WriteFile(path, []byte("not a pdf"), 0o600); err != nil {
 		t.Fatal(err)
 	}

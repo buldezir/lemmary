@@ -68,7 +68,7 @@ func liveScan(t *testing.T) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := pdftool.RenderPage(ctx, pdfPath, pngPath, 2000, 1); err != nil {
-		t.Skipf("cannot rasterize a test scan (poppler missing?): %v", err)
+		t.Skipf("cannot rasterize a test scan: %v", err)
 	}
 	return pngPath
 }

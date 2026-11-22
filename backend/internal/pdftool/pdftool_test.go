@@ -2,26 +2,16 @@ package pdftool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"lemmary/backend/internal/pdftool/testpdf"
 )
-
-// requirePoppler skips when the poppler binaries a test needs are absent, the
-// same guard the preview package uses.
-func requirePoppler(t *testing.T, binaries ...string) {
-	t.Helper()
-	for _, binary := range binaries {
-		if _, err := exec.LookPath(binary); err != nil {
-			t.Skipf("%s not installed", binary)
-		}
-	}
-}
 
 // writePDF puts a generated pageCount-page PDF in a temp dir and returns its path.
 func writePDF(t *testing.T, pageCount int, extraLines ...string) string {
@@ -45,8 +35,6 @@ func TestRequirePDFRejectsOtherExtensions(t *testing.T) {
 }
 
 func TestPageCount(t *testing.T) {
-	requirePoppler(t, "pdfinfo")
-
 	count, err := PageCount(context.Background(), writePDF(t, 7))
 	if err != nil {
 		t.Fatalf("PageCount() error: %v", err)
@@ -57,8 +45,6 @@ func TestPageCount(t *testing.T) {
 }
 
 func TestPageCountRejectsNonPDFContent(t *testing.T) {
-	requirePoppler(t, "pdfinfo")
-
 	path := filepath.Join(t.TempDir(), "notes.pdf")
 	if err := os.WriteFile(path, []byte("this is not a pdf"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
@@ -69,10 +55,8 @@ func TestPageCountRejectsNonPDFContent(t *testing.T) {
 }
 
 func TestRenderPagesNamesEveryPageWithoutPadding(t *testing.T) {
-	requirePoppler(t, "pdftoppm")
-
-	// 12 pages makes pdftoppm zero-pad its own output (raw-01.png), which is
-	// exactly the case the renaming exists for.
+	// 12 pages crosses into two digits, where a padded name (page-01.png)
+	// would no longer match PagePNGPath.
 	source := writePDF(t, 12)
 	outDir := filepath.Join(t.TempDir(), "thumbs")
 
@@ -96,16 +80,9 @@ func TestRenderPagesNamesEveryPageWithoutPadding(t *testing.T) {
 			t.Fatalf("page %d is not a PNG", page)
 		}
 	}
-	// No padded staging files may be left behind for the sweeper to trip over.
-	leftovers, _ := filepath.Glob(filepath.Join(outDir, "raw-*.png"))
-	if len(leftovers) != 0 {
-		t.Fatalf("staging files left behind: %v", leftovers)
-	}
 }
 
 func TestRenderPagesRejectsUnexpectedPageCount(t *testing.T) {
-	requirePoppler(t, "pdftoppm")
-
 	source := writePDF(t, 3)
 	outDir := filepath.Join(t.TempDir(), "thumbs")
 
@@ -115,8 +92,6 @@ func TestRenderPagesRejectsUnexpectedPageCount(t *testing.T) {
 }
 
 func TestRenderPage(t *testing.T) {
-	requirePoppler(t, "pdftoppm")
-
 	outPath := filepath.Join(t.TempDir(), "preview.png")
 	if err := RenderPage(context.Background(), writePDF(t, 4), outPath, 200, 3); err != nil {
 		t.Fatalf("RenderPage() error: %v", err)
@@ -131,8 +106,6 @@ func TestRenderPage(t *testing.T) {
 }
 
 func TestPageText(t *testing.T) {
-	requirePoppler(t, "pdftotext")
-
 	source := writePDF(t, 5, "Invoice INV-1001")
 	text, err := PageText(context.Background(), source, 4)
 	if err != nil {
@@ -150,8 +123,6 @@ func TestPageText(t *testing.T) {
 }
 
 func TestExtractRangeSinglePage(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdfseparate")
-
 	source := writePDF(t, 6)
 	outPath := filepath.Join(t.TempDir(), "part.pdf")
 	if err := ExtractRange(context.Background(), source, 2, 2, outPath); err != nil {
@@ -168,10 +139,8 @@ func TestExtractRangeSinglePage(t *testing.T) {
 }
 
 func TestExtractRangeKeepsPageOrder(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdfseparate", "pdfunite", "pdftotext")
-
-	// 8..11 crosses the single/double digit boundary, so a lexical sort of the
-	// pdfseparate output would put page 11 before page 8.
+	// 8..11 crosses the single/double digit boundary, where a lexical order
+	// would put page 11 before page 8.
 	source := writePDF(t, 12)
 	outPath := filepath.Join(t.TempDir(), "part.pdf")
 	if err := ExtractRange(context.Background(), source, 8, 11, outPath); err != nil {
@@ -208,42 +177,7 @@ func TestExtractRangeRejectsInvalidRange(t *testing.T) {
 	}
 }
 
-func TestRunKeepsStandardErrorOutOfTheOutput(t *testing.T) {
-	t.Parallel()
-
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("sh not available")
-	}
-	// poppler prints warnings about damaged files to stderr even when it
-	// succeeds, and counting those as output is enough to make a scan look
-	// born-digital, so the two streams must stay apart.
-	output, err := run(context.Background(), "sh", "-c", "echo page text; echo 'Internal Error: xref num 1 not found' >&2")
-	if err != nil {
-		t.Fatalf("run() error: %v", err)
-	}
-	if got := strings.TrimSpace(string(output)); got != "page text" {
-		t.Fatalf("output=%q want %q", got, "page text")
-	}
-}
-
-func TestRunReportsStandardErrorInTheError(t *testing.T) {
-	t.Parallel()
-
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("sh not available")
-	}
-	_, err := run(context.Background(), "sh", "-c", "echo 'Syntax Error: broken' >&2; exit 1")
-	if err == nil {
-		t.Fatal("expected an error for a failing command")
-	}
-	if !strings.Contains(err.Error(), "Syntax Error: broken") {
-		t.Fatalf("error %q does not carry the poppler message", err)
-	}
-}
-
 func TestAllPagesTextSplitsOnThePageSeparator(t *testing.T) {
-	requirePoppler(t, "pdftotext")
-
 	source := writePDF(t, 12, "Invoice INV-1001")
 	pages, err := AllPagesText(context.Background(), source, 12)
 	if err != nil {
@@ -266,8 +200,6 @@ func TestAllPagesTextSplitsOnThePageSeparator(t *testing.T) {
 }
 
 func TestAllPagesTextSquaresUpADisagreeingPageCount(t *testing.T) {
-	requirePoppler(t, "pdftotext")
-
 	// Callers index the result by page number, so a file whose text sections do
 	// not match its page count must still return one entry per page.
 	source := writePDF(t, 3)
@@ -280,5 +212,33 @@ func TestAllPagesTextSquaresUpADisagreeingPageCount(t *testing.T) {
 	}
 	if pages[4] != "" {
 		t.Fatalf("missing page text=%q want empty", pages[4])
+	}
+}
+
+// A call cut short has its worker killed mid-render, and the next call gets a
+// fresh one.
+func TestCancelKillsTheWorkerMidCall(t *testing.T) {
+	source := writePDF(t, 200)
+	outDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for {
+			if _, err := os.Stat(PagePNGPath(outDir, 1)); err == nil {
+				cancel()
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	_, err := RenderPages(ctx, source, outDir, 3000, 200)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RenderPages() error = %v, want context.Canceled", err)
+	}
+	if _, err := os.Stat(PagePNGPath(outDir, 200)); err == nil {
+		t.Fatal("the render ran to the end despite the cancel")
+	}
+	if count, err := PageCount(context.Background(), writePDF(t, 2)); err != nil || count != 2 {
+		t.Fatalf("PageCount() after a kill = %d, %v", count, err)
 	}
 }

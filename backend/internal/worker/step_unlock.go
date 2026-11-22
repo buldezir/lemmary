@@ -18,7 +18,8 @@ func (s *UnlockStep) ShouldSkip(state *StepState) (bool, error) {
 	return state.MimeType != "application/pdf", nil
 }
 
-// Any other pdfinfo failure is left for preview to report, as before this step.
+// Any other failure to open the file is left for preview to report, as before
+// this step.
 func (s *UnlockStep) Run(ctx context.Context, state *StepState) error {
 	if err := ensureTempFile(state); err != nil {
 		return err

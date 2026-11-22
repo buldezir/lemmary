@@ -2,22 +2,12 @@ package escl
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"lemmary/backend/internal/pdftool/testpdf"
 )
-
-func requirePoppler(t *testing.T, binaries ...string) {
-	t.Helper()
-	for _, binary := range binaries {
-		if _, err := exec.LookPath(binary); err != nil {
-			t.Skipf("%s not installed", binary)
-		}
-	}
-}
 
 // resetStaging isolates the package-level registry between tests.
 func resetStaging(t *testing.T) {
@@ -46,8 +36,6 @@ func stageFile(t *testing.T, owner string, pageCount int) *stagedScan {
 
 // The first scan writes the staged document; every later one appends to it.
 func TestMergeStartsTheDocumentThenAppendsToIt(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdfunite")
-
 	dir := t.TempDir()
 	stagedPath := filepath.Join(dir, "scan.pdf")
 	if err := os.WriteFile(stagedPath, nil, 0o600); err != nil {

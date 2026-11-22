@@ -100,8 +100,6 @@ func TestCanonicalizeTrailerIDIgnoresBracketsInsideStrings(t *testing.T) {
 }
 
 func TestExtractRangeIsByteStableAcrossRuns(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdfseparate", "pdfunite")
-
 	source := writePDF(t, 6)
 	dir := t.TempDir()
 
@@ -132,8 +130,6 @@ func TestExtractRangeIsByteStableAcrossRuns(t *testing.T) {
 }
 
 func TestExtractRangeOutputStaysReadable(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdfseparate", "pdfunite", "pdftotext")
-
 	source := writePDF(t, 5, "Invoice INV-1001")
 	outPath := filepath.Join(t.TempDir(), "part.pdf")
 	if err := ExtractRange(context.Background(), source, 2, 3, outPath); err != nil {
@@ -150,5 +146,27 @@ func TestExtractRangeOutputStaysReadable(t *testing.T) {
 	}
 	if !strings.Contains(text, "Page 2") || !strings.Contains(text, "Invoice INV-1001") {
 		t.Fatalf("text layer damaged: %q", text)
+	}
+}
+
+func TestCanonicalizeCreationDateKeepsTheLength(t *testing.T) {
+	t.Parallel()
+
+	original := []byte("<< /Producer (PDFium) /CreationDate (D:20261122193700+00'00') >>")
+	out, changed := canonicalizeCreationDate(original)
+	if !changed {
+		t.Fatal("expected the date to be rewritten")
+	}
+	if len(out) != len(original) {
+		t.Fatalf("length changed from %d to %d", len(original), len(out))
+	}
+	if !bytes.Contains(out, []byte("/CreationDate (D:19700101000000+00'00')")) {
+		t.Fatalf("date not pinned: %q", out)
+	}
+	if !bytes.Contains(original, []byte("D:20261122193700")) {
+		t.Fatal("the input slice was modified")
+	}
+	if _, again := canonicalizeCreationDate(out); again {
+		t.Fatal("a pinned date must not be rewritten again")
 	}
 }

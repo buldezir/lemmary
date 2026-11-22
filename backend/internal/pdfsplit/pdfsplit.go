@@ -55,7 +55,7 @@ func maxPDFBytesFromEnv() int64 {
 var maxPartBytes = DefaultMaxPartBytes
 
 var (
-	// ErrNotPDF is returned when the upload is not a PDF poppler can read.
+	// ErrNotPDF is returned when the upload is not a PDF PDFium can read.
 	ErrNotPDF = errors.New("the upload is not a readable PDF")
 	// ErrPDFTooLarge is returned when the upload exceeds MaxPDFBytes. The limit
 	// is not in the message: MaxPDFBytes is read from the environment at start,

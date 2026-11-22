@@ -13,8 +13,8 @@ import (
 
 const (
 	// MaxEdge is the longest edge of generated preview images in pixels.
-	MaxEdge         = 400
-	pdftoppmTimeout = 30 * time.Second
+	MaxEdge       = 400
+	renderTimeout = 30 * time.Second
 )
 
 func GenerateFirstPagePNG(ctx context.Context, pdfPath string) (*filesystem.File, error) {
@@ -29,7 +29,7 @@ func GenerateFirstPagePNG(ctx context.Context, pdfPath string) (*filesystem.File
 	defer os.RemoveAll(tmpDir)
 
 	previewPath := filepath.Join(tmpDir, "preview.png")
-	ctx, cancel := context.WithTimeout(ctx, pdftoppmTimeout)
+	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
 	defer cancel()
 
 	if err := pdftool.RenderPage(ctx, pdfPath, previewPath, MaxEdge, 1); err != nil {

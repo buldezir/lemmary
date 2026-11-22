@@ -121,7 +121,7 @@ func TestRunDetectNormalizesASloppyProposal(t *testing.T) {
 }
 
 func TestRunDetectFallsBackToOCRForAScan(t *testing.T) {
-	// A PDF with no text layer at all is what a scan looks like to pdftotext.
+	// A PDF with no text layer at all is what a scan looks like to PDFium.
 	blankSource := blankTextPDF(t, 3)
 
 	splitter := &stubSplitter{suggestion: &models.SplitSuggestion{
@@ -208,7 +208,7 @@ func TestDetectRequiresASplitter(t *testing.T) {
 }
 
 // blankTextPDF writes a PDF whose pages carry no text at all, which is what a
-// scan looks like to pdftotext.
+// scan looks like to PDFium.
 func blankTextPDF(t *testing.T, pageCount int) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), sourceFileName)

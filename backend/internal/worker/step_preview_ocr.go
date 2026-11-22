@@ -107,8 +107,8 @@ func (s *OCRStep) Run(ctx context.Context, state *StepState) error {
 
 // The last thing between a provider's answer and the ocr_text column. The page
 // ceiling in internal/limits normally keeps a document under it, but that falls
-// back to one page whenever pdfinfo cannot read the file, so on a host without
-// poppler nothing upstream bounds this at all.
+// back to one page whenever PDFium cannot read the file, so for such a file
+// nothing upstream bounds this at all.
 //
 // Refused rather than shortened: half a document's text reads as the whole of
 // it in search, duplicate detection and the extraction prompt alike.
