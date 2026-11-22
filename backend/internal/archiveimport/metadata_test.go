@@ -1,6 +1,7 @@
 package archiveimport
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -16,6 +17,7 @@ func testDocumentsCollection() *core.Collection {
 		&core.TextField{Name: "summary"},
 		&core.TextField{Name: "metadata_source"},
 		&core.TextField{Name: "text_fingerprint"},
+		&core.TextField{Name: "original_checksum"},
 		&core.TextField{Name: "processing_status"},
 		&core.TextField{Name: "document_date"},
 		&core.NumberField{Name: "confidence"},
@@ -64,6 +66,7 @@ func TestApplyMetadataRestoresFields(t *testing.T) {
 		"summary":                 "A summary",
 		"metadata_source":         "ai",
 		"text_fingerprint":        "deadbeefdeadbeef",
+		"original_checksum":       strings.Repeat("ab", 32),
 		"document_date":           "15.03.2026",
 		"processing_status":       models.DocStatusCompleted,
 		"confidence":              0.75,
@@ -77,7 +80,8 @@ func TestApplyMetadataRestoresFields(t *testing.T) {
 	if record.GetString("title") != "Invoice 42" {
 		t.Fatalf("title=%q", record.GetString("title"))
 	}
-	if record.GetString("summary") != "A summary" || record.GetString("text_fingerprint") != "deadbeefdeadbeef" {
+	if record.GetString("summary") != "A summary" || record.GetString("text_fingerprint") != "deadbeefdeadbeef" ||
+		record.GetString("original_checksum") != strings.Repeat("ab", 32) {
 		t.Fatalf("record=%#v", record.PublicExport())
 	}
 	// A day-first date from another instance is normalized to the stored form.

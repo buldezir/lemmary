@@ -4,11 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/klippa-app/go-pdfium"
 	"github.com/klippa-app/go-pdfium/requests"
 )
 
-// DecryptTimeout bounds one decryption, which rewrites the whole file.
 const DecryptTimeout = 2 * time.Minute
 
 // Decrypt writes pdfPath to outPath without its encryption. The objects are
@@ -21,7 +19,7 @@ func Decrypt(ctx context.Context, pdfPath, outPath, password string) error {
 	if err := RequirePDF(pdfPath); err != nil {
 		return err
 	}
-	err := withInstance(ctx, DecryptTimeout, func(instance pdfium.Pdfium) error {
+	err := withInstance(ctx, DecryptTimeout, func(instance pdfiumCalls) error {
 		doc, err := openDocument(instance, pdfPath, password)
 		if err != nil {
 			return err

@@ -8,14 +8,12 @@ const (
 	JobStatusCancelled   = "cancelled"
 	JobStatusNeedsReview = "needs_review"
 
-	DocStatusPending     = "pending"
-	DocStatusProcessing  = "processing"
-	DocStatusCompleted   = "completed"
-	DocStatusFailed      = "failed"
-	DocStatusCancelled   = "cancelled"
-	DocStatusNeedsReview = "needs_review"
-	// DocStatusPasswordRequired is a PDF that needs its user password to open.
-	// It waits here until its owner unlocks it.
+	DocStatusPending          = "pending"
+	DocStatusProcessing       = "processing"
+	DocStatusCompleted        = "completed"
+	DocStatusFailed           = "failed"
+	DocStatusCancelled        = "cancelled"
+	DocStatusNeedsReview      = "needs_review"
 	DocStatusPasswordRequired = "password_required"
 
 	MetadataSourceUser = "user"

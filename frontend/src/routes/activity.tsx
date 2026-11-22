@@ -50,9 +50,9 @@ export function ActivityPage() {
       Promise.all([
         listActiveJobs(),
         countFailedDocuments(),
-        // The queue is worth showing without it.
+        // The queue is worth showing without either.
         getQueueHold().catch(() => null),
-        listPasswordRequiredDocuments(),
+        listPasswordRequiredDocuments().catch(() => []),
       ]),
     [],
   )

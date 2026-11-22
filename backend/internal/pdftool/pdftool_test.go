@@ -1,6 +1,7 @@
 package pdftool
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -281,5 +282,23 @@ func TestPageTextReadsTwoColumnsOneAfterTheOther(t *testing.T) {
 			t.Fatalf("%q missing or out of column order in %q", line, text)
 		}
 		last = at
+	}
+}
+
+// One page PDFium cannot load leaves its entry empty instead of failing the
+// whole document: split detection still gets the other pages.
+func TestAllPagesTextSkipsAPageThatDoesNotLoad(t *testing.T) {
+	// The second kid points at the font object, which is not a page.
+	data := bytes.Replace(testpdf.Multipage(3), []byte("/Kids [4 0 R 6 0 R 8 0 R]"), []byte("/Kids [4 0 R 3 0 R 8 0 R]"), 1)
+	path := filepath.Join(t.TempDir(), "broken-page.pdf")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pages, err := AllPagesText(context.Background(), path, 3)
+	if err != nil {
+		t.Fatalf("AllPagesText() error: %v", err)
+	}
+	if !strings.Contains(pages[0], "Page 1") || pages[1] != "" || !strings.Contains(pages[2], "Page 3") {
+		t.Fatalf("pages = %q, want page 2 empty and the others read", pages)
 	}
 }

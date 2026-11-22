@@ -33,8 +33,13 @@ func Unlock(ctx context.Context, app core.App, document *core.Record, password s
 	if document.GetString("processing_status") != models.DocStatusPasswordRequired {
 		return ErrNotLocked
 	}
+	lockedName := document.GetString("file")
 	lockedPath, _, cleanup, err := readDocumentToTempFile(app, document)
 	if err != nil {
+		// A concurrent unlock may have replaced the file already.
+		if stillLocked(app, document.Id, lockedName) != nil {
+			return ErrNotLocked
+		}
 		return err
 	}
 	defer cleanup()
@@ -71,6 +76,12 @@ func Unlock(ctx context.Context, app core.App, document *core.Record, password s
 		return err
 	}
 	return app.RunInTransaction(func(txApp core.App) error {
+		// Checked again where the save is serialized: a second unlock of the
+		// same document, or a job claimed meanwhile, has to lose here rather
+		// than queue a second pipeline or swap the file under a running one.
+		if err := stillLocked(txApp, document.Id, lockedName); err != nil {
+			return err
+		}
 		document.Set("processing_status", models.DocStatusPending)
 		if err := duplicates.NormalizeSaveError(txApp, document, txApp.Save(document)); err != nil {
 			return err
@@ -79,4 +90,15 @@ func Unlock(ctx context.Context, app core.App, document *core.Record, password s
 		_, err := createProcessingJob(txApp, document.Id, steps, nil, config.Overrides{})
 		return err
 	})
+}
+
+func stillLocked(app core.App, documentID, lockedName string) error {
+	current, err := app.FindRecordById("documents", documentID)
+	if err != nil {
+		return err
+	}
+	if current.GetString("processing_status") != models.DocStatusPasswordRequired || current.GetString("file") != lockedName {
+		return ErrNotLocked
+	}
+	return nil
 }

@@ -218,8 +218,14 @@ func TestUnlock(t *testing.T) {
 		t.Fatalf("a wrong password changed the document: file %q, status %q", document.GetString("file"), document.GetString("processing_status"))
 	}
 
+	stale := document.Fresh()
 	if err := Unlock(context.Background(), app, document, "pässwörd"); err != nil {
 		t.Fatalf("Unlock: %v", err)
+	}
+	// A second request that loaded the document before the first one saved
+	// (a double submit, a second tab) must not unlock it again.
+	if err := Unlock(context.Background(), app, stale, "pässwörd"); !errors.Is(err, ErrNotLocked) {
+		t.Fatalf("second Unlock with a stale record: %v, want ErrNotLocked", err)
 	}
 	document, err = app.FindRecordById("documents", documentID)
 	if err != nil {
