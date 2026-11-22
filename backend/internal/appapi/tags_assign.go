@@ -17,7 +17,6 @@ import (
 	"lemmary/backend/internal/inflight"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/strutil"
-	"lemmary/backend/internal/worker"
 )
 
 const (
@@ -136,7 +135,7 @@ func loadTagVocabulary(app core.App, ownerID string, tagIDs []string) (names, id
 			return nil, nil, nil, fmt.Errorf("tag %s belongs to another account", id)
 		}
 		name := strings.TrimSpace(record.GetString("name"))
-		key := worker.NormalizeTagKey(name)
+		key := models.NameKey(name)
 		if name == "" || key == "" {
 			continue
 		}
@@ -178,7 +177,7 @@ func resolveAssignedTags(answer string, byKey map[string]string) []string {
 	var ids []string
 	seen := map[string]struct{}{}
 	for raw := range strings.SplitSeq(answer, ",") {
-		id, ok := byKey[worker.NormalizeTagKey(raw)]
+		id, ok := byKey[models.NameKey(raw)]
 		if !ok {
 			continue
 		}

@@ -134,6 +134,15 @@ func FromRecord(record *core.Record) (Rule, error) {
 	return rule, nil
 }
 
+// OptionInUse reports whether one of the user's rules reads or sets the option.
+func OptionInUse(app core.App, userID, optionID string) (bool, error) {
+	var n int
+	err := app.DB().NewQuery(`SELECT COUNT(*) FROM ` + Collection + ` WHERE user = {:user}
+		AND (instr(conditions, {:id}) > 0 OR instr(actions, {:id}) > 0)`).
+		Bind(dbx.Params{"user": userID, "id": optionID}).Row(&n)
+	return n > 0, err
+}
+
 // ponytail: global rules name options and are left alone, so one naming the
 // merged-away spelling adds it back the next time it runs; resolve such names
 // against past merges if that turns up in practice.

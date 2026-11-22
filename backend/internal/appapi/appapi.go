@@ -22,6 +22,18 @@ import (
 	"lemmary/backend/internal/zipimport"
 )
 
+func registerRecordHooks(app core.App) {
+	app.OnRecordUpdate("documents").BindFunc(clearStaleTranslation)
+	app.OnRecordUpdate("documents").BindFunc(duplicates.RefreshFingerprint)
+	app.OnRecordUpdateRequest("documents").BindFunc(runRulesAfterEdit)
+	app.OnRecordUpdateRequest("documents").BindFunc(saveFieldsWithDocument)
+	app.OnRecordCreateRequest(rules.Collection).BindFunc(validateRule)
+	app.OnRecordUpdateRequest(rules.Collection).BindFunc(validateRule)
+	app.OnRecordCreateRequest(models.CustomFieldsCollection).BindFunc(saveChoicesWithField)
+	app.OnRecordUpdateRequest(models.CustomFieldsCollection).BindFunc(saveChoicesWithField)
+	app.OnRecordDeleteRequest(models.CustomFieldOptionsCollection).BindFunc(refuseOptionInRules)
+}
+
 // sweeper must be the same instance the worker's cron uses, which is what stops
 // a click and a tick from embedding the same documents twice.
 func Register(
@@ -39,14 +51,7 @@ func Register(
 	feedbackURL string,
 ) {
 	RegisterAppName(app)
-	app.OnRecordUpdate("documents").BindFunc(clearStaleTranslation)
-	app.OnRecordUpdate("documents").BindFunc(duplicates.RefreshFingerprint)
-	app.OnRecordUpdateRequest("documents").BindFunc(runRulesAfterEdit)
-	app.OnRecordUpdateRequest("documents").BindFunc(saveFieldsWithDocument)
-	app.OnRecordCreateRequest(rules.Collection).BindFunc(validateRule)
-	app.OnRecordUpdateRequest(rules.Collection).BindFunc(validateRule)
-	app.OnRecordCreateRequest(models.CustomFieldsCollection).BindFunc(saveChoicesWithField)
-	app.OnRecordUpdateRequest(models.CustomFieldsCollection).BindFunc(saveChoicesWithField)
+	registerRecordHooks(app)
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {

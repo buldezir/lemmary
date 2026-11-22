@@ -198,7 +198,7 @@ func formatExistingCorrespondentsPrompt(names []string) string {
 	return formatExistingNamedListPrompt(
 		"correspondents",
 		"correspondent name",
-		"the sender or issuer is the same organization or person, even if spelling, punctuation, accents, abbreviations, or legal suffixes differ",
+		`the sender or issuer is the same organization or person, even if spelling, punctuation other than &, accents, abbreviations, or legal suffixes differ (an & the document prints must be in the string: "HM", "H.M" or "HeM" is not "H&M")`,
 		names,
 	)
 }
@@ -212,7 +212,7 @@ func formatFieldOptionsPrompt(fields []models.CustomField, options map[string][]
 		out.WriteString(formatExistingNamedListPrompt(
 			fmt.Sprintf("values of the custom field %q", field.Name),
 			fmt.Sprintf("%q value", field.Name),
-			"it means the same, even if spelling, punctuation, accents, abbreviations, or casing differ",
+			"it means the same, even if spelling, punctuation other than &, accents, abbreviations, or casing differ",
 			options[field.ID],
 		))
 	}
@@ -223,7 +223,7 @@ func formatExistingDocumentTypesPrompt(names []string) string {
 	return formatExistingNamedListPrompt(
 		"document types",
 		"document type",
-		"the document is the same kind, even if spelling, punctuation, accents, abbreviations, or casing differ",
+		"the document is the same kind, even if spelling, punctuation other than &, accents, abbreviations, or casing differ",
 		names,
 	)
 }

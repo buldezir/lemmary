@@ -31,7 +31,7 @@ type mcpUpdateArgs struct {
 	DocumentType  *string        `json:"document_type,omitempty" jsonschema:"Document type name, created if new; empty clears it."`
 	Correspondent *string        `json:"correspondent,omitempty" jsonschema:"Correspondent name, created if new; empty clears it."`
 	Tags          *[]string      `json:"tags,omitempty" jsonschema:"The whole tag list as exact names of existing tags. Replaces the current tags; an empty list removes them all."`
-	Fields        map[string]any `json:"fields,omitempty" jsonschema:"Custom field values by field name from list_taxonomy: a number, a YYYY-MM-DD date, a choice's name or text. Null or empty clears one; fields left out keep their value."`
+	Fields        map[string]any `json:"fields,omitempty" jsonschema:"Custom field values by field name from list_taxonomy: a number, a YYYY-MM-DD date, a choice's name, an option field's value name or text. An option name reuses the matching value from list_taxonomy's values, else creates it, so reuse a listed spelling. Null or empty clears one; fields left out keep their value."`
 	MarkReviewed  bool           `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review or failed document to completed; a failed one is kept as it is, without reprocessing. A possible duplicate is kept as a document of its own and processed again."`
 }
 

@@ -5,6 +5,10 @@ var catalog = map[string]map[string]string{
 		"de": "%s ist auf %d Zeichen begrenzt.",
 		"ru": "%s: не более %d символов.",
 	},
+	"%q is used by one of your rules; change or delete the rule first.": {
+		"de": "%q wird von einer Ihrer Regeln verwendet; ändern oder löschen Sie zuerst die Regel.",
+		"ru": "%q используется в одном из ваших правил; сначала измените или удалите правило.",
+	},
 	"%s must be a time such as 22:00": {
 		"de": "%s muss eine Uhrzeit wie 22:00 sein",
 		"ru": "%s должно быть временем, например 22:00",

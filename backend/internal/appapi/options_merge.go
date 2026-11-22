@@ -15,6 +15,20 @@ import (
 
 var errOptionNotFound = errors.New("option not found")
 
+// refuseOptionInRules keeps a rule from pointing at a deleted option, as merge
+// and prune do; a field's own deletion takes its options without asking.
+func refuseOptionInRules(e *core.RecordRequestEvent) error {
+	used, err := rules.OptionInUse(e.App, e.Record.GetString("user"), e.Record.Id)
+	if err != nil {
+		return err
+	}
+	if used {
+		lang := i18n.FromRequest(e.Request)
+		return e.BadRequestError(i18n.Of(lang, i18n.Errorf("%q is used by one of your rules; change or delete the rule first.", e.Record.GetString("name"))), nil)
+	}
+	return e.Next()
+}
+
 func handlePostOptionMerge(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)

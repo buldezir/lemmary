@@ -281,6 +281,7 @@ func TestBuildExtractionSystemPromptAsksForCustomFieldsOnlyWhenDefined(t *testin
 		`{"name":"Project","type":"option"}`,
 		"option is a short name",
 		`existing values of the custom field "Project"`,
+		"punctuation other than &",
 		`["Apollo & Co"]`,
 		"leave a field out rather than guess",
 	} {
@@ -343,6 +344,12 @@ func TestBuildExtractionSystemPromptWritesInTheResultLanguage(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "a name is never translated") || !strings.Contains(prompt, "H&M stays H&M") {
 		t.Fatalf("expected the correspondent to keep its spelling, got:\n%s", prompt)
+	}
+	// The catalog is read last, so its reuse rule must not fold & away either:
+	// an archive that already holds "HeM" would otherwise keep getting it.
+	withCatalog := buildExtractionSystemPrompt("English", "", ExtractionCatalog{Correspondents: []string{"HeM"}})
+	if !strings.Contains(withCatalog, "punctuation other than &") || !strings.Contains(withCatalog, `"HeM" is not "H&M"`) {
+		t.Fatalf("the correspondent catalog still folds &, got:\n%s", withCatalog)
 	}
 	for _, gone := range []string{"_translated", "same language as the source document", "purpose"} {
 		if strings.Contains(prompt, gone) {

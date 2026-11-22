@@ -100,6 +100,8 @@ type mcpTaxonomyField struct {
 	Type        string   `json:"type"`
 	Description string   `json:"description,omitempty"`
 	Choices     []string `json:"choices,omitempty"`
+	// Values are the caller's own values of an open-list (option) field.
+	Values []string `json:"values,omitempty"`
 }
 
 // mcpDocs is plain access to the archive: no ranking, no excerpting, just the
@@ -147,6 +149,15 @@ func newMCPDocs(app core.App, userID, baseURL string) mcpDocs {
 				for _, choice := range field.Choices {
 					out.Fields[i].Choices = append(out.Fields[i].Choices, choice.Name)
 				}
+				if field.Type != models.CustomFieldOption {
+					continue
+				}
+				names, truncated, err := taxonomyNames(app, models.CustomFieldOptionsCollection, field.ID, userID, mcpMaxTaxonomyNames)
+				if err != nil {
+					return out, err
+				}
+				out.Fields[i].Values = names
+				out.Truncated = out.Truncated || truncated
 			}
 			return out, nil
 		},

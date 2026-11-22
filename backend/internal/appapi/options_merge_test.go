@@ -2,6 +2,9 @@ package appapi
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -99,5 +102,54 @@ func TestMergeOption(t *testing.T) {
 	}
 	if got.Conditions[0].Value != amp || got.Actions[0].Value != amp {
 		t.Fatalf("rule still points at the merged option: %+v %+v", got.Conditions, got.Actions)
+	}
+}
+
+// Deleting an option a rule of its owner reads or sets is refused, so no rule
+// is left pointing at nothing; an unused one goes.
+func TestDeleteOptionRefusedWhileARuleUsesIt(t *testing.T) {
+	app := bootQueueApp(t)
+	app.OnRecordDeleteRequest(models.CustomFieldOptionsCollection).BindFunc(refuseOptionInRules)
+	owner := makeQueueUser(t, app, "owner@example.com")
+	used, _, err := worker.EnsureOption(app, models.CorrespondentFieldID, owner, "H&M")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unused, _, err := worker.EnsureOption(app, models.CorrespondentFieldID, owner, "Acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	coll, err := app.FindCollectionByNameOrId(rules.Collection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := core.NewRecord(coll)
+	rule.Load(map[string]any{
+		"user": owner, "name": "H&M", "enabled": true, "triggers": []string{rules.TriggerProcessed},
+		"actions": []rules.Action{{Type: rules.ActionSetField, Field: models.CorrespondentFieldID, Value: used}},
+	})
+	if err := app.Save(rule); err != nil {
+		t.Fatal(err)
+	}
+	deleteOption := func(id string) error {
+		t.Helper()
+		record, err := app.FindRecordById(models.CustomFieldOptionsCollection, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e := &core.RecordRequestEvent{RequestEvent: &core.RequestEvent{App: app}, Record: record}
+		e.Collection = record.Collection()
+		e.Response = httptest.NewRecorder()
+		e.Request = httptest.NewRequest(http.MethodDelete, "/api/collections/custom_field_options/records/"+id, nil)
+		return app.OnRecordDeleteRequest().Trigger(e, func(e *core.RecordRequestEvent) error {
+			return e.App.Delete(e.Record)
+		})
+	}
+
+	if err := deleteOption(used); err == nil || !strings.Contains(err.Error(), "used by one of your rules") {
+		t.Fatalf("deleting an option a rule sets: %v", err)
+	}
+	if err := deleteOption(unused); err != nil {
+		t.Fatalf("deleting an unused option: %v", err)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/reprocess"
+	"lemmary/backend/internal/worker"
 )
 
 func connectMCPWrites(t *testing.T, app core.App, userID string, capabilities ...string) *mcp.ClientSession {
@@ -156,7 +157,7 @@ func TestMCPReadsAndEditsCustomFieldsByName(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids := map[string]string{}
-	for name, kind := range map[string]string{"Amount": models.CustomFieldNumber, "Status": models.CustomFieldChoice, "Invoice number": models.CustomFieldText} {
+	for name, kind := range map[string]string{"Amount": models.CustomFieldNumber, "Status": models.CustomFieldChoice, "Invoice number": models.CustomFieldText, "Project": models.CustomFieldOption} {
 		field := core.NewRecord(fields)
 		field.Set("name", name)
 		field.Set("type", kind)
@@ -175,25 +176,32 @@ func TestMCPReadsAndEditsCustomFieldsByName(t *testing.T) {
 	if err := app.Save(paid); err != nil {
 		t.Fatal(err)
 	}
+	if _, _, err := worker.EnsureOption(app, ids["Project"], owner, "H&M Relaunch"); err != nil {
+		t.Fatal(err)
+	}
 	session := connectMCPWrites(t, app, owner, config.MCPEdit)
 
 	var tax mcpTaxonomyResult
 	callMCP(t, session, "list_taxonomy", nil, &tax)
 	i := slices.IndexFunc(tax.Fields, func(f mcpTaxonomyField) bool { return f.Name == "Status" })
-	if len(tax.Fields) != 3 || i < 0 || tax.Fields[i].Type != models.CustomFieldChoice || !slices.Equal(tax.Fields[i].Choices, []string{"Paid"}) {
+	if len(tax.Fields) != 4 || i < 0 || tax.Fields[i].Type != models.CustomFieldChoice || !slices.Equal(tax.Fields[i].Choices, []string{"Paid"}) {
 		t.Fatalf("taxonomy fields = %#v", tax.Fields)
+	}
+	i = slices.IndexFunc(tax.Fields, func(f mcpTaxonomyField) bool { return f.Name == "Project" })
+	if i < 0 || !slices.Equal(tax.Fields[i].Values, []string{"H&M Relaunch"}) {
+		t.Fatalf("an open-list field's values are missing: %#v", tax.Fields)
 	}
 
 	var got mcpDocument
 	res := callMCP(t, session, "update_document", map[string]any{
 		"id":            document.Id,
-		"fields":        map[string]any{"amount": "12.50", "Status": "paid", "Invoice number": "INV-7"},
+		"fields":        map[string]any{"amount": "12.50", "Status": "paid", "Invoice number": "INV-7", "Project": "h&m relaunch"},
 		"document_type": "Invoice",
 	}, &got)
 	if res.IsError {
 		t.Fatalf("update: %#v", res.Content)
 	}
-	want := map[string]any{"Amount": 12.5, "Status": "Paid", "Invoice number": "INV-7"}
+	want := map[string]any{"Amount": 12.5, "Status": "Paid", "Invoice number": "INV-7", "Project": "H&M Relaunch"}
 	if !maps.Equal(got.Fields, want) || got.DocumentType != "Invoice" {
 		t.Fatalf("fields = %#v, type = %q", got.Fields, got.DocumentType)
 	}

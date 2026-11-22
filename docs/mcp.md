@@ -69,7 +69,7 @@ Two kinds: search over the index, and plain access to the rows. The intelligence
 | `list_documents` | Plain listing by metadata: date range, document type, correspondent, tags, processing status (`unfinished` means everything but completed); sorted by date or by when it was added; paged with `limit` and `offset`. Returns metadata and the total, no text. |
 | `get_document` | One document's metadata and its extracted text, unranked and unabridged. A call returns up to 200,000 characters; page through a longer one with `offset` and `max_chars`, and `truncated` says when more follows. `file_url` and `preview_url` open the original file and its first-page image; they carry a file token that expires after 15 minutes. |
 | `count_documents` | Count documents matching filters, optionally grouped by `document_type`, `correspondent`, `year`, `month` or `tag`. |
-| `list_taxonomy` | The tag, document type and correspondent names in the archive, for the filters above, and the custom fields an admin defined (name, type, and the choices of a choice field). Each name list stops at 5,000 names and says so with `truncated`. The document tools return a document's custom field values by field name under `fields`. |
+| `list_taxonomy` | The tag, document type and correspondent names in the archive, for the filters above, and the custom fields an admin defined (name, type, the choices of a choice field, and your own `values` of an open-list field; `update_document` reuses one of those when given its name and creates it otherwise). Each name list stops at 5,000 names and says so with `truncated`. The document tools return a document's custom field values by field name under `fields`. |
 
 ## Write tools
 
