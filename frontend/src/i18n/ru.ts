@@ -1226,6 +1226,7 @@ export const ru: Catalog = {
   'optionsPage.name': 'Название',
   'optionsPage.new': 'Новый вариант: {field}',
   'optionsPage.add': 'Добавить',
+  'optionsPage.findDocuments': 'Найти документы',
   'optionsPage.added': 'Добавлено «{name}».',
   'optionsPage.rename': 'Переименовать',
   'optionsPage.renamed': 'Переименовано в «{name}».',

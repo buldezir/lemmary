@@ -7,9 +7,17 @@ import {
   renameOption,
   type OptionRecord,
 } from '../lib/api/documents'
-import { listOptionFields, type OptionField } from '../lib/api/customFields'
+import {
+  CORRESPONDENT_FIELD_ID,
+  DOCUMENT_TYPE_FIELD_ID,
+  listOptionFields,
+  type OptionField,
+} from '../lib/api/customFields'
+import { Link } from '@tanstack/react-router'
 import { useAsync } from '../hooks/useAsync'
 import { Combobox } from '../components/Combobox'
+import { NewTabIcon } from '../components/NewTabIcon'
+import { exactSearch } from '../lib/documentQuery'
 import {
   Button,
   fieldHintClassName,
@@ -21,14 +29,22 @@ import {
 } from '../components/ui'
 import { t } from '../i18n'
 
+type DocumentFilter = 'type' | 'correspondent'
+
+const DOCUMENT_FILTERS: Record<string, DocumentFilter> = {
+  [DOCUMENT_TYPE_FIELD_ID]: 'type',
+  [CORRESPONDENT_FIELD_ID]: 'correspondent',
+}
+
 type RowProps = {
   option: OptionRecord
+  filter?: DocumentFilter
   others: OptionRecord[]
   busy: boolean
   run: (work: () => Promise<string>) => Promise<boolean>
 }
 
-function OptionRow({ option, others, busy, run }: RowProps) {
+function OptionRow({ option, filter, others, busy, run }: RowProps) {
   const id = useId()
   const [mode, setMode] = useState<'view' | 'rename' | 'merge'>('view')
   const [draft, setDraft] = useState(option.name)
@@ -115,6 +131,16 @@ function OptionRow({ option, others, busy, run }: RowProps) {
         <>
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{option.name}</span>
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/"
+              search={filter ? { [filter]: option.id } : { q: exactSearch(option.name) }}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-xs border border-line px-2 py-1 text-xs text-ink-soft transition-colors hover:text-ink"
+            >
+              {t('optionsPage.findDocuments')}
+              <NewTabIcon className="h-3.5 w-3.5" />
+            </Link>
             <Button
               size="xs"
               variant="secondary"
@@ -205,6 +231,7 @@ function OptionSection({ field }: { field: OptionField }) {
             <OptionRow
               key={option.id}
               option={option}
+              filter={DOCUMENT_FILTERS[field.id]}
               others={rows.filter((other) => other.id !== option.id)}
               busy={busy}
               run={run}

@@ -39,9 +39,9 @@ func TestSearchFindsADocumentByItsCustomFieldValue(t *testing.T) {
 		FieldUser:         "u1",
 		FieldTitle:        "Invoice",
 		FieldOCRText:      "nothing else",
-		FieldCustomFields: "Overdue R-2026-001",
+		FieldCustomFields: "Hedwig-porschütz-straße 7, 10557 Berlin Overdue R-2026-001",
 	})
-	for _, text := range []string{"R-2026-001", "overdue"} {
+	for _, text := range []string{"R-2026-001", "overdue", `"Hedwig-porschütz-straße 7, 10557 Berlin"`} {
 		if ids := searchIDs(t, idx, Query{Text: text, UserID: "u1"}); !containsID(ids, "doc") {
 			t.Fatalf("%q does not find the document: %v", text, ids)
 		}

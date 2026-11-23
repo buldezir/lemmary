@@ -1057,6 +1057,7 @@ export const en = {
   'optionsPage.name': 'Name',
   'optionsPage.new': 'New {field}',
   'optionsPage.add': 'Add',
+  'optionsPage.findDocuments': 'Find documents',
   'optionsPage.added': 'Added "{name}".',
   'optionsPage.rename': 'Rename',
   'optionsPage.renamed': 'Renamed to "{name}".',

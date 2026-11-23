@@ -1107,6 +1107,7 @@ export const de: Catalog = {
   'optionsPage.name': 'Name',
   'optionsPage.new': 'Neu: {field}',
   'optionsPage.add': 'Hinzufügen',
+  'optionsPage.findDocuments': 'Dokumente finden',
   'optionsPage.added': '„{name}“ hinzugefügt.',
   'optionsPage.rename': 'Umbenennen',
   'optionsPage.renamed': 'Umbenannt in „{name}“.',
