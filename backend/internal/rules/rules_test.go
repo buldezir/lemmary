@@ -269,3 +269,18 @@ func TestDeliverDoesNotFollowRedirects(t *testing.T) {
 		t.Fatal("the redirect was followed")
 	}
 }
+
+// A global condition finds the owner's option the way a global set_field
+// resolves one: "H & M" is the owner's "H&M", but "H.M" is not.
+func TestIDByNameMatchesLikeSetField(t *testing.T) {
+	t.Parallel()
+	cat := Catalog{Options: map[string]Option{
+		"oamp": {Field: models.CorrespondentFieldID, Name: "H&M"},
+		"odot": {Field: models.CorrespondentFieldID, Name: "H.M Logistics"},
+	}}
+	for name, want := range map[string]string{"h&m": "oamp", "H & M": "oamp", "H.M": "", "HM Logistics": "odot"} {
+		if got := cat.IDByName(models.CorrespondentFieldID, name); got != want {
+			t.Errorf("IDByName(%q) = %q, want %q", name, got, want)
+		}
+	}
+}

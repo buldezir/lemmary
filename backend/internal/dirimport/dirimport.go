@@ -349,7 +349,7 @@ func loadTagKeys(app core.App, ownerID string) (map[string]string, error) {
 	}
 	keys := make(map[string]string, len(records))
 	for _, record := range records {
-		keys[worker.NormalizeTagKey(record.GetString("name"))] = record.Id
+		keys[models.NameKey(record.GetString("name"))] = record.Id
 	}
 	return keys, nil
 }
@@ -363,7 +363,7 @@ func (s *Scanner) tagsFor(ownerID, rel string, keys map[string]string) (ids, cre
 		return nil, nil, nil
 	}
 	for name := range strings.SplitSeq(dir, string(filepath.Separator)) {
-		key := worker.NormalizeTagKey(name)
+		key := models.NameKey(name)
 		if key == "" {
 			continue
 		}

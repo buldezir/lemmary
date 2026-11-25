@@ -94,19 +94,19 @@ const removeButtonClassName =
   'flex h-9 w-9 shrink-0 items-center justify-center rounded-xs text-lg leading-none text-ink-faint transition-colors hover:text-madder'
 
 async function loadPage(global: boolean): Promise<{ rules: RuleRecord[]; catalog: Catalog }> {
-  const [rules, tags, fields, types, correspondents] = await Promise.all([
-    listRules(global),
-    listTags(),
-    listCustomFields(),
-    listOptions(DOCUMENT_TYPE_FIELD_ID),
-    listOptions(CORRESPONDENT_FIELD_ID),
-  ])
+  const [rules, tags, fields] = await Promise.all([listRules(global), listTags(), listCustomFields()])
+  const optionFieldIds = [
+    DOCUMENT_TYPE_FIELD_ID,
+    CORRESPONDENT_FIELD_ID,
+    ...fields.filter((field) => field.type === 'option').map((field) => field.id),
+  ]
+  const lists = await Promise.all(optionFieldIds.map((id) => listOptions(id)))
   return {
     rules,
     catalog: {
       tags,
       fields,
-      options: { [DOCUMENT_TYPE_FIELD_ID]: types, [CORRESPONDENT_FIELD_ID]: correspondents },
+      options: Object.fromEntries(optionFieldIds.map((id, i) => [id, lists[i]])),
       named: global,
     },
   }

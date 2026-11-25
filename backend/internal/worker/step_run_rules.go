@@ -220,15 +220,12 @@ func (r *rulesRun) applySetField(rule rules.Rule, action rules.Action) {
 	}
 	raw := action.Value
 	if rule.Global && field.Type == models.CustomFieldOption {
-		// Named, like a global rule's tags, and created the way extraction
-		// creates a type or correspondent it has not seen.
+		// Named, like a global rule's tags.
 		name, _ := raw.(string)
-		id, _, err := EnsureOption(r.state.App, field.ID, r.state.Document.GetString("user"), name)
-		if err != nil {
-			r.fail(rule, "%s %q: %v", field.Name, name, err)
+		id, ok := r.optionID(rule, field, name)
+		if !ok {
 			return
 		}
-		r.cat.Options[id] = rules.Option{Field: field.ID, Name: name}
 		raw = id
 	}
 	value, ok := r.fieldValue(field, raw)
@@ -237,6 +234,19 @@ func (r *rulesRun) applySetField(rule rules.Rule, action rules.Action) {
 		return
 	}
 	r.set(field, value)
+}
+
+func (r *rulesRun) optionID(rule rules.Rule, field models.CustomField, name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	id, _, err := EnsureOption(r.state.App, field.ID, r.state.Document.GetString("user"), name)
+	if err != nil {
+		r.fail(rule, "%s %q: %v", field.Name, name, err)
+		return "", false
+	}
+	if _, known := r.cat.Options[id]; !known {
+		r.cat.Options[id] = rules.Option{Field: field.ID, Name: name}
+	}
+	return id, true
 }
 
 // fieldValue is a stored value as the document's values hold it: a rule's
@@ -294,7 +304,7 @@ func (r *rulesRun) applyAIExtract(ctx context.Context, rule rules.Rule, action r
 	var fields []models.CustomField
 	for _, id := range action.Fields {
 		field, ok := r.cat.Fields[id]
-		if !ok || field.Type == models.CustomFieldOption {
+		if !ok || models.IsPredefinedField(id) {
 			continue
 		}
 		if _, filled := r.doc.Values[id]; filled && !r.overwrite {
@@ -307,7 +317,14 @@ func (r *rulesRun) applyAIExtract(ctx context.Context, rule rules.Rule, action r
 	}
 	aiCtx, cancel := context.WithTimeout(ctx, r.state.Cfg.OpenAITimeout)
 	defer cancel()
-	answers, err := r.extractor.ExtractFields(aiCtx, r.doc.Text, action.Prompt, fields)
+	options := map[string][]string{}
+	for _, option := range r.cat.Options {
+		options[option.Field] = append(options[option.Field], option.Name)
+	}
+	for _, names := range options {
+		slices.Sort(names)
+	}
+	answers, err := r.extractor.ExtractFields(aiCtx, r.doc.Text, action.Prompt, fields, options)
 	if err != nil {
 		r.fail(rule, "AI extraction: %v", err)
 		return
@@ -316,6 +333,11 @@ func (r *rulesRun) applyAIExtract(ctx context.Context, rule rules.Rule, action r
 		coerced, ok := field.ValueIn(answers)
 		if !ok {
 			continue
+		}
+		if name, isName := coerced.(string); isName && field.Type == models.CustomFieldOption {
+			if coerced, ok = r.optionID(rule, field, name); !ok {
+				continue
+			}
 		}
 		if value, ok := r.fieldValue(field, coerced); ok {
 			r.set(field, value)
@@ -440,7 +462,7 @@ func (r *rulesRun) webhookDocument() rules.WebhookDocument {
 		}
 	}
 	for id, value := range r.doc.Values {
-		if field, ok := r.cat.Fields[id]; ok && field.Type != models.CustomFieldOption {
+		if field, ok := r.cat.Fields[id]; ok && !models.IsPredefinedField(id) {
 			out.Fields[field.Name] = value.Value()
 		}
 	}

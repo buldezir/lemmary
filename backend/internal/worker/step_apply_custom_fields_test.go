@@ -14,7 +14,8 @@ import (
 
 // Extraction fills only the empty fields: a value typed by hand survives a
 // reprocess, an answer for no defined field is dropped, and one that does not
-// fit its type, a choice its list included, is not stored.
+// fit its type, a choice its list included, is not stored. An option field's
+// answer becomes the owner's option of that name.
 func TestApplyMetadataFillsOnlyEmptyCustomFields(t *testing.T) {
 	app := bootTagTestApp(t)
 	owner := createTagUser(t, app, "owner@example.com")
@@ -40,6 +41,7 @@ func TestApplyMetadataFillsOnlyEmptyCustomFields(t *testing.T) {
 		"IBAN":           models.CustomFieldNumber,
 		"Status":         models.CustomFieldChoice,
 		"Priority":       models.CustomFieldChoice,
+		"Project":        models.CustomFieldOption,
 	} {
 		definition := core.NewRecord(definitions)
 		definition.Set("name", name)
@@ -98,6 +100,7 @@ func TestApplyMetadataFillsOnlyEmptyCustomFields(t *testing.T) {
 				"Customer":       "unasked",
 				"Status":         "paid",
 				"Priority":       "Urgent",
+				"Project":        " Apollo & Co ",
 			},
 		},
 	}
@@ -115,6 +118,7 @@ func TestApplyMetadataFillsOnlyEmptyCustomFields(t *testing.T) {
 	}
 	want := map[string]any{
 		ids["Invoice number"]: "typed by hand", ids["Amount"]: 129.9, ids["Due date"]: "2026-10-31", ids["Status"]: "Paid",
+		ids["Project"]: "Apollo & Co",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("custom_fields = %#v, want %#v", got, want)

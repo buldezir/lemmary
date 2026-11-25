@@ -5,6 +5,7 @@ describe('tag suggestions', () => {
   test('tagKey folds case, accents and punctuation like the worker does', () => {
     expect(tagKey('  Büro-Kosten ')).toBe('burokosten')
     expect(tagKey('---')).toBe('')
+    expect(tagKey('H & M')).toBe('h&m')
   })
 
   test('drops names already on the document, duplicates and blanks', () => {

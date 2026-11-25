@@ -12,6 +12,7 @@ import {
   type TagRecord,
 } from '../lib/api/tags'
 import { useAsync } from '../hooks/useAsync'
+import { NewTabIcon } from '../components/NewTabIcon'
 import { exactSearch } from '../lib/documentQuery'
 import {
   Button,
@@ -151,9 +152,12 @@ function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign, onCol
             <Link
               to="/"
               search={{ q: exactSearch(tag.name) }}
-              className="rounded-xs border border-line px-2 py-1 text-xs text-ink-soft transition-colors hover:text-ink"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-xs border border-line px-2 py-1 text-xs text-ink-soft transition-colors hover:text-ink"
             >
               {t('tagsPage.findDocuments')}
+              <NewTabIcon className="h-3.5 w-3.5" />
             </Link>
             <Button
               size="xs"

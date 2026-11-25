@@ -90,6 +90,7 @@ func TestSaveFieldsWithDocument(t *testing.T) {
 		"a word for a number": {"", `{"` + amount.Id + `": "twelve", "` + models.DocumentTypeFieldID + `": "Invoice"}`},
 		"an unknown field":    {"", `{"fnosuchfield00": "x"}`},
 		"an unlisted choice":  {"", `{"` + status.Id + `": "Overdue"}`},
+		"too long a name":     {"", `{"` + models.CorrespondentFieldID + `": "` + strings.Repeat("x", 256) + `"}`},
 		"not an object":       {"", `"x"`},
 		"a refused document":  {strings.Repeat("x", 501), `{"` + amount.Id + `": 1}`},
 	} {

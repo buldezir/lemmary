@@ -20,6 +20,7 @@ const fields: CustomField[] = [
     description: '',
     choices: [{ id: 'c1', name: 'Paid' }],
   },
+  { id: 'fproject', name: 'Project', type: 'option', description: '', choices: [] },
 ]
 
 describe('customFieldValuesForSave', () => {
@@ -68,6 +69,16 @@ describe('fieldInputValue and optionName', () => {
           expand: { choice: { id: 'c1', name: 'Paid' } },
         },
         {
+          id: 'v5',
+          field: 'fproject',
+          text: '',
+          number: 0,
+          date: '',
+          option: 'o2',
+          choice: '',
+          expand: { option: { id: 'o2', name: 'H&M' } },
+        },
+        {
           id: 'v3',
           field: CORRESPONDENT_FIELD_ID,
           text: '',
@@ -86,6 +97,7 @@ describe('fieldInputValue and optionName', () => {
     expect(fieldInputValue(document, fields[2])).toBe('2026-10-31')
     expect(fieldInputValue(document, fields[0])).toBe('')
     expect(fieldInputValue(document, fields[3])).toBe('Paid')
+    expect(fieldInputValue(document, fields[4])).toBe('H&M')
     expect(optionName(document, CORRESPONDENT_FIELD_ID)).toBe('Acme')
     expect(optionName({}, CORRESPONDENT_FIELD_ID)).toBe('')
   })

@@ -53,7 +53,9 @@ reason.
 ## Actions
 
 - **Add tag / Remove tag**
-- **Set** a document type, a correspondent or another field to a value.
+- **Set** a document type, a correspondent or another field to a value. The values of
+  Correspondent, Document type and other option fields are added, renamed and merged under
+  **More → Field options**.
 - **Send to the Inbox for review** — the document waits until someone marks it reviewed.
 - **Fill fields with AI** — one extra request to the extraction model, asking only for the
   fields you tick, with your instructions. Fields that already have a value keep it. The

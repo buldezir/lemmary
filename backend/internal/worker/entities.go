@@ -11,7 +11,6 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/list"
-	"golang.org/x/text/unicode/norm"
 
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/models"
@@ -43,7 +42,7 @@ func tagScope(userID string) namedScope {
 
 // EnsureOption finds the owner's option of an option field by name, or creates
 // it. Lookup prefers the exact name, then a punctuation/accent-insensitive
-// match. An existing option is reused as it is, so a user rename survives.
+// match that still tells & apart, so "H&M" never lands on "H.M". An existing option is reused as it is, so a user rename survives.
 func EnsureOption(app core.App, fieldID, userID, name string) (id string, created bool, err error) {
 	// ponytail: one process-wide lock over lookup-then-insert. Only (field,
 	// user, name) is unique in the schema, so the normalized tier below is
@@ -147,27 +146,8 @@ func addUniqueCatalogName(names []string, seen map[string]struct{}, raw string, 
 	return append(names, name)
 }
 
-func normalizeNamedEntityKey(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-	s = strings.ToLower(norm.NFD.String(s))
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if unicode.Is(unicode.Mn, r) {
-			continue
-		}
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
 func findNamedEntityNormalized(app core.App, scope namedScope, name string) (string, error) {
-	key := normalizeNamedEntityKey(name)
+	key := models.NameKey(name)
 	if key == "" {
 		return "", nil
 	}
@@ -180,7 +160,7 @@ func findNamedEntityNormalized(app core.App, scope namedScope, name string) (str
 			return "", err
 		}
 		for _, rec := range records {
-			if normalizeNamedEntityKey(rec.GetString("name")) == key {
+			if models.NameKey(rec.GetString("name")) == key {
 				return rec.Id, nil
 			}
 		}
@@ -238,7 +218,7 @@ func matchTags(app core.App, userID string, names []string) (matched []string, d
 		if name == "" {
 			continue
 		}
-		id, ok := index[normalizeNamedEntityKey(name)]
+		id, ok := index[models.NameKey(name)]
 		if !ok {
 			dropped = append(dropped, name)
 			continue
@@ -284,7 +264,7 @@ func pendingTagSuggestions(dropped []string) []string {
 			}
 			return r
 		}, raw))
-		key := normalizeNamedEntityKey(name)
+		key := models.NameKey(name)
 		if key == "" || len([]rune(name)) > maxTagSuggestionRunes {
 			continue
 		}
@@ -316,7 +296,7 @@ func tagIndexByKey(app core.App, userID string) (map[string]string, error) {
 			return nil, fmt.Errorf("list tags: %w", err)
 		}
 		for _, rec := range records {
-			key := normalizeNamedEntityKey(rec.GetString("name"))
+			key := models.NameKey(rec.GetString("name"))
 			if key == "" {
 				continue
 			}
@@ -421,7 +401,3 @@ func findTagByName(app core.App, userID, name string) (string, error) {
 	}
 	return existing[0].Id, nil
 }
-
-// NormalizeTagKey exposes the key apply_metadata matches tag names on, so a
-// caller outside the pipeline resolves a model's answer exactly as apply does.
-func NormalizeTagKey(s string) string { return normalizeNamedEntityKey(s) }

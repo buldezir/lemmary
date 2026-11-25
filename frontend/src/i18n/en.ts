@@ -25,6 +25,7 @@ export const en = {
   'nav.deepResearch': 'Deep Research',
   'nav.account': 'Account',
   'nav.tags': 'Tags',
+  'nav.fieldOptions': 'Field options',
   'nav.rules': 'Rules',
   'nav.bulkActions': 'Bulk Actions',
   'nav.ocrTest': 'OCR test',
@@ -1051,6 +1052,33 @@ export const en = {
   'rulesPage.webhookHint':
     'A POST with the document as JSON. With a secret, the X-Lemmary-Signature header carries sha256= and the HMAC-SHA256 of the body. A failed call is shown on the document and not retried.',
 
+  'optionsPage.title': 'Field options',
+  'optionsPage.intro':
+    'Your own values for fields such as Correspondent and Document type. Extraction reuses these names and only adds one when none fits. Rename one to fix how it is spelled, merge two that mean the same, or add one to pick on a document or in a rule.',
+  'optionsPage.loading': 'Loading...',
+  'optionsPage.empty': 'None yet.',
+  'optionsPage.name': 'Name',
+  'optionsPage.new': 'New {field}',
+  'optionsPage.add': 'Add',
+  'optionsPage.findDocuments': 'Find documents',
+  'optionsPage.added': 'Added "{name}".',
+  'optionsPage.rename': 'Rename',
+  'optionsPage.renamed': 'Renamed to "{name}".',
+  'optionsPage.merge': 'Merge',
+  'optionsPage.mergeInto': 'Merge "{name}" into',
+  'optionsPage.mergeTarget': 'Merge into',
+  'optionsPage.pickTarget': 'Pick one',
+  'optionsPage.confirmMerge':
+    'Merge "{from}" into "{into}"? Its documents and rules move to "{into}", and "{from}" is deleted.',
+  'optionsPage.merged': {
+    one: 'Merged "{from}" into "{into}"; {count} document moved.',
+    other: 'Merged "{from}" into "{into}"; {count} documents moved.',
+  },
+  'optionsPage.mergeError': 'Merging failed',
+  'optionsPage.confirmDelete': 'Delete "{name}"? Documents that have it are left without one.',
+  'optionsPage.deleted': 'Deleted "{name}".',
+  'optionsPage.saveError': 'The change could not be saved',
+  'optionsPage.duplicateName': '"{name}" already exists.',
   'tagsPage.title': 'Tags',
   'tagsPage.intro':
     'Your tag vocabulary. Processing assigns tags from this list and never invents new ones, so a tag only exists once you create it here.',
@@ -1352,6 +1380,9 @@ export const en = {
   'settingsFields.typeNumber': 'Number',
   'settingsFields.typeDate': 'Date',
   'settingsFields.typeChoice': 'Choice',
+  'settingsFields.typeOption': 'Open list',
+  'settingsFields.optionHint':
+    'Each user builds their own list of values, which extraction reuses and adds to, as it does for Correspondent. Users rename and merge them under More → Field options.',
   'settingsFields.typeFixed': 'Fixed once the field is saved: its values are stored as this type.',
   'settingsFields.typeLocked': 'fixed: its values are stored as this type',
   'settingsFields.hint': 'Hint for extraction',
@@ -1969,6 +2000,10 @@ export const en = {
   'maintenance.prunedCorrespondents': {
     one: '{count} correspondent',
     other: '{count} correspondents',
+  },
+  'maintenance.prunedOptions': {
+    one: 'Also {count} value of other fields.',
+    other: 'Also {count} values of other fields.',
   },
   'maintenance.prunedTypes': { one: '{count} document type', other: '{count} document types' },
   'maintenance.reprocessConfirm': {

@@ -39,11 +39,23 @@ func TestSearchFindsADocumentByItsCustomFieldValue(t *testing.T) {
 		FieldUser:         "u1",
 		FieldTitle:        "Invoice",
 		FieldOCRText:      "nothing else",
-		FieldCustomFields: "Overdue R-2026-001",
+		FieldCustomFields: "Hedwig-porschütz-straße 7, 10557 Berlin Overdue R-2026-001",
 	})
-	for _, text := range []string{"R-2026-001", "overdue"} {
+	for _, text := range []string{"R-2026-001", "overdue", `"Hedwig-porschütz-straße 7, 10557 Berlin"`} {
 		if ids := searchIDs(t, idx, Query{Text: text, UserID: "u1"}); !containsID(ids, "doc") {
 			t.Fatalf("%q does not find the document: %v", text, ids)
 		}
+	}
+}
+
+// An admin's option field is searched by its value's name; the predefined
+// ones have keyword fields of their own instead.
+func TestCustomFieldsTextIncludesOnlyTheAdminsOptions(t *testing.T) {
+	got := customFieldsText(models.FieldValues{
+		"fproject":                  {Type: models.CustomFieldOption, OptionName: "Apollo"},
+		models.CorrespondentFieldID: {Type: models.CustomFieldOption, OptionName: "Acme"},
+	})
+	if got != "Apollo" {
+		t.Fatalf("customFieldsText = %q, want Apollo", got)
 	}
 }

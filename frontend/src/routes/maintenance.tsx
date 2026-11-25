@@ -61,10 +61,11 @@ function activeJobsLabel(counts: ActiveJobCounts) {
 // result.tags is not read: tags are a hand-curated vocabulary, so the prune
 // leaves them alone and the count is always zero.
 function pruneSummary(result: TaxonomyPruneResult) {
-  return t('maintenance.pruned', {
+  const summary = t('maintenance.pruned', {
     correspondents: t('maintenance.prunedCorrespondents', { count: result.correspondents }),
     types: t('maintenance.prunedTypes', { count: result.document_types }),
   })
+  return result.options > 0 ? `${summary} ${t('maintenance.prunedOptions', { count: result.options })}` : summary
 }
 
 type Section = 'failed' | 'duplicates' | 'mail' | 'stale' | 'search' | 'embeddings'

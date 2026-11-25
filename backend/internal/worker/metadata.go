@@ -34,7 +34,24 @@ func customFieldWrites(app core.App, document *core.Record, answers map[string]a
 			writes = append(writes, models.FieldWrite{Field: field, Value: value})
 		}
 	}
-	return writes, nil
+	return writes, ResolveOptionNames(app, document.GetString("user"), writes)
+}
+
+// ResolveOptionNames must run outside a transaction: EnsureOption's lock
+// must not wait inside one.
+func ResolveOptionNames(app core.App, userID string, writes []models.FieldWrite) error {
+	for i, w := range writes {
+		name, ok := w.Value.(string)
+		if !ok || w.Field.Type != models.CustomFieldOption {
+			continue
+		}
+		id, _, err := EnsureOption(app, w.Field.ID, userID, name)
+		if err != nil {
+			return fmt.Errorf("%s: %w", w.Field.Name, err)
+		}
+		writes[i].Value = id
+	}
+	return nil
 }
 
 // correspondentName falls back to the first person or organization named, for

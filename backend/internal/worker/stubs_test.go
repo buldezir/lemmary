@@ -23,7 +23,7 @@ func (stubExtractor) Model() string { return "stub-model" }
 func (stubExtractor) ExtractMetadata(context.Context, string, ai.ExtractionCatalog) (*models.ExtractedMetadata, error) {
 	return nil, nil
 }
-func (stubExtractor) ExtractFields(context.Context, string, string, []models.CustomField) (map[string]any, error) {
+func (stubExtractor) ExtractFields(context.Context, string, string, []models.CustomField, map[string][]string) (map[string]any, error) {
 	return nil, nil
 }
 func (stubExtractor) AnswerYesNo(context.Context, string, string) (bool, error) {

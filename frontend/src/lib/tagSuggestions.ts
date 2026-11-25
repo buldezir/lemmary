@@ -1,12 +1,12 @@
 import type { ProcessingJobRecord } from './processing'
 
-/** Mirrors worker.NormalizeTagKey: lowercase, marks stripped, letters and digits only. */
+/** Mirrors models.NameKey: lowercase, marks stripped, letters, digits and & only. */
 export function tagKey(name: string): string {
   return name
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]/gu, '')
+    .replace(/[^\p{L}\p{N}&]/gu, '')
 }
 
 /**

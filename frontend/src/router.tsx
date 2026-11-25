@@ -55,6 +55,7 @@ import {
   AccountProfilePage,
 } from './routes/account'
 import { TagsPage } from './routes/tags'
+import { FieldOptionsPage } from './routes/fieldOptions'
 import { RulesPage, SettingsRulesPage } from './routes/rules'
 import { BulkActionsPage } from './routes/bulk'
 
@@ -376,6 +377,13 @@ const tagsRoute = createRoute({
   component: TagsPage,
 })
 
+// No guard either: the options of option fields are per-user.
+const fieldOptionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/field-options',
+  component: FieldOptionsPage,
+})
+
 // No guard either: rules are per-user and act on the user's own documents.
 const rulesRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -447,6 +455,7 @@ const routeTree = rootRoute.addChildren([
     accountSharingRoute,
   ]),
   tagsRoute,
+  fieldOptionsRoute,
   rulesRoute,
   bulkRoute,
   documentRoute,

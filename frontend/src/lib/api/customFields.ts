@@ -7,9 +7,9 @@ import { pb } from '../pb'
 export const CORRESPONDENT_FIELD_ID = 'fcorrespondent0'
 export const DOCUMENT_TYPE_FIELD_ID = 'fdocumenttype00'
 
-export type CustomFieldType = 'text' | 'number' | 'date' | 'choice'
+export type CustomFieldType = 'text' | 'number' | 'date' | 'choice' | 'option'
 
-export const CUSTOM_FIELD_TYPES: CustomFieldType[] = ['text', 'number', 'date', 'choice']
+export const CUSTOM_FIELD_TYPES: CustomFieldType[] = ['text', 'number', 'date', 'choice', 'option']
 
 /** One of a choice field's fixed values; a new one has no id yet. */
 export type CustomFieldChoice = { id: string; name: string }
@@ -64,16 +64,40 @@ export function fieldInputValue(document: WithFieldValues, field: CustomField): 
   if (field.type === 'number') return String(value.number)
   if (field.type === 'date') return value.date.slice(0, 10)
   if (field.type === 'choice') return value.expand?.choice?.name ?? ''
+  if (field.type === 'option') return value.expand?.option?.name ?? ''
   return value.text
 }
 
-/** The admin's fields; the predefined option fields have inputs of their own. */
+export type OptionField = { id: string; name: string }
+
+export async function listOptionFields(): Promise<OptionField[]> {
+  await ensureAuth()
+  const fields = await pb
+    .collection('custom_fields')
+    .getFullList<OptionField>({ filter: "type = 'option'", sort: 'created,id', fields: 'id,name' })
+  return fields.map((field) => ({ ...field, name: optionFieldName(field) }))
+}
+
+/** The predefined fields are stored under English names; the reader gets theirs. */
+export function optionFieldName(field: OptionField): string {
+  if (field.id === CORRESPONDENT_FIELD_ID) return t('documentPage.fieldCorrespondent')
+  if (field.id === DOCUMENT_TYPE_FIELD_ID) return t('documentPage.fieldType')
+  return field.name
+}
+
+/** The admin's fields; the predefined ones have inputs of their own. */
 export async function listCustomFields(): Promise<CustomField[]> {
   await ensureAuth()
   const [fields, choices] = await Promise.all([
     pb
       .collection('custom_fields')
-      .getFullList<Omit<CustomField, 'choices'>>({ filter: "type != 'option'", sort: 'created,id' }),
+      .getFullList<Omit<CustomField, 'choices'>>({
+        filter: pb.filter('id != {:correspondent} && id != {:type}', {
+          correspondent: CORRESPONDENT_FIELD_ID,
+          type: DOCUMENT_TYPE_FIELD_ID,
+        }),
+        sort: 'created,id',
+      }),
     pb
       .collection('custom_field_choices')
       .getFullList<CustomFieldChoice & { field: string }>({ sort: 'created,id' }),

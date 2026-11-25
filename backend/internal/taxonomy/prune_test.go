@@ -105,3 +105,50 @@ func TestPruneOrphansRemovesOnlyUnusedOptions(t *testing.T) {
 		t.Fatalf("an option a document carries was deleted: %v", err)
 	}
 }
+
+// A value its owner keeps for a rule is not debris, and an admin's option
+// field is pruned like the predefined ones.
+func TestPruneOrphansKeepsWhatARuleNamesAndCoversAdminFields(t *testing.T) {
+	app := bootTestApp(t)
+	user := createUser(t, app, "owner@example.com")
+
+	fields, err := app.FindCollectionByNameOrId(models.CustomFieldsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := core.NewRecord(fields)
+	project.Set("name", "Project")
+	project.Set("type", models.CustomFieldOption)
+	if err := app.Save(project); err != nil {
+		t.Fatal(err)
+	}
+	kept := createNamed(t, app, models.CustomFieldOptionsCollection, "Acme", user, models.CorrespondentFieldID)
+	orphan := createNamed(t, app, models.CustomFieldOptionsCollection, "Apollo", user, project.Id)
+
+	rules, err := app.FindCollectionByNameOrId("rules")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := core.NewRecord(rules)
+	rule.Load(map[string]any{
+		"user": user, "name": "Acme", "enabled": true, "triggers": []string{"processed"},
+		"actions": []map[string]any{{"type": "set_field", "field": models.CorrespondentFieldID, "value": kept.Id}},
+	})
+	if err := app.Save(rule); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := taxonomy.PruneOrphans(app)
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if result.Correspondents != 0 || result.Options != 1 {
+		t.Fatalf("result = %+v, want only the admin field's orphan", result)
+	}
+	if _, err := app.FindRecordById(models.CustomFieldOptionsCollection, kept.Id); err != nil {
+		t.Fatalf("a value a rule sets was deleted: %v", err)
+	}
+	if _, err := app.FindRecordById(models.CustomFieldOptionsCollection, orphan.Id); err == nil {
+		t.Fatal("the admin field's orphan survived")
+	}
+}

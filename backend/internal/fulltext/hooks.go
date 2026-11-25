@@ -105,13 +105,17 @@ func registerRecordHooks(app core.App, idx *Index) {
 	app.OnRecordAfterUpdateSuccess(collectionTags).BindFunc(reindexNamed(collectionTags, FieldTags))
 	app.OnRecordAfterDeleteSuccess(collectionTags).BindFunc(reindexNamed(collectionTags, FieldTags))
 	// A deleted option takes its value rows with it, and those reindex below.
+	// A renamed one of an admin's field changes FieldCustomFields, as a
+	// renamed choice does.
 	app.OnRecordAfterUpdateSuccess(models.CustomFieldOptionsCollection).BindFunc(func(e *core.RecordEvent) error {
 		if err := e.Next(); err != nil {
 			return err
 		}
 		if field := optionKeywordField(e.Record.GetString("field")); field != "" {
 			idx.EnqueueReindexEntity(e.App, models.CustomFieldOptionsCollection, field, e.Record.Id)
+			return nil
 		}
+		reindexHolders(e.App, idx, "option", e.Record.Id)
 		return nil
 	})
 	// A deleted choice takes its value rows with it too; a renamed one changes
@@ -120,14 +124,7 @@ func registerRecordHooks(app core.App, idx *Index) {
 		if err := e.Next(); err != nil {
 			return err
 		}
-		ids, err := documentIDsByFilter(e.App, models.CustomFieldValuesCollection+"_via_document.choice ?= {:id}",
-			map[string]any{"id": e.Record.Id})
-		if err != nil {
-			e.App.Logger().Error("fulltext choice lookup failed", slog.Any("error", err))
-		}
-		for _, id := range ids {
-			idx.EnqueueUpsert(e.App, id)
-		}
+		reindexHolders(e.App, idx, "choice", e.Record.Id)
 		return nil
 	})
 	reindexValue := func(e *core.RecordEvent) error {
@@ -150,6 +147,17 @@ func registerRecordHooks(app core.App, idx *Index) {
 	}
 	app.OnRecordAfterCreateSuccess(CollectionShares).BindFunc(reindexShared)
 	app.OnRecordAfterDeleteSuccess(CollectionShares).BindFunc(reindexShared)
+}
+
+func reindexHolders(app core.App, idx *Index, column, id string) {
+	ids, err := documentIDsByFilter(app, models.CustomFieldValuesCollection+"_via_document."+column+" ?= {:id}",
+		map[string]any{"id": id})
+	if err != nil {
+		app.Logger().Error("fulltext "+column+" lookup failed", slog.Any("error", err))
+	}
+	for _, docID := range ids {
+		idx.EnqueueUpsert(app, docID)
+	}
 }
 
 // optionKeywordField is the keyword field an option field's options are
