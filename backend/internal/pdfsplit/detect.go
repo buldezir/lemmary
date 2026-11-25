@@ -137,8 +137,8 @@ func readPageText(
 	deps DetectDeps,
 	report func(done, total int),
 ) ([]ai.PageText, string, error) {
-	// One pdftotext run for the whole file: starting it per page would re-parse
-	// the document up to MaxPages times over.
+	// One call for the whole file: one per page would open the document up to
+	// MaxPages times over.
 	texts, err := pdftool.AllPagesText(context.Background(), sourcePath, pageCount)
 	if err != nil {
 		return nil, "", fmt.Errorf("read page text: %w", err)

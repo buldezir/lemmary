@@ -9,12 +9,7 @@ direkt auf dem Host bauen oder ausführen möchten.
 - Go 1.27+ mit aktiviertem cgo (eine C-Toolchain: `gcc` oder `clang`)
 - Node.js 20+
 - [pnpm](https://pnpm.io/installation) 11+ (`npm install -g pnpm`)
-- [poppler-utils](https://poppler.freedesktop.org/) für alle PDF-Arbeiten: `pdftoppm`
-  (Vorschauen und Seitenminiaturen), `pdfinfo` (Seitenzahlen), `pdftotext`
-  (Seitentext), `pdfseparate` und `pdfunite` (Aufteilen von Dokumenten)
-
-Führen Sie unter macOS `brew install poppler` aus. Unter Debian oder Ubuntu führen Sie
-`apt install poppler-utils` aus.
+- PDFium für alle PDF-Arbeiten (siehe [PDFium](#pdfium) unten)
 
 Diese Host-Abhängigkeiten sind bewusst keine Voraussetzungen für das gewöhnliche
 Self-Hosting: Sie sind bereits im Docker-Image enthalten.
@@ -72,6 +67,44 @@ normale Verifikationssuite läuft in Docker, wo es bereits installiert ist.
 
 Führen Sie unter macOS `brew install cmake ninja libomp openblas` aus und verwenden Sie
 dann Option 1 oder 2; das Build-Skript findet die libomp von Homebrew automatisch.
+
+## PDFium {#pdfium}
+
+Alle PDF-Arbeiten – Seitenzahlen, Vorschauen und Miniaturen, Seitentext, Aufteilen
+und Zusammenführen, Entfernen eines Passworts – laufen über [PDFium](https://pdfium.googlesource.com/pdfium/),
+per cgo mit [go-pdfium](https://github.com/klippa-app/go-pdfium) eingebunden. Das
+Backend führt es in Worker-Prozessen aus, die es aus seinem eigenen Binary startet,
+einen pro Aufruf, sodass ein Absturz oder Hänger in PDFium diesen Aufruf kostet
+und nicht den Server.
+
+Es gibt kein Distributionspaket zu installieren. `scripts/pdfium-fetch.sh` lädt die
+vorgebaute Bibliothek von
+[bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) in der
+festgelegten Version herunter, prüft die Prüfsumme und installiert sie zusammen mit
+der pkg-config-Datei, über die cgo sie findet. Der Docker-Build verwendet dasselbe
+Skript.
+
+```bash
+# Systemweit: danach ist nichts einzustellen (unter macOS ldconfig weglassen).
+sudo scripts/pdfium-fetch.sh --prefix /usr/local && sudo ldconfig
+
+# Im Home-Verzeichnis, ohne root.
+scripts/pdfium-fetch.sh --prefix "$HOME/.local/pdfium"
+```
+
+Die Installation im Home-Verzeichnis liegt außerhalb der üblichen Pfade von Compiler
+und Loader. Die `.envrc` des Repositorys setzt beide, wenn `~/.local/pdfium`
+existiert; ohne direnv exportieren Sie sie selbst:
+
+```bash
+export PKG_CONFIG_PATH=$HOME/.local/pdfium/lib/pkgconfig
+export LD_LIBRARY_PATH=$HOME/.local/pdfium/lib   # unter macOS DYLD_LIBRARY_PATH
+```
+
+PDFium kann nicht verschlüsseln, daher erzeugen die Tests, die ein passwortgeschütztes
+PDF brauchen, es mit [qpdf](https://qpdf.readthedocs.io/) (`apt install qpdf`,
+`brew install qpdf`) und werden ohne qpdf übersprungen. Die App selbst verwendet es
+nicht.
 
 ## Aus dem Quellcode ausführen {#run-from-source}
 

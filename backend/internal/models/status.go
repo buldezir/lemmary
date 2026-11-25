@@ -8,12 +8,13 @@ const (
 	JobStatusCancelled   = "cancelled"
 	JobStatusNeedsReview = "needs_review"
 
-	DocStatusPending     = "pending"
-	DocStatusProcessing  = "processing"
-	DocStatusCompleted   = "completed"
-	DocStatusFailed      = "failed"
-	DocStatusCancelled   = "cancelled"
-	DocStatusNeedsReview = "needs_review"
+	DocStatusPending          = "pending"
+	DocStatusProcessing       = "processing"
+	DocStatusCompleted        = "completed"
+	DocStatusFailed           = "failed"
+	DocStatusCancelled        = "cancelled"
+	DocStatusNeedsReview      = "needs_review"
+	DocStatusPasswordRequired = "password_required"
 
 	MetadataSourceUser = "user"
 )
@@ -38,4 +39,5 @@ var UnfinishedDocStatuses = []string{
 	DocStatusFailed,
 	DocStatusCancelled,
 	DocStatusNeedsReview,
+	DocStatusPasswordRequired,
 }

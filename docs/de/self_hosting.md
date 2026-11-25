@@ -5,7 +5,7 @@ description: "Lemmary mit Docker betreiben: das veröffentlichte Image, Volumes,
 # Self-Hosting mit Docker {#self-hosting-with-docker}
 
 Das veröffentlichte Image enthält alles, was Lemmary braucht – das Go-Binary, die
-gebaute SPA und diese Dokumentation, poppler für die PDF-Verarbeitung und den
+gebaute SPA und diese Dokumentation, PDFium für die PDF-Verarbeitung und den
 FAISS-Build, gegen den die Vektorsuche gelinkt ist. Auf dem Host muss außer Docker
 nichts installiert werden.
 
@@ -64,7 +64,7 @@ Extrahierter Text wird in der Zeile gespeichert, und Embeddings kommen mit etwa
 Der Container startet nur so lange als root, wie nötig ist, um ein Volume zu
 übernehmen, das ein älteres, als root laufendes Image angelegt hat, und wechselt
 dann dauerhaft zum unprivilegierten Benutzer `app` (uid/gid 1000) – er rendert
-nicht vertrauenswürdige PDFs mit poppler, und ein Exploit dort sollte keine
+nicht vertrauenswürdige PDFs mit PDFium, und ein Exploit dort sollte keine
 root-Rechte haben.
 
 ## Ports und Reverse-Proxys {#ports-and-reverse-proxies}

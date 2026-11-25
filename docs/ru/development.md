@@ -9,12 +9,7 @@
 - Go 1.27+ с включённым cgo (набор инструментов C: `gcc` или `clang`)
 - Node.js 20+
 - [pnpm](https://pnpm.io/installation) 11+ (`npm install -g pnpm`)
-- [poppler-utils](https://poppler.freedesktop.org/) для всей работы с PDF: `pdftoppm`
-  (превью и миниатюры страниц), `pdfinfo` (число страниц), `pdftotext` (текст
-  страниц), `pdfseparate` и `pdfunite` (разделение документов)
-
-В macOS выполните `brew install poppler`. В Debian или Ubuntu выполните
-`apt install poppler-utils`.
+- PDFium для всей работы с PDF (см. [PDFium](#pdfium) ниже)
 
 Эти зависимости хоста намеренно не являются требованиями для обычного
 самостоятельного хостинга: они уже включены в образ Docker.
@@ -72,6 +67,41 @@ FAISS должен быть на хосте только для Go-команд,
 
 В macOS выполните `brew install cmake ninja libomp openblas`, затем используйте вариант 1 или
 2; скрипт сборки находит libomp из Homebrew автоматически.
+
+## PDFium {#pdfium}
+
+Вся работа с PDF — подсчёт страниц, превью и миниатюры, текст страниц, разделение и
+объединение, снятие пароля — идёт через [PDFium](https://pdfium.googlesource.com/pdfium/),
+подключённый через cgo с помощью [go-pdfium](https://github.com/klippa-app/go-pdfium).
+Бэкенд запускает его в рабочих процессах, которые стартует из собственного бинарного
+файла, по одному на вызов, поэтому сбой или зависание внутри PDFium стоит этого
+вызова, а не сервера.
+
+Пакета дистрибутива для установки нет. `scripts/pdfium-fetch.sh` скачивает готовую
+библиотеку из [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries)
+закреплённой версии, проверяет контрольную сумму и устанавливает её вместе с файлом
+pkg-config, через который её находит cgo. Сборка Docker использует тот же скрипт.
+
+```bash
+# Для всей системы: потом ничего настраивать не нужно (в macOS ldconfig не нужен).
+sudo scripts/pdfium-fetch.sh --prefix /usr/local && sudo ldconfig
+
+# В домашнем каталоге, без root.
+scripts/pdfium-fetch.sh --prefix "$HOME/.local/pdfium"
+```
+
+Установка в домашний каталог лежит вне обычных путей компилятора и загрузчика.
+`.envrc` репозитория задаёт обе переменные, если `~/.local/pdfium` существует; без
+direnv экспортируйте их сами:
+
+```bash
+export PKG_CONFIG_PATH=$HOME/.local/pdfium/lib/pkgconfig
+export LD_LIBRARY_PATH=$HOME/.local/pdfium/lib   # в macOS — DYLD_LIBRARY_PATH
+```
+
+PDFium не умеет шифровать, поэтому тесты, которым нужен защищённый паролем PDF,
+создают его с помощью [qpdf](https://qpdf.readthedocs.io/) (`apt install qpdf`,
+`brew install qpdf`) и без него пропускаются. Само приложение его не использует.
 
 ## Запуск из исходного кода {#run-from-source}
 

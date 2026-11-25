@@ -108,7 +108,7 @@ func init() {
 			&core.TextField{Name: "summary_original", Max: 5000},
 			&core.SelectField{
 				Name:   "processing_status",
-				Values: []string{"pending", "processing", "completed", "failed", "cancelled", "needs_review"},
+				Values: []string{"pending", "processing", "completed", "failed", "cancelled", "needs_review", "password_required"},
 			},
 			&core.TextField{Name: "metadata_source", Max: 200},
 			&core.NumberField{Name: "confidence", Min: new(0.0), Max: new(1.0)},

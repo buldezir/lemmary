@@ -256,6 +256,8 @@ func splitUploadErrorDetail(err error) string {
 		return "The upload is not a readable PDF."
 	case errors.Is(err, pdfsplit.ErrPDFTooLarge):
 		return "The PDF is too large."
+	case errors.Is(err, pdfsplit.ErrPasswordProtected):
+		return "This PDF is password-protected. Upload it on the Files tab and unlock it there."
 	case errors.Is(err, pdfsplit.ErrSinglePage):
 		return "This PDF has only one page, so there is nothing to split. Use the Files tab to upload it."
 	case errors.Is(err, pdfsplit.ErrTooManyPages):

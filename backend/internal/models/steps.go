@@ -1,6 +1,9 @@
 package models
 
 const (
+	// StepUnlock stops a PDF that needs a user password before anything reads
+	// it, so nothing reaches an OCR or AI provider.
+	StepUnlock           = "unlock"
 	StepPreview          = "preview"
 	StepOCR              = "ocr"
 	StepDetectDuplicates = "detect_duplicates"
@@ -20,11 +23,11 @@ const (
 )
 
 var (
-	FullPipelineSteps       = []string{StepPreview, StepOCR, StepDetectDuplicates, StepExtractMetadata, StepApplyMetadata, StepRunRules, StepEmbed, StepLinkRelated}
+	FullPipelineSteps       = []string{StepUnlock, StepPreview, StepOCR, StepDetectDuplicates, StepExtractMetadata, StepApplyMetadata, StepRunRules, StepEmbed, StepLinkRelated}
 	ExtractionPipelineSteps = []string{StepExtractMetadata, StepApplyMetadata, StepRunRules, StepEmbed, StepLinkRelated}
 	// ImportPreserveSteps runs preview/OCR/near-dup detection without AI metadata
 	// overwrite, so ngx title/tags/correspondent/type survive import.
-	ImportPreserveSteps = []string{StepPreview, StepOCR, StepDetectDuplicates, StepEmbed, StepLinkRelated}
+	ImportPreserveSteps = []string{StepUnlock, StepPreview, StepOCR, StepDetectDuplicates, StepEmbed, StepLinkRelated}
 	// EditedRulesSteps runs the rules again after the owner edited a document.
 	EditedRulesSteps = []string{StepRunRules, StepEmbed}
 )

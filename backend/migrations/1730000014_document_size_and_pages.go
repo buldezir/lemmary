@@ -9,7 +9,7 @@ import (
 // the documents create hook, the one point every ingest path passes through, so
 // the instance totals are a SUM over live rows with no counter to drift.
 //
-// Deliberately no backfill: filling them would mean running pdfinfo once per
+// Deliberately no backfill: filling them would mean counting the pages of every
 // existing PDF, which makes boot time a function of library size. An upgraded
 // install undercounts its existing library, which errs toward allowing more
 // rather than locking an owner out of their own archive.

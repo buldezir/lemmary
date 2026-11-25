@@ -10,8 +10,6 @@ import (
 )
 
 func TestMergeConcatenatesInOrder(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdfunite", "pdftotext")
-
 	first := writePDF(t, 2, "FIRST")
 	second := writePDF(t, 3, "SECOND")
 	out := filepath.Join(t.TempDir(), "merged.pdf")
@@ -38,11 +36,9 @@ func TestMergeConcatenatesInOrder(t *testing.T) {
 }
 
 // The scan staging area appends by merging a new page into the file it already
-// holds, so pdfunite's refusal to write over its own input has to be handled
-// inside Merge rather than by every caller.
+// holds, so writing over an input has to be handled inside Merge rather than by
+// every caller.
 func TestMergeCanWriteOverAnInput(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdfunite")
-
 	staged := writePDF(t, 1)
 	page := writePDF(t, 1)
 
@@ -59,8 +55,6 @@ func TestMergeCanWriteOverAnInput(t *testing.T) {
 }
 
 func TestMergeIsByteStableAcrossRuns(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdfunite")
-
 	first := writePDF(t, 2)
 	second := writePDF(t, 2)
 	dir := t.TempDir()
@@ -77,7 +71,7 @@ func TestMergeIsByteStableAcrossRuns(t *testing.T) {
 		return sha256.Sum256(data)
 	}
 
-	// Without canonicalizeFileID, pdfunite's random trailer /ID would make the
+	// Without canonicalizeFileID, PDFium's random trailer /ID would make the
 	// same pages hash differently every run and duplicate detection would never
 	// recognize a scan it has already seen.
 	if digest("a.pdf") != digest("b.pdf") {

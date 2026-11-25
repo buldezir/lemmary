@@ -37,6 +37,16 @@ RUN /usr/local/bin/faiss-build.sh --prefix /opt/faiss --target-arch "$TARGETARCH
 FROM scratch AS faiss
 COPY --from=faiss-build /opt/faiss/ /
 
+# PDFium, which all PDF work runs through, is a prebuilt library: a download
+# for the target architecture, so this stage runs natively whatever the target.
+# scripts/pdfium-fetch.sh owns the pinned release and its checksums.
+FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS pdfium
+
+ARG TARGETARCH
+
+COPY scripts/pdfium-fetch.sh /usr/local/bin/pdfium-fetch.sh
+RUN /usr/local/bin/pdfium-fetch.sh --prefix /opt/pdfium --target-arch "$TARGETARCH"
+
 FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS backend-builder
 
 ARG TARGETOS
@@ -62,6 +72,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
        fi
 
 COPY --from=faiss / /opt/faiss/
+COPY --from=pdfium /opt/pdfium/ /opt/pdfium/
 
 WORKDIR /app/backend
 COPY backend/go.mod backend/go.sum ./
@@ -100,6 +111,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     GOARCH="$TARGETARCH" \
     CGO_CFLAGS="-I/opt/faiss/include" \
     CGO_LDFLAGS="-L/opt/faiss/lib -Wl,-rpath-link,/opt/faiss/lib $EXTRA_LDFLAGS" \
+    PKG_CONFIG_PATH=/opt/pdfium/lib/pkgconfig \
     go build -tags vectors -o lemmary .
 
 # The bundle is static JavaScript, HTML and CSS: identical whatever it is built
@@ -127,13 +139,17 @@ LABEL org.opencontainers.image.title="Lemmary" \
       org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-         poppler-utils libopenblas0-pthread libgomp1 wget ca-certificates \
+         libopenblas0-pthread libgomp1 wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 # FAISS is only ever loaded by the binary next to it, so the two libraries go to
 # /usr/local/lib and ldconfig makes them findable without an rpath. faiss.ref
 # rides along so a running image can be asked which FAISS it has -- which is how
 # you tell two same-tag images of different architectures apart.
 COPY --from=faiss /lib/libfaiss.so /lib/libfaiss_c.so /lib/faiss.ref /usr/local/lib/
+# PDFium the same way; pdfium.ref names the release, and PDFium's licenses ship
+# with the library as its Apache-2.0 terms require.
+COPY --from=pdfium /opt/pdfium/lib/libpdfium.so /opt/pdfium/lib/pdfium.ref /usr/local/lib/
+COPY --from=pdfium /opt/pdfium/share/doc/pdfium/ /usr/share/doc/pdfium/
 RUN ldconfig
 WORKDIR /app
 # The app runs as this user, not root — the entrypoint drops privileges after

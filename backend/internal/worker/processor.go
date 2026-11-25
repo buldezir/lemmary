@@ -459,6 +459,10 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 		if err != nil {
 			return err
 		}
+		// Decided before the claim marks the document processing, while its
+		// status can still say it is waiting for a password.
+		steps = withUnlockStep(steps, document.GetString("processing_status"))
+		job.Set("steps", steps)
 
 		claimed = true
 		p.app.Logger().Info("picked job",

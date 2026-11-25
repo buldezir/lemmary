@@ -353,6 +353,7 @@ func buildExportMetadata(record *core.Record, index taxonomyIndex, originalFilen
 		"metadata_source":         record.GetString("metadata_source"),
 		"confidence":              record.GetFloat("confidence"),
 		"checksum":                record.GetString("checksum"),
+		"original_checksum":       record.GetString("original_checksum"),
 		"text_fingerprint":        record.GetString("text_fingerprint"),
 		// The exporting instance's id for the near-duplicate original. Import
 		// remaps it, or drops it when that document is not in the archive.

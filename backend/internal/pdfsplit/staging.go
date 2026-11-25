@@ -2,6 +2,7 @@ package pdfsplit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -42,7 +43,7 @@ type Preview struct {
 type staged struct {
 	preview Preview
 	// renderMu serializes this upload's page renders, so two requests for the
-	// same page do not run pdftoppm twice over the same file.
+	// same page do not render it twice over.
 	renderMu sync.Mutex
 }
 
@@ -143,6 +144,9 @@ func savePDF(path string, src io.Reader) (int, int64, error) {
 		return 0, 0, ErrNotPDF
 	}
 	pageCount, err := pdftool.PageCount(context.Background(), path)
+	if errors.Is(err, pdftool.ErrPasswordRequired) {
+		return 0, 0, ErrPasswordProtected
+	}
 	if err != nil {
 		return 0, 0, ErrNotPDF
 	}
@@ -209,8 +213,8 @@ func PageThumb(uploadID, ownerUserID string, page int) ([]byte, error) {
 	}
 
 	// Serialized per upload: the UI fetches a few pages at a time, and letting
-	// each of those start its own poppler process over the same file buys
-	// little for the load it adds.
+	// each of those take its own PDFium worker over the same file buys little
+	// for the load it adds.
 	item.Payload.renderMu.Lock()
 	defer item.Payload.renderMu.Unlock()
 	if data, err := os.ReadFile(path); err == nil {

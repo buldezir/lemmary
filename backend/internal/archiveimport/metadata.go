@@ -1,6 +1,7 @@
 package archiveimport
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -66,6 +67,8 @@ func customFieldsField(meta map[string]any, resolver *taxonomyResolver) ([]model
 	return out, nil
 }
 
+var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 // restorableStatuses are the processing_status values the collection accepts.
 // "processing" is deliberately absent: nothing is mid-run in a fresh restore,
 // and the pipeline sets the real status once its job runs.
@@ -88,6 +91,12 @@ func applyMetadata(record *core.Record, meta map[string]any, resolver *taxonomyR
 		if value := stringField(meta, field); value != "" {
 			record.Set(field, value)
 		}
+	}
+
+	// The locked file an unlocked document came from, so it still counts as a
+	// duplicate after a restore. Anything but a sha256 would fail the save.
+	if sum := stringField(meta, "original_checksum"); sha256Hex.MatchString(sum) {
+		record.Set("original_checksum", sum)
 	}
 
 	if date, ok := models.NormalizeDocumentDate(stringField(meta, "document_date")); ok && date != "" {

@@ -14,16 +14,6 @@ import (
 	"lemmary/backend/internal/pdftool/testpdf"
 )
 
-// requirePoppler skips when a poppler binary the test needs is absent.
-func requirePoppler(t *testing.T, binaries ...string) {
-	t.Helper()
-	for _, binary := range binaries {
-		if _, err := exec.LookPath(binary); err != nil {
-			t.Skipf("%s not installed", binary)
-		}
-	}
-}
-
 // resetStaging isolates the package-level registry between tests.
 func resetStaging(t *testing.T) {
 	t.Helper()
@@ -68,6 +58,19 @@ func TestSavePDFRejectsUnsplittableUploads(t *testing.T) {
 	}
 	if _, _, err := savePDF(filepath.Join(dir, "many.pdf"), bytes.NewReader(testpdf.Multipage(MaxPages+1))); !errors.Is(err, ErrTooManyPages) {
 		t.Fatalf("too many pages err=%v want ErrTooManyPages", err)
+	}
+}
+
+func TestSavePDFNamesAPasswordProtectedUpload(t *testing.T) {
+	if _, err := exec.LookPath("qpdf"); err != nil {
+		t.Skip("qpdf not installed")
+	}
+	locked, err := testpdf.Encrypt(testpdf.Multipage(3), "secret", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := savePDF(filepath.Join(t.TempDir(), "locked.pdf"), bytes.NewReader(locked)); !errors.Is(err, ErrPasswordProtected) {
+		t.Fatalf("err=%v want ErrPasswordProtected", err)
 	}
 }
 
@@ -190,7 +193,6 @@ func TestSweepKeepsAHeldUpload(t *testing.T) {
 
 func TestLookupAndPageThumbAreOwnerScoped(t *testing.T) {
 	resetStaging(t)
-	requirePoppler(t, "pdftoppm")
 	root := t.TempDir()
 	item := stageDir(t, root, "upload-1", "owner-a", 3, time.Now().UTC().Add(time.Hour))
 

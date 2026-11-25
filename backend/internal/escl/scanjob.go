@@ -229,7 +229,7 @@ func stage(app core.App, ownerUserID string, paths []string) (*stagedScan, error
 }
 
 // merge appends pages to the staged document. The staged file is empty on the
-// first scan, and pdfunite has nothing to do with an empty input, so the first
+// first scan, and there is nothing to merge an empty file with, so the first
 // page is copied into place instead.
 func merge(stagedPath string, paths []string) error {
 	info, err := os.Stat(stagedPath)

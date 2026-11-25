@@ -215,9 +215,11 @@ func resolveChecksumOwner(app core.App, record, existing *core.Record, checksum 
 		return markExactDuplicate(app, record, existing, result)
 	}
 	// The older document takes ownership. One transaction, so a failure
-	// between the two saves cannot leave the checksum on neither.
+	// between the two saves cannot leave the checksum on neither. A match on
+	// original_checksum only (an unlocked document, whose checksum is its
+	// decrypted file's) keeps its own checksum: there is nothing to take.
 	err := app.RunInTransaction(func(txApp core.App) error {
-		if existing.GetString("checksum") != "" {
+		if existing.GetString("checksum") == checksum {
 			existing.Set("checksum", "")
 			if err := txApp.Save(existing); err != nil {
 				return err

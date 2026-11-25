@@ -16,7 +16,7 @@ import (
 //
 // Both documents hooks bind on every install because MaxOCRPages is not an
 // allowance a plan sells. That costs an unlimited install a five-byte header
-// read per upload, plus a pdfinfo and a temp spool for the actual PDFs, but no
+// read per upload, plus a page count and a temp spool for the actual PDFs, but no
 // query: no usage aggregate per upload, and no users hook at all.
 func Register(app core.App, lim Limits) {
 	if lim.Any() {

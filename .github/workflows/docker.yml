@@ -41,7 +41,7 @@ env:
 # architecture is built on a runner of that architecture and the two are merged
 # into one manifest, so nothing here runs under emulation. The test job runs
 # verification inside Docker rather than installing Go, Node, Playwright or
-# poppler on the runner.
+# PDFium on the runner.
 jobs:
   test:
     # This `if` does not keep fork code off the self-hosted runner: a fork's pull

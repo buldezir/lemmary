@@ -2,20 +2,12 @@ package limits
 
 import (
 	"os"
-	"os/exec"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
 	"lemmary/backend/internal/pdftool/testpdf"
 )
-
-func requirePoppler(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("pdfinfo"); err != nil {
-		t.Skip("pdfinfo not installed")
-	}
-}
 
 func uploadFromBytes(t *testing.T, name string, data []byte) *filesystem.File {
 	t.Helper()
@@ -29,7 +21,6 @@ func uploadFromBytes(t *testing.T, name string, data []byte) *filesystem.File {
 }
 
 func TestPageCountOfUploadCountsPDFPages(t *testing.T) {
-	requirePoppler(t)
 	for _, pages := range []int{1, 3, 12} {
 		file := uploadFromBytes(t, "scan.pdf", testpdf.Multipage(pages))
 		if got := PageCountOfUpload(nil, file); got != int64(pages) {
@@ -55,7 +46,6 @@ func TestPageCountOfUploadNonPDFIsOnePage(t *testing.T) {
 // The name is the client's word: .txt, .csv and .docx are all accepted upload
 // types, so trusting it made every page limit bypassable with `mv`.
 func TestPageCountOfUploadIgnoresASpoofedExtension(t *testing.T) {
-	requirePoppler(t)
 	pdf := testpdf.Multipage(7)
 	for _, name := range []string{
 		"notes.txt", "table.csv", "letter.docx", "book.xlsx", "receipt.png",
@@ -69,7 +59,7 @@ func TestPageCountOfUploadIgnoresASpoofedExtension(t *testing.T) {
 }
 
 // Something merely named .pdf is not charged for pages it does not have, and
-// never reaches pdfinfo.
+// never reaches PDFium.
 func TestPageCountOfUploadIgnoresAPDFNameWithoutTheHeader(t *testing.T) {
 	file := uploadFromBytes(t, "invoice.pdf", []byte("this is plain text, not a PDF"))
 	if got := PageCountOfUpload(nil, file); got != SinglePage {
@@ -101,7 +91,6 @@ func TestHasPDFHeader(t *testing.T) {
 // Refusing an unreadable PDF here would turn it into data loss; the processing
 // pipeline is the thing that should report it.
 func TestPageCountOfUploadUnreadablePDFIsOnePage(t *testing.T) {
-	requirePoppler(t)
 	file := uploadFromBytes(t, "broken.pdf", []byte("%PDF-1.4 but not really"))
 	if got := PageCountOfUpload(nil, file); got != SinglePage {
 		t.Fatalf("an unreadable PDF counted as %d pages, want %d", got, SinglePage)
@@ -115,7 +104,6 @@ func TestPageCountOfUploadNilFile(t *testing.T) {
 }
 
 func TestPageCountOfUploadRemovesItsTempFile(t *testing.T) {
-	requirePoppler(t)
 	dir := t.TempDir()
 	t.Setenv("TMPDIR", dir)
 

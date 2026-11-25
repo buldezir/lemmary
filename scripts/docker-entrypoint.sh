@@ -9,7 +9,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 # The app runs as the unprivileged "app" user: it renders untrusted PDFs
-# through poppler, and an exploit there should not be root in the container.
+# through PDFium, and an exploit there should not be root in the container.
 # Starts as root only to adopt volumes created by older root-running images,
 # then drops privileges. :80 still binds: Docker sets
 # net.ipv4.ip_unprivileged_port_start=0.

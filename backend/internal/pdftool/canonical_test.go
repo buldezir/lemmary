@@ -100,8 +100,6 @@ func TestCanonicalizeTrailerIDIgnoresBracketsInsideStrings(t *testing.T) {
 }
 
 func TestExtractRangeIsByteStableAcrossRuns(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdfseparate", "pdfunite")
-
 	source := writePDF(t, 6)
 	dir := t.TempDir()
 
@@ -132,8 +130,6 @@ func TestExtractRangeIsByteStableAcrossRuns(t *testing.T) {
 }
 
 func TestExtractRangeOutputStaysReadable(t *testing.T) {
-	requirePoppler(t, "pdfinfo", "pdfseparate", "pdfunite", "pdftotext")
-
 	source := writePDF(t, 5, "Invoice INV-1001")
 	outPath := filepath.Join(t.TempDir(), "part.pdf")
 	if err := ExtractRange(context.Background(), source, 2, 3, outPath); err != nil {
@@ -150,5 +146,34 @@ func TestExtractRangeOutputStaysReadable(t *testing.T) {
 	}
 	if !strings.Contains(text, "Page 2") || !strings.Contains(text, "Invoice INV-1001") {
 		t.Fatalf("text layer damaged: %q", text)
+	}
+}
+
+func TestCanonicalizeCreationDatePinsOnlyTheInfoDictionary(t *testing.T) {
+	t.Parallel()
+
+	head := "%PDF-1.7\r\n1 0 obj\r\n<</Type/Catalog>>\r\nendobj\r\n" +
+		"2 0 obj\r\n<</Type/Annot/CreationDate(D:20250101120000+01'00')>>\r\nendobj\r\n" +
+		"3 0 obj\r\n<</Producer(PDFium)/CreationDate(D:20261122193700+00'00')>>\r\nendobj\r\n"
+	original := []byte(fmt.Sprintf("%sxref\r\n0 4\r\ntrailer\r\n<</Info 3 0 R/Root 1 0 R>>\r\nstartxref\r\n%d\r\n%%%%EOF\r\n", head, len(head)))
+
+	out, changed := canonicalizeCreationDate(original)
+	if !changed {
+		t.Fatal("expected the Info date to be pinned")
+	}
+	if len(out) != len(original) {
+		t.Fatalf("length changed from %d to %d", len(original), len(out))
+	}
+	if !bytes.Contains(out, []byte("/Producer(PDFium)/CreationDate(D:19700101000000+00'00')")) {
+		t.Fatalf("Info date not pinned: %q", out)
+	}
+	if !bytes.Contains(out, []byte("/Type/Annot/CreationDate(D:20250101120000+01'00')")) {
+		t.Fatalf("an annotation's date was rewritten: %q", out)
+	}
+	if !bytes.Contains(original, []byte("D:20261122193700")) {
+		t.Fatal("the input slice was modified")
+	}
+	if _, again := canonicalizeCreationDate(out); again {
+		t.Fatal("a pinned date must not be rewritten again")
 	}
 }

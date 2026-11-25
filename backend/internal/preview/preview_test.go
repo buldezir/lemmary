@@ -1,9 +1,12 @@
 package preview
 
 import (
+	"image/png"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"testing"
+
+	"lemmary/backend/internal/pdftool/testpdf"
 )
 
 func TestGenerateFirstPagePNGRejectsNonPDF(t *testing.T) {
@@ -16,23 +19,28 @@ func TestGenerateFirstPagePNGRejectsNonPDF(t *testing.T) {
 }
 
 func TestGenerateFirstPagePNG(t *testing.T) {
-	if _, err := exec.LookPath("pdftoppm"); err != nil {
-		t.Skip("pdftoppm not installed")
-	}
-
-	pdfPath := os.Getenv("PREVIEW_TEST_PDF")
-	if pdfPath == "" {
-		t.Skip("set PREVIEW_TEST_PDF to run integration test")
+	pdfPath := filepath.Join(t.TempDir(), "document.pdf")
+	if err := os.WriteFile(pdfPath, testpdf.Multipage(3), 0o600); err != nil {
+		t.Fatalf("write pdf: %v", err)
 	}
 
 	file, err := GenerateFirstPagePNG(t.Context(), pdfPath)
 	if err != nil {
 		t.Fatalf("GenerateFirstPagePNG() error: %v", err)
 	}
-	if file == nil {
-		t.Fatal("expected preview file")
+	if file == nil || file.Name == "" {
+		t.Fatal("expected a named preview file")
 	}
-	if file.Name == "" {
-		t.Fatal("expected preview file name")
+	reader, err := file.Reader.Open()
+	if err != nil {
+		t.Fatalf("open preview: %v", err)
+	}
+	defer reader.Close()
+	img, err := png.Decode(reader)
+	if err != nil {
+		t.Fatalf("preview is not a PNG: %v", err)
+	}
+	if bounds := img.Bounds(); max(bounds.Dx(), bounds.Dy()) != MaxEdge {
+		t.Fatalf("preview is %dx%d, want the longest edge at %d", bounds.Dx(), bounds.Dy(), MaxEdge)
 	}
 }

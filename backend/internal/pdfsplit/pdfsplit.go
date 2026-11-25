@@ -55,7 +55,7 @@ func maxPDFBytesFromEnv() int64 {
 var maxPartBytes = DefaultMaxPartBytes
 
 var (
-	// ErrNotPDF is returned when the upload is not a PDF poppler can read.
+	// ErrNotPDF is returned when the upload is not a PDF PDFium can read.
 	ErrNotPDF = errors.New("the upload is not a readable PDF")
 	// ErrPDFTooLarge is returned when the upload exceeds MaxPDFBytes. The limit
 	// is not in the message: MaxPDFBytes is read from the environment at start,
@@ -64,6 +64,8 @@ var (
 	ErrPDFTooLarge = errors.New("the PDF is too large")
 	// ErrTooManyPages is returned when the PDF exceeds MaxPages.
 	ErrTooManyPages = fmt.Errorf("the PDF has more than %d pages", MaxPages)
+	// ErrPasswordProtected is returned for a PDF that needs a password to open.
+	ErrPasswordProtected = errors.New("the PDF is password-protected")
 	// ErrSinglePage is returned for a one-page PDF, which has nothing to split.
 	ErrSinglePage = errors.New("the PDF has only one page")
 	// ErrUploadNotFound is returned when the upload id is unknown, expired, or

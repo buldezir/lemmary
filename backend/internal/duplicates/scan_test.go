@@ -287,3 +287,28 @@ func TestRefreshFingerprintFollowsTheText(t *testing.T) {
 		t.Fatalf("a text too short to fingerprint kept %q", got)
 	}
 }
+
+// An unlocked document matches the locked file through original_checksum. An
+// earlier copy of that locked file takes the hash, but the unlocked document
+// keeps the checksum of its own, decrypted file.
+func TestScanAllLeavesAnUnlockedDocumentItsChecksum(t *testing.T) {
+	app := testpb.Open(t)
+	userID := saveScanTestUser(t, app)
+	locked := scanTestChecksum(t)
+	earlier := saveScanTestDocument(t, app, userID, "", "2026-01-01 10:00:00.000Z")
+	unlocked := saveScanTestDocument(t, app, userID, strings.Repeat("d", 64), "2026-01-02 10:00:00.000Z")
+	unlocked.Set("original_checksum", locked)
+	if err := app.Save(unlocked); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ScanAll(app, config.Config{}); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if got := reloadScanTestDocument(t, app, unlocked.Id).GetString("checksum"); got != strings.Repeat("d", 64) {
+		t.Fatalf("unlocked document checksum = %q, want its decrypted file's", got)
+	}
+	if got := reloadScanTestDocument(t, app, earlier.Id).GetString("checksum"); got != locked {
+		t.Fatalf("earlier copy checksum = %q, want the locked file's %q", got, locked)
+	}
+}

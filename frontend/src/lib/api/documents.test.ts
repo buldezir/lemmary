@@ -5,6 +5,7 @@ import {
   fetchPdfBlobUrl,
   fileUrlWithToken,
   listMatchingDocumentIds,
+  listPasswordRequiredDocuments,
   parseDuplicateOfId,
   uploadErrorMessage,
 } from './documents'
@@ -400,5 +401,37 @@ describe('countMatchingDocuments', () => {
 
     expect(await countMatchingDocuments('invoice', noFilters)).toBe(7)
     expect(new URL(urls[0]).pathname).toBe('/api/app/documents/search')
+  })
+})
+
+describe('listPasswordRequiredDocuments', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    pb.authStore.clear()
+  })
+
+  // Activity counts what this returns, so a long backlog of locked PDFs has
+  // to come back whole rather than as its first page.
+  it('pages through every locked document', async () => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }))
+    pb.authStore.save(`h.${payload}.s`, { id: 'me', collectionId: 'users', collectionName: 'users' })
+    const urls: URL[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const parsed = new URL(url)
+        urls.push(parsed)
+        const page = Number(parsed.searchParams.get('page'))
+        const count = page === 1 ? 200 : 3
+        const items = Array.from({ length: count }, (_, i) => ({ id: `p${page}-${i}`, title: '', file: 'f.pdf' }))
+        return Response.json({ page, perPage: 200, items })
+      }),
+    )
+
+    const locked = await listPasswordRequiredDocuments()
+    expect(locked).toHaveLength(203)
+    expect(urls).toHaveLength(2)
+    expect(urls[0].searchParams.get('sort')).toBe('-created,id')
+    expect(urls[0].searchParams.get('filter')).toBe('processing_status = "password_required" && user = "me"')
   })
 })

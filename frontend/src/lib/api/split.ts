@@ -41,7 +41,7 @@ export type SplitProgress = JobProgress
 /**
  * Sized to what the backend may legitimately spend: detection reads up to 40
  * pages through the OCR provider before calling the model, and a split extracts
- * up to 100 parts with a minute of poppler budget each.
+ * up to 100 parts with a minute of PDFium budget each.
  */
 const detectTimeoutMs = 30 * 60 * 1000
 const splitTimeoutMs = 2 * 60 * 60 * 1000
