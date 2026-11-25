@@ -39,24 +39,35 @@ type Catalog struct {
 // lacks asks about nothing: "includes" fails and "does not include" holds.
 const noMatch = "\x00none"
 
-// IDByName is the owner's tag (field "") or option of field with that name,
-// ignoring case and surrounding space, or "" when there is none.
+// IDByName is the owner's tag (field "") or option of field with that name:
+// the name ignoring case, else the models.NameKey match extraction and a
+// global set_field resolve names by, or "" when there is none.
 func (cat Catalog) IDByName(field, name string) string {
-	name = strings.TrimSpace(name)
-	if field == "" {
-		for id, tag := range cat.Tags {
-			if strings.EqualFold(strings.TrimSpace(tag), name) {
-				return id
+	names := cat.Tags
+	if field != "" {
+		names = map[string]string{}
+		for id, option := range cat.Options {
+			if option.Field == field {
+				names[id] = option.Name
 			}
 		}
-		return ""
 	}
-	for id, option := range cat.Options {
-		if option.Field == field && strings.EqualFold(strings.TrimSpace(option.Name), name) {
+	name = strings.TrimSpace(name)
+	key := models.NameKey(name)
+	var keyed []string
+	for id, candidate := range names {
+		if strings.EqualFold(strings.TrimSpace(candidate), name) {
 			return id
 		}
+		if key != "" && models.NameKey(candidate) == key {
+			keyed = append(keyed, id)
+		}
 	}
-	return ""
+	if len(keyed) == 0 {
+		return ""
+	}
+	slices.Sort(keyed)
+	return keyed[0]
 }
 
 // Localize points a global rule's conditions at the owner's tags and options by
@@ -243,9 +254,9 @@ func validateAIExtract(a Action, cat Catalog) error {
 		return i18n.Errorf("An AI action's instructions are limited to %d characters.", MaxPromptRunes)
 	}
 	for _, id := range a.Fields {
-		// The predefined option fields are extraction's own answer, not one
-		// an instruction can be scoped to.
-		if field, ok := cat.Fields[id]; !ok || field.Type == models.CustomFieldOption {
+		// The predefined fields are extraction's own answer, not one an
+		// instruction can be scoped to.
+		if _, ok := cat.Fields[id]; !ok || models.IsPredefinedField(id) {
 			return i18n.Errorf("An action refers to a field, tag or value that does not exist.")
 		}
 	}

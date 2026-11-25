@@ -4,6 +4,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -14,13 +15,16 @@ const (
 	CustomFieldNumber = "number"
 	CustomFieldDate   = "date"
 	// CustomFieldOption takes its value from a per-user vocabulary in
-	// custom_field_options. Only the predefined fields are of this type.
+	// custom_field_options, which extraction reuses and adds to: the two
+	// predefined fields, and any an admin adds.
 	CustomFieldOption = "option"
 	// CustomFieldChoice takes one of the admin's fixed custom_field_choices.
 	CustomFieldChoice = "choice"
 )
 
 const MaxCustomFieldValueRunes = 500
+
+const MaxOptionNameRunes = 255
 
 // JobOverwriteCustomFields is the processing_jobs flag that lets its
 // apply_metadata step replace values someone already has, not only fill the
@@ -63,13 +67,17 @@ var (
 	PredefinedCustomFields = []CustomField{CorrespondentField, DocumentTypeField}
 )
 
+func IsPredefinedField(id string) bool {
+	return id == CorrespondentFieldID || id == DocumentTypeFieldID
+}
+
 // LoadCustomFields reads the admin's fields in the order they were added,
-// without the predefined option fields, which every caller handles on its own.
+// without the predefined fields, which every caller handles on its own.
 // The collection allows no blank name, but a name of spaces is blank once
 // trimmed.
 func LoadCustomFields(app core.App) ([]CustomField, error) {
-	records, err := app.FindRecordsByFilter(CustomFieldsCollection, "type != {:option}", "created,id", 0, 0,
-		map[string]any{"option": CustomFieldOption})
+	records, err := app.FindRecordsByFilter(CustomFieldsCollection, "id != {:correspondent} && id != {:type}", "created,id", 0, 0,
+		map[string]any{"correspondent": CorrespondentFieldID, "type": DocumentTypeFieldID})
 	if err != nil {
 		return nil, err
 	}
@@ -106,8 +114,9 @@ func attachChoices(app core.App, fields []CustomField) error {
 
 // Coerce turns a value from a model, an archive or a client into what the
 // field stores, or reports false when it does not fit the field's type. An
-// option field takes an option id; a choice field takes the name of one of its
-// choices and stores that choice's id.
+// option field takes a name, which worker.ResolveOptionNames turns into the
+// owner's option; a choice field takes the name of one of its choices and
+// stores that choice's id.
 func (f CustomField) Coerce(v any) (any, bool) {
 	switch f.Type {
 	case CustomFieldNumber:
@@ -122,7 +131,7 @@ func (f CustomField) Coerce(v any) (any, bool) {
 	case CustomFieldOption:
 		s, ok := v.(string)
 		s = strings.TrimSpace(s)
-		return s, ok && s != ""
+		return s, ok && s != "" && utf8.RuneCountInString(s) <= MaxOptionNameRunes
 	case CustomFieldChoice:
 		s, _ := v.(string)
 		for _, choice := range f.Choices {

@@ -26,6 +26,7 @@ const TYPE_LABELS: Record<CustomFieldType, string> = {
   number: t('settingsFields.typeNumber'),
   date: t('settingsFields.typeDate'),
   choice: t('settingsFields.typeChoice'),
+  option: t('settingsFields.typeOption'),
 }
 
 const PRESETS = fieldPresets()
@@ -301,6 +302,7 @@ function FieldDialog({
               ))}
             </div>
             <p className={fieldHintClassName}>{t('settingsFields.typeFixed')}</p>
+            {draft.type === 'option' && <p className={fieldHintClassName}>{t('settingsFields.optionHint')}</p>}
           </fieldset>
         ) : (
           <div className="flex flex-col gap-1">

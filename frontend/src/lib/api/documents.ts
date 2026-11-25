@@ -11,7 +11,7 @@ import type { TimelineMonth } from '../timeline'
 
 // Re-exported from ./tags because a document's expand carries them.
 export type { TagRecord } from './tags'
-import type { TagRecord } from './tags'
+import { duplicateNameError, type TagRecord } from './tags'
 import {
   CORRESPONDENT_FIELD_ID,
   DOCUMENT_TYPE_FIELD_ID,
@@ -44,6 +44,48 @@ export function listOptions(fieldId: string): Promise<OptionRecord[]> {
     sort: 'name',
     requestKey: `options-${fieldId}`,
   })
+}
+
+export async function createOption(fieldId: string, name: string): Promise<OptionRecord> {
+  await ensureAuth()
+  const userId = pb.authStore.record?.id
+  if (!userId) {
+    throw new Error(t('documents.signedInRequired'))
+  }
+  try {
+    return await pb
+      .collection('custom_field_options')
+      .create<OptionRecord>({ field: fieldId, user: userId, name }, { requestKey: null })
+  } catch (err) {
+    throw duplicateNameError(err, name, t('optionsPage.duplicateName', { name }))
+  }
+}
+
+export async function renameOption(id: string, name: string): Promise<OptionRecord> {
+  await ensureAuth()
+  try {
+    const saved = await pb.collection('custom_field_options').update<OptionRecord>(id, { name }, { requestKey: null })
+    notifyDocumentsChanged()
+    return saved
+  } catch (err) {
+    throw duplicateNameError(err, name, t('optionsPage.duplicateName', { name }))
+  }
+}
+
+export async function deleteOption(id: string): Promise<void> {
+  await ensureAuth()
+  await pb.collection('custom_field_options').delete(id, { requestKey: null })
+  notifyDocumentsChanged()
+}
+
+export async function mergeOption(id: string, intoId: string): Promise<number> {
+  const data = await apiFetch<{ documents: number }>(`/api/app/options/${encodeURIComponent(id)}/merge`, {
+    method: 'POST',
+    body: { into: intoId },
+    fallbackError: t('optionsPage.mergeError'),
+  })
+  notifyDocumentsChanged()
+  return data.documents
 }
 
 export type DocumentRecord = {

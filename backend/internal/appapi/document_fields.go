@@ -3,6 +3,7 @@ package appapi
 import (
 	"errors"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pocketbase/pocketbase/core"
 
@@ -67,16 +68,7 @@ func documentFieldWrites(app core.App, document *core.Record, body map[string]an
 		}
 		writes = append(writes, models.FieldWrite{Field: field, Value: value})
 	}
-	for i, w := range writes {
-		if name, ok := w.Value.(string); ok && w.Field.Type == models.CustomFieldOption {
-			id, _, err := worker.EnsureOption(app, w.Field.ID, document.GetString("user"), name)
-			if err != nil {
-				return nil, err
-			}
-			writes[i].Value = id
-		}
-	}
-	return writes, nil
+	return writes, worker.ResolveOptionNames(app, document.GetString("user"), writes)
 }
 
 // documentFields is every field a document can hold, by id.
@@ -103,6 +95,9 @@ func clientFieldValue(field models.CustomField, raw any) (any, error) {
 	if field.Type == models.CustomFieldOption {
 		if !isString {
 			return nil, i18n.Errorf("%s must be a name", field.Name)
+		}
+		if utf8.RuneCountInString(strings.TrimSpace(s)) > models.MaxOptionNameRunes {
+			return nil, i18n.Errorf("%s is limited to %d characters.", field.Name, models.MaxOptionNameRunes)
 		}
 		return strings.TrimSpace(s), nil
 	}

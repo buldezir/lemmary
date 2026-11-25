@@ -54,18 +54,24 @@ func TestLoadExtractionCatalogEmptyUser(t *testing.T) {
 }
 
 func TestNormalizeNamedEntityKey(t *testing.T) {
-	if got, want := normalizeNamedEntityKey("Amazon EU S.à r.l."), normalizeNamedEntityKey("Amazon EU S.a.r.l."); got != want || got == "" {
+	if got, want := models.NameKey("Amazon EU S.à r.l."), models.NameKey("Amazon EU S.a.r.l."); got != want || got == "" {
 		t.Fatalf("accent/punct variants should match, got %q vs %q", got, want)
 	}
-	if got, want := normalizeNamedEntityKey("Invoice"), normalizeNamedEntityKey("invoice"); got != want {
+	if got, want := models.NameKey("Invoice"), models.NameKey("invoice"); got != want {
 		t.Fatalf("case variants should match, got %q vs %q", got, want)
 	}
-	branch := normalizeNamedEntityKey("Amazon EU S.à r.l., German Branch")
-	base := normalizeNamedEntityKey("Amazon EU S.à r.l.")
+	branch := models.NameKey("Amazon EU S.à r.l., German Branch")
+	base := models.NameKey("Amazon EU S.à r.l.")
 	if branch == base {
 		t.Fatalf("German Branch should stay distinct, both %q", branch)
 	}
-	if normalizeNamedEntityKey("...") != "" {
+	if models.NameKey("H&M") == models.NameKey("H.M") {
+		t.Fatal("& should stay distinct from other punctuation")
+	}
+	if models.NameKey("H & M") != models.NameKey("H&M") {
+		t.Fatal("spacing around & should not matter")
+	}
+	if models.NameKey("...") != "" {
 		t.Fatal("punctuation-only names should normalize empty")
 	}
 }

@@ -14,8 +14,9 @@ const (
 	// 3 added FieldOwner, which an index built at 2 does not carry. 4 dropped
 	// purpose and the *_original fields, which an older "all" still matches on.
 	// 5 added FieldCustomFields and dropped "all", a copy of every text field
-	// that no query read.
-	MappingVersion = "5"
+	// that no query read. 6 gave FieldCustomFields term vectors: a quoted
+	// phrase needs their positions, so an exact value never matched without.
+	MappingVersion = "6"
 
 	AnalyzerName = "archive"
 
@@ -71,15 +72,14 @@ func newMapping() (mapping.IndexMapping, error) {
 	doc.AddFieldMappingsAt(FieldTags, keywordField())
 	doc.AddFieldMappingsAt(FieldDocumentDate, dateField())
 
-	doc.AddFieldMappingsAt(FieldTitle, textField(false, true))
-	doc.AddFieldMappingsAt(FieldSummary, textField(false, true))
-	doc.AddFieldMappingsAt(FieldOCRText, textField(true, true))
-	doc.AddFieldMappingsAt(FieldTagNames, textField(false, true))
-	doc.AddFieldMappingsAt(FieldDocumentTypeName, textField(false, true))
-	doc.AddFieldMappingsAt(FieldCorrespondentName, textField(false, true))
-	doc.AddFieldMappingsAt(FieldPeople, textField(false, true))
-	// Never highlighted, so term vectors would just double posting storage.
-	doc.AddFieldMappingsAt(FieldCustomFields, textField(false, false))
+	doc.AddFieldMappingsAt(FieldTitle, textField(false))
+	doc.AddFieldMappingsAt(FieldSummary, textField(false))
+	doc.AddFieldMappingsAt(FieldOCRText, textField(true))
+	doc.AddFieldMappingsAt(FieldTagNames, textField(false))
+	doc.AddFieldMappingsAt(FieldDocumentTypeName, textField(false))
+	doc.AddFieldMappingsAt(FieldCorrespondentName, textField(false))
+	doc.AddFieldMappingsAt(FieldPeople, textField(false))
+	doc.AddFieldMappingsAt(FieldCustomFields, textField(false))
 
 	im.DefaultMapping = doc
 	return im, nil
@@ -93,12 +93,12 @@ func keywordField() *mapping.FieldMapping {
 	return fm
 }
 
-func textField(store, termVectors bool) *mapping.FieldMapping {
+func textField(store bool) *mapping.FieldMapping {
 	fm := bleve.NewTextFieldMapping()
 	fm.Analyzer = AnalyzerName
 	fm.IncludeInAll = false
 	fm.Store = store
-	fm.IncludeTermVectors = termVectors
+	fm.IncludeTermVectors = true
 	return fm
 }
 

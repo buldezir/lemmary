@@ -134,6 +134,51 @@ func FromRecord(record *core.Record) (Rule, error) {
 	return rule, nil
 }
 
+// OptionInUse reports whether one of the user's rules reads or sets the option.
+func OptionInUse(app core.App, userID, optionID string) (bool, error) {
+	var n int
+	err := app.DB().NewQuery(`SELECT COUNT(*) FROM ` + Collection + ` WHERE user = {:user}
+		AND (instr(conditions, {:id}) > 0 OR instr(actions, {:id}) > 0)`).
+		Bind(dbx.Params{"user": userID, "id": optionID}).Row(&n)
+	return n > 0, err
+}
+
+// ponytail: global rules name options and are left alone, so one naming the
+// merged-away spelling adds it back the next time it runs; resolve such names
+// against past merges if that turns up in practice.
+func RepointOption(app core.App, userID, fieldID, from, into string) error {
+	records, err := app.FindAllRecords(Collection, dbx.HashExp{"user": userID})
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		rule, err := FromRecord(record)
+		if err != nil {
+			return err
+		}
+		changed := false
+		for i, c := range rule.Conditions {
+			if c.Subject == fieldID && c.Value == from {
+				rule.Conditions[i].Value, changed = into, true
+			}
+		}
+		for i, a := range rule.Actions {
+			if a.Type == ActionSetField && a.Field == fieldID && a.Value == from {
+				rule.Actions[i].Value, changed = into, true
+			}
+		}
+		if !changed {
+			continue
+		}
+		record.Set("conditions", rule.Conditions)
+		record.Set("actions", rule.Actions)
+		if err := app.Save(record); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Load is the enabled rules for trigger that apply to the owner's documents,
 // in the order they run: the global ones first, then the owner's own, so an
 // owner's rule sees what the admin's did.

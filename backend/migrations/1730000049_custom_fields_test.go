@@ -30,9 +30,9 @@ func TestCustomFieldsCollectionAfterMigrating(t *testing.T) {
 	if coll.CreateRule == nil || !strings.Contains(*coll.CreateRule, pairedAdminField) {
 		t.Fatalf("create rule = %v, want admins only", coll.CreateRule)
 	}
-	for _, rule := range []*string{coll.CreateRule, coll.UpdateRule, coll.DeleteRule} {
-		if rule == nil || !strings.Contains(*rule, "'option'") {
-			t.Fatalf("rule %v leaves the predefined option fields writable", rule)
+	for _, rule := range []*string{coll.UpdateRule, coll.DeleteRule} {
+		if rule == nil || !strings.Contains(*rule, models.CorrespondentFieldID) || !strings.Contains(*rule, models.DocumentTypeFieldID) {
+			t.Fatalf("rule %v leaves the predefined fields writable", rule)
 		}
 	}
 	for _, field := range models.PredefinedCustomFields {

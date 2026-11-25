@@ -37,7 +37,7 @@ func (f *fieldsExtractor) AnswerYesNo(_ context.Context, document, question stri
 	return strings.Contains(question, "reminder"), nil
 }
 
-func (f *fieldsExtractor) ExtractFields(_ context.Context, _ string, instructions string, fields []models.CustomField) (map[string]any, error) {
+func (f *fieldsExtractor) ExtractFields(_ context.Context, _ string, instructions string, fields []models.CustomField, _ map[string][]string) (map[string]any, error) {
 	f.prompt = instructions
 	for _, field := range fields {
 		f.asked = append(f.asked, field.Name)

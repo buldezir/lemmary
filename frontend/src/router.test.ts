@@ -51,6 +51,7 @@ describe('route tree', () => {
       '/account/passkeys',
       '/account/sharing',
       '/tags',
+      '/field-options',
       '/rules',
       '/settings/rules',
       '/bulk',

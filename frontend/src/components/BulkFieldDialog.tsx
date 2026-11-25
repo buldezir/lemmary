@@ -7,11 +7,11 @@ import {
   listCustomFields,
   type CustomFieldType,
 } from '../lib/api/customFields'
-import type { OptionRecord } from '../lib/api/documents'
+import { listOptions, type OptionRecord } from '../lib/api/documents'
 import { Combobox } from './Combobox'
 import { Button, inputClassName, labelClassName, labelTextClassName } from './ui'
 
-type Field = { id: string; name: string; type: CustomFieldType | 'option'; values: string[] }
+type Field = { id: string; name: string; type: CustomFieldType; values: string[] }
 
 /** Mounted while open: each opening starts from an empty form. */
 export function BulkFieldDialog({
@@ -30,7 +30,16 @@ export function BulkFieldDialog({
   onClose: () => void
 }) {
   const ref = useRef<HTMLDialogElement>(null)
-  const custom = useAsync(listCustomFields, [])
+  const custom = useAsync(async () => {
+    const defined = await listCustomFields()
+    return Promise.all(
+      defined.map(async (f) => ({
+        ...f,
+        values:
+          f.type === 'option' ? (await listOptions(f.id)).map((o) => o.name) : f.choices.map((c) => c.name),
+      })),
+    )
+  }, [])
   const [fieldId, setFieldId] = useState('')
   const [value, setValue] = useState('')
 
@@ -41,7 +50,7 @@ export function BulkFieldDialog({
   const fields: Field[] = [
     { id: DOCUMENT_TYPE_FIELD_ID, name: t('documentPage.fieldType'), type: 'option', values: documentTypes.map((o) => o.name) },
     { id: CORRESPONDENT_FIELD_ID, name: t('documentPage.fieldCorrespondent'), type: 'option', values: correspondents.map((o) => o.name) },
-    ...(custom.data ?? []).map((f) => ({ ...f, values: f.choices.map((c) => c.name) })),
+    ...(custom.data ?? []),
   ]
   const field = fields.find((f) => f.id === fieldId)
   const trimmed = value.trim()

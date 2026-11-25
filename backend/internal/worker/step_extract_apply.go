@@ -161,11 +161,23 @@ func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) (ai
 	if err != nil {
 		return ai.ExtractionCatalog{}, fmt.Errorf("extraction catalog custom fields: %w", err)
 	}
+	fieldOptions := map[string][]string{}
+	for _, field := range customFields {
+		if field.Type != models.CustomFieldOption {
+			continue
+		}
+		names, err := listOptionNames(app, field.ID, userID)
+		if err != nil {
+			return ai.ExtractionCatalog{}, fmt.Errorf("extraction catalog %s: %w", field.Name, err)
+		}
+		fieldOptions[field.ID] = names
+	}
 	return ai.ExtractionCatalog{
 		Correspondents: correspondents,
 		DocumentTypes:  documentTypes,
 		Tags:           tags,
 		CustomFields:   customFields,
+		FieldOptions:   fieldOptions,
 	}, nil
 }
 

@@ -43,18 +43,27 @@ func stringsField(meta map[string]any, key string) []string {
 
 // customFieldsField maps the archive's values, keyed by field name, onto this
 // instance's fields. A name with no field here is dropped.
-func customFieldsField(meta map[string]any, fields []models.CustomField) []models.FieldWrite {
+func customFieldsField(meta map[string]any, resolver *taxonomyResolver) ([]models.FieldWrite, error) {
 	byName, ok := meta["custom_fields"].(map[string]any)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	var out []models.FieldWrite
-	for _, field := range fields {
-		if value, ok := field.ValueIn(byName); ok {
-			out = append(out, models.FieldWrite{Field: field, Value: value})
+	for _, field := range resolver.customFields {
+		value, ok := field.ValueIn(byName)
+		if !ok {
+			continue
 		}
+		if name, isName := value.(string); isName && field.Type == models.CustomFieldOption {
+			id, err := resolver.option(field.ID, name)
+			if err != nil {
+				return nil, err
+			}
+			value = id
+		}
+		out = append(out, models.FieldWrite{Field: field, Value: value})
 	}
-	return out
+	return out, nil
 }
 
 // restorableStatuses are the processing_status values the collection accepts.
@@ -100,7 +109,10 @@ func applyMetadata(record *core.Record, meta map[string]any, resolver *taxonomyR
 	if refs := stringsField(meta, "reference_numbers"); len(refs) > 0 {
 		record.Set("reference_numbers", refs)
 	}
-	values := customFieldsField(meta, resolver.customFields)
+	values, err := customFieldsField(meta, resolver)
+	if err != nil {
+		return nil, err
+	}
 
 	tagIDs := make([]string, 0)
 	for _, name := range stringsField(meta, "tags") {

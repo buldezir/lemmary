@@ -11,7 +11,7 @@ describe('nav items', () => {
     const items = visibleNavItems(secondaryNavItems('http://pb.test/_/', true), false)
     const labels = items.map((item) => item.label)
 
-    expect(labels).toEqual(['Account', 'Tags', 'Rules', 'Bulk Actions', 'OCR test', 'Export', 'Import'])
+    expect(labels).toEqual(['Account', 'Tags', 'Field options', 'Rules', 'Bulk Actions', 'OCR test', 'Export', 'Import'])
     expect(items.every((item) => !item.admin)).toBe(true)
   })
 
@@ -22,6 +22,7 @@ describe('nav items', () => {
       'Account',
       // Not admin-only: the tag vocabulary is per-user, like the account itself.
       'Tags',
+      'Field options',
       'Rules',
       'Bulk Actions',
       'OCR test',

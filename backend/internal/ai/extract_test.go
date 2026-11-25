@@ -270,13 +270,19 @@ func TestBuildExtractionSystemPromptAsksForCustomFieldsOnlyWhenDefined(t *testin
 		{ID: "finvoice", Name: "Invoice number", Type: models.CustomFieldText, Description: "next to Rechnungsnr."},
 		{ID: "famount", Name: "Amount", Type: models.CustomFieldNumber},
 		{ID: "fstatus", Name: "Status", Type: models.CustomFieldChoice, Choices: []models.FieldChoice{{ID: "cpaid", Name: "Paid"}, {ID: "copen", Name: "Open"}}},
-	}})
+		{ID: "fproject", Name: "Project", Type: models.CustomFieldOption},
+	}, FieldOptions: map[string][]string{"fproject": {"Apollo & Co"}}})
 	for _, want := range []string{
 		"Also return custom_fields (object)",
 		`{"name":"Invoice number","type":"text","description":"next to Rechnungsnr."}`,
 		`{"name":"Amount","type":"number"}`,
 		`{"name":"Status","type":"choice","choices":["Paid","Open"]}`,
 		"choice is exactly one of the field's choices",
+		`{"name":"Project","type":"option"}`,
+		"option is a short name",
+		`existing values of the custom field "Project"`,
+		"punctuation other than &",
+		`["Apollo & Co"]`,
 		"leave a field out rather than guess",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -284,7 +290,7 @@ func TestBuildExtractionSystemPromptAsksForCustomFieldsOnlyWhenDefined(t *testin
 		}
 	}
 	// Ids mean nothing to the model; the names are the keys it answers with.
-	if strings.Contains(prompt, "finvoice") || strings.Contains(prompt, "cpaid") {
+	if strings.Contains(prompt, "finvoice") || strings.Contains(prompt, "cpaid") || strings.Contains(prompt, "fproject") {
 		t.Fatalf("the prompt leaks field ids:\n%s", prompt)
 	}
 	// Admin rules come after the contract they may not change.
@@ -333,8 +339,17 @@ func TestBuildExtractionSystemPromptWritesInTheResultLanguage(t *testing.T) {
 	t.Parallel()
 	prompt := buildExtractionSystemPrompt("English", "", ExtractionCatalog{Tags: []string{"Invoices"}})
 
-	if !strings.Contains(prompt, "document_type, and correspondent in English") {
+	if !strings.Contains(prompt, "summary, and document_type in English") {
 		t.Fatalf("expected the result-language rule, got:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "a name is never translated") || !strings.Contains(prompt, "H&M stays H&M") {
+		t.Fatalf("expected the correspondent to keep its spelling, got:\n%s", prompt)
+	}
+	// The catalog is read last, so its reuse rule must not fold & away either:
+	// an archive that already holds "HeM" would otherwise keep getting it.
+	withCatalog := buildExtractionSystemPrompt("English", "", ExtractionCatalog{Correspondents: []string{"HeM"}})
+	if !strings.Contains(withCatalog, "punctuation other than &") || !strings.Contains(withCatalog, `"HeM" is not "H&M"`) {
+		t.Fatalf("the correspondent catalog still folds &, got:\n%s", withCatalog)
 	}
 	for _, gone := range []string{"_translated", "same language as the source document", "purpose"} {
 		if strings.Contains(prompt, gone) {
@@ -423,14 +438,17 @@ func TestExtractFieldsAsksForTheGivenFieldsWithTheRuleInstructions(t *testing.T)
 	client := NewExtractor("openai", "test-key", "mistral-small-latest", srv.URL, "v1", "",
 		"Always tag invoices.", 5*time.Second, slog.Default())
 	answers, err := client.ExtractFields(context.Background(), "Invoice total 129,90 EUR",
-		"The amount is the gross total.", []models.CustomField{{ID: "famount", Name: "Amount", Type: models.CustomFieldNumber}})
+		"The amount is the gross total.", []models.CustomField{
+			{ID: "famount", Name: "Amount", Type: models.CustomFieldNumber},
+			{ID: "fproject", Name: "Project", Type: models.CustomFieldOption},
+		}, map[string][]string{"fproject": {"Apollo Program"}})
 	if err != nil {
 		t.Fatalf("ExtractFields: %v", err)
 	}
 	if answers["Amount"] != 129.9 {
 		t.Fatalf("answers = %#v", answers)
 	}
-	for _, want := range []string{"one key, custom_fields (object)", `{\"name\":\"Amount\",\"type\":\"number\"}`, "the gross total", "Invoice total"} {
+	for _, want := range []string{"one key, custom_fields (object)", `{\"name\":\"Amount\",\"type\":\"number\"}`, "the gross total", "Invoice total", "Apollo Program"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in the request, got %s", want, body)
 		}
