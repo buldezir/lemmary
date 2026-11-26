@@ -58,35 +58,47 @@ describe('searchLinkableDocuments', () => {
 })
 
 describe('listRelatedDocuments', () => {
-  // Not a filter on documents_via_related: that joins all documents to
-  // themselves and timed out on a large archive.
-  it('expands both directions of the one document, once each, newest first', async () => {
-    const doc = (id: string, date: string) => ({ id, title: id, document_date: date, created: '' })
+  const doc = (id: string, date: string) => ({ id, title: id, document_date: date, created: '' })
+
+  function stubRelated(outgoing: unknown[], incoming: unknown[]): URL[] {
     const urls: URL[] = []
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
-        urls.push(new URL(url))
-        return Response.json({
-          expand: {
-            related: [doc('old', '2020-01-01 00:00:00.000Z'), doc('both', '2022-01-01 00:00:00.000Z')],
-            documents_via_related: [doc('both', '2022-01-01 00:00:00.000Z'), doc('new', '2024-01-01 00:00:00.000Z')],
-          },
-        })
+        const parsed = new URL(url)
+        urls.push(parsed)
+        return parsed.pathname.endsWith('/records')
+          ? Response.json({ page: 1, perPage: 1000, totalItems: incoming.length, totalPages: 1, items: incoming })
+          : Response.json(outgoing.length ? { expand: { related: outgoing } } : {})
       }),
+    )
+    return urls
+  }
+
+  // Neither a filter on documents_via_related (a self-join that timed out on a
+  // large archive) nor an expand of it (capped at 1000 rows).
+  it('reads outgoing links by expand and incoming ones by filter, once each, newest first', async () => {
+    const urls = stubRelated(
+      [doc('old', '2020-01-01 00:00:00.000Z'), doc('both', '2022-01-01 00:00:00.000Z')],
+      [doc('both', '2022-01-01 00:00:00.000Z'), doc('new', '2024-01-01 00:00:00.000Z')],
     )
 
     const related = await listRelatedDocuments('doc_a')
 
     expect(related.map((d) => d.id)).toEqual(['new', 'both', 'old'])
-    expect(urls).toHaveLength(1)
-    expect(urls[0].pathname).toBe('/api/collections/documents/records/doc_a')
-    expect(urls[0].searchParams.get('expand')).toBe('related,documents_via_related')
-    expect(urls[0].searchParams.get('filter')).toBeNull()
+    const record = urls.find((url) => url.pathname === '/api/collections/documents/records/doc_a')
+    expect(record?.searchParams.get('expand')).toBe('related')
+    expect(record?.searchParams.get('fields')).toBe(
+      'expand.related.id,expand.related.title,expand.related.document_date,expand.related.created',
+    )
+    const list = urls.find((url) => url.pathname === '/api/collections/documents/records')
+    expect(list?.searchParams.get('filter')).toBe('related.id ?= "doc_a"')
+    expect(list?.searchParams.get('fields')).toBe('id,title,document_date,created')
+    expect(urls.some((url) => url.search.includes('documents_via_related'))).toBe(false)
   })
 
   it('is empty when nothing is linked', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({})))
+    stubRelated([], [])
     expect(await listRelatedDocuments('doc_a')).toEqual([])
   })
 })
