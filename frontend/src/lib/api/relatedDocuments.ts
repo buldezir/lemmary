@@ -10,14 +10,24 @@ export type RelatedDocument = {
 
 const FIELDS = 'id,title,document_date,created'
 
-/** Both directions: a link is stored on whichever of the two documents made it. */
-export function listRelatedDocuments(documentId: string): Promise<RelatedDocument[]> {
-  return pb.collection('documents').getFullList<RelatedDocument>({
-    filter: pb.filter('related.id ?= {:id} || documents_via_related.id ?= {:id}', { id: documentId }),
-    fields: FIELDS,
-    sort: '-document_date',
+const LINKS = ['related', 'documents_via_related'] as const
+
+/**
+ * Both directions: a link is stored on whichever of the two documents made it.
+ * Expanded from the one record, not filtered over all documents: a filter on
+ * documents_via_related joins the table to itself through json_each and timed
+ * out on an archive of 9k documents.
+ */
+export async function listRelatedDocuments(documentId: string): Promise<RelatedDocument[]> {
+  const record = await pb.collection('documents').getOne<{
+    expand?: Partial<Record<(typeof LINKS)[number], RelatedDocument[]>>
+  }>(documentId, {
+    expand: LINKS.join(','),
+    fields: LINKS.flatMap((link) => FIELDS.split(',').map((field) => `expand.${link}.${field}`)).join(','),
     requestKey: `related-${documentId}`,
   })
+  const byId = new Map(LINKS.flatMap((link) => record.expand?.[link] ?? []).map((doc) => [doc.id, doc]))
+  return [...byId.values()].sort((a, b) => b.document_date.localeCompare(a.document_date))
 }
 
 /**

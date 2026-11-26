@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { searchLinkableDocuments, unlinkDocuments } from './relatedDocuments'
+import { listRelatedDocuments, searchLinkableDocuments, unlinkDocuments } from './relatedDocuments'
 import { pb } from '../pb'
 
 type Call = { method: string; url: URL; body: unknown }
@@ -54,5 +54,39 @@ describe('searchLinkableDocuments', () => {
     // Not @request.auth.id: PocketBase refuses that in a filter from anyone but a superuser.
     expect(empty).toBe('user = "me" && id != "doc_a"')
     expect(typed).toBe('user = "me" && id != "doc_a" && title ~ "lease"')
+  })
+})
+
+describe('listRelatedDocuments', () => {
+  // Not a filter on documents_via_related: that joins all documents to
+  // themselves and timed out on a large archive.
+  it('expands both directions of the one document, once each, newest first', async () => {
+    const doc = (id: string, date: string) => ({ id, title: id, document_date: date, created: '' })
+    const urls: URL[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(new URL(url))
+        return Response.json({
+          expand: {
+            related: [doc('old', '2020-01-01 00:00:00.000Z'), doc('both', '2022-01-01 00:00:00.000Z')],
+            documents_via_related: [doc('both', '2022-01-01 00:00:00.000Z'), doc('new', '2024-01-01 00:00:00.000Z')],
+          },
+        })
+      }),
+    )
+
+    const related = await listRelatedDocuments('doc_a')
+
+    expect(related.map((d) => d.id)).toEqual(['new', 'both', 'old'])
+    expect(urls).toHaveLength(1)
+    expect(urls[0].pathname).toBe('/api/collections/documents/records/doc_a')
+    expect(urls[0].searchParams.get('expand')).toBe('related,documents_via_related')
+    expect(urls[0].searchParams.get('filter')).toBeNull()
+  })
+
+  it('is empty when nothing is linked', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({})))
+    expect(await listRelatedDocuments('doc_a')).toEqual([])
   })
 })
