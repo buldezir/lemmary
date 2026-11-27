@@ -10,14 +10,27 @@ export type RelatedDocument = {
 
 const FIELDS = 'id,title,document_date,created'
 
-/** Both directions: a link is stored on whichever of the two documents made it. */
-export function listRelatedDocuments(documentId: string): Promise<RelatedDocument[]> {
-  return pb.collection('documents').getFullList<RelatedDocument>({
-    filter: pb.filter('related.id ?= {:id} || documents_via_related.id ?= {:id}', { id: documentId }),
-    fields: FIELDS,
-    sort: '-document_date',
-    requestKey: `related-${documentId}`,
-  })
+/**
+ * Both directions: a link is stored on whichever of the two documents made it.
+ * Not one filter with documents_via_related: that joins all documents to
+ * themselves and timed out on a 9k archive. Not an expand of it either:
+ * PocketBase caps a back-relation expand at 1000 unordered rows.
+ */
+export async function listRelatedDocuments(documentId: string): Promise<RelatedDocument[]> {
+  const [record, incoming] = await Promise.all([
+    pb.collection('documents').getOne<{ expand?: { related?: RelatedDocument[] } }>(documentId, {
+      expand: 'related',
+      fields: FIELDS.split(',').map((field) => `expand.related.${field}`).join(','),
+      requestKey: `related-out-${documentId}`,
+    }),
+    pb.collection('documents').getFullList<RelatedDocument>({
+      filter: pb.filter('related.id ?= {:id}', { id: documentId }),
+      fields: FIELDS,
+      requestKey: `related-in-${documentId}`,
+    }),
+  ])
+  const byId = new Map([...(record.expand?.related ?? []), ...incoming].map((doc) => [doc.id, doc]))
+  return [...byId.values()].sort((a, b) => b.document_date.localeCompare(a.document_date))
 }
 
 /**
